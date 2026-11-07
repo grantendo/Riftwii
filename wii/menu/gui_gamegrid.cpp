@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "gui_gamegrid.hpp"
 #include "loadersettings.hpp"
+#include "log.hpp"
 #include "transition.hpp"
 #include "gui_motion.hpp"
 
+#include <ogc/cache.h>
+#include <ogc/gx.h>
 #include <ogc/lwp_watchdog.h>
 
 #include <algorithm>
@@ -130,6 +133,61 @@ constexpr int kRowColsWide = 5, kRowCols4x3 = 4;
 constexpr int kRowCoverHWide = 192, kRowCoverH4x3 = 174;
 constexpr int kRowGapWide = 14, kRowGap4x3 = 12;
 constexpr int kRowTop = 76;
+// The row's box fronts have their corners rounded, this much as drawn.
+constexpr float kRowCorner = 6.0f;
+
+// Rounded copies of the box fronts the cover row shows (round_corners),
+// a few at a time: the covers on screen and the neighbours peeking in.
+// Taken from MEM2 once, on the row's first front, for the menu's life;
+// without the room the fronts are drawn square.
+constexpr int kRoundedFronts = 10;
+constexpr std::size_t kRoundedFrontBytes =
+    static_cast<std::size_t>(riftwii::kBoxFrontWidth) * riftwii::kBoxHeight * 2;
+
+struct RoundedFront {
+    std::string id;
+    const u8* from = nullptr;  // the box texture it was made from (a pool slot)
+    float radius = 0.0f;
+    u8* data = nullptr;
+    unsigned used = 0;  // when it was last drawn, to reuse the oldest
+};
+RoundedFront g_roundedFronts[kRoundedFronts];
+bool g_roundedFrontsTried = false;
+unsigned g_roundedFrontsClock = 0;
+
+// The box's front with its corners rounded `radius` texels, or nullptr
+// (draw it square) when there is no memory or the box cannot be cut. The
+// game and the slot together name it: a pool slot reused for another game
+// is another picture. GUI thread only.
+const u8* RoundedBoxFront(const std::string& id, const u8* box, float radius) {
+    if (!g_roundedFrontsTried) {
+        g_roundedFrontsTried = true;
+        u8* block = skin::Mem2Alloc(kRoundedFronts * kRoundedFrontBytes);
+        if (!block) riftwii::wii::logf("Cover row: no MEM2 for rounded box fronts; they are drawn square.\n");
+        for (int i = 0; block && i < kRoundedFronts; ++i) g_roundedFronts[i].data = block + i * kRoundedFrontBytes;
+    }
+    if (!g_roundedFronts[0].data) return nullptr;
+    ++g_roundedFrontsClock;
+    RoundedFront* oldest = &g_roundedFronts[0];
+    for (RoundedFront& r : g_roundedFronts) {
+        if (r.from == box && r.radius == radius && r.id == id) {
+            r.used = g_roundedFrontsClock;
+            return r.data;
+        }
+        if (r.used < oldest->used) oldest = &r;
+    }
+    if (!riftwii::round_corners(box, riftwii::kBoxWidth, riftwii::kBoxHeight, riftwii::kBoxSpineWidth,
+                                riftwii::kBoxSpineWidth + riftwii::kBoxFrontWidth, radius, oldest->data)) {
+        return nullptr;
+    }
+    DCFlushRange(oldest->data, kRoundedFrontBytes);
+    GX_InvalidateTexAll();
+    oldest->id = id;
+    oldest->from = box;
+    oldest->radius = radius;
+    oldest->used = g_roundedFrontsClock;
+    return oldest->data;
+}
 
 // A turned page slides in from this far to the side, easing in.
 constexpr float kSlideFrom = 150.0f;
@@ -914,9 +972,16 @@ void GuiGameGrid::DrawRowCover(int index, Slot* s, float x, float y, float scale
         skin::Draw(skin::coverTileOver, cx - frame.w / 2.0f, cy - frame.h / 2.0f,
                    static_cast<int>(alpha * riftwii::wii::transition::Pulse()), frameScale);
     if (box) {
-        const float u0 = static_cast<float>(riftwii::kBoxSpineWidth) / riftwii::kBoxWidth;
-        const float u1 = static_cast<float>(riftwii::kBoxSpineWidth + riftwii::kBoxFrontWidth) / riftwii::kBoxWidth;
-        skin::DrawRgb5a3Part(box, riftwii::kBoxWidth, riftwii::kBoxHeight, u0, u1, left, top, w, h, alpha);
+        // Rounded kRowCorner as drawn: in the front's own texels.
+        const float radius = kRowCorner * riftwii::kBoxHeight / tileH;
+        const u8* front = RoundedBoxFront(item.id, box, radius);
+        if (front) {
+            skin::DrawRgb5a3Part(front, riftwii::kBoxFrontWidth, riftwii::kBoxHeight, 0.0f, 1.0f, left, top, w, h, alpha);
+        } else {
+            const float u0 = static_cast<float>(riftwii::kBoxSpineWidth) / riftwii::kBoxWidth;
+            const float u1 = static_cast<float>(riftwii::kBoxSpineWidth + riftwii::kBoxFrontWidth) / riftwii::kBoxWidth;
+            skin::DrawRgb5a3Part(box, riftwii::kBoxWidth, riftwii::kBoxHeight, u0, u1, left, top, w, h, alpha);
+        }
     } else if (cover) {
         skin::DrawRgb5a3(cover, riftwii::kCoverWidth, riftwii::kCoverHeight, cx - riftwii::kCoverWidth / 2.0f,
                          cy - riftwii::kCoverHeight / 2.0f, alpha, frameScale);
