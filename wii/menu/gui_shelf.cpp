@@ -853,7 +853,7 @@ void GuiGameGrid::ShelfStep(int delta) {
     const int target = ring ? ((focus + delta) % n + n) % n : std::clamp(focus + delta, 0, n - 1);
     if (target == focus) return;
     focus = target;
-    page = focus / kPerPage;
+    page = focus / PerPage();
     soundOver->Play();
 }
 
@@ -1599,7 +1599,7 @@ void GuiGameGrid::UpdateShelf(GuiTrigger* t) {
                 } else {
                     // A box on the shelf is pulled out first; A again opens it.
                     focus = dragPress;
-                    page = focus / kPerPage;
+                    page = focus / PerPage();
                     shelfHover = -1;
                     riftwii::wii::PlayMenuSound(riftwii::wii::MenuSoundEvent::Tile);
                 }
@@ -1611,7 +1611,7 @@ void GuiGameGrid::UpdateShelf(GuiTrigger* t) {
                 riftwii::wii::PlayMenuSound(riftwii::wii::MenuSoundEvent::Tile);
             } else {
                 focus = hit;
-                page = focus / kPerPage;
+                page = focus / PerPage();
                 shelfHover = -1;
                 riftwii::wii::PlayMenuSound(riftwii::wii::MenuSoundEvent::Tile);
             }

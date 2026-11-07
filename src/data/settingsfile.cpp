@@ -70,8 +70,8 @@ void LoaderSettings::parse(const std::string& text) {
             int slot;
             if (parse_cios_choice(value, slot)) game_cios = value;
         } else if (key == "home_tiles") {
-            if (value == "covers" || value == "names" || value == "shelf" || value == "carousel" || value == "covers3d" ||
-                value == "channels")
+            if (value == "covers" || value == "row" || value == "names" || value == "shelf" || value == "carousel" ||
+                value == "covers3d" || value == "channels")
                 home_tiles = value;
         } else if (key == "channel_corners") {
             if (value == "theme" || value == "square" || value == "slight" || value == "round" || value == "rounder")

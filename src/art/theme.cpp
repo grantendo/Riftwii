@@ -526,8 +526,9 @@ const std::vector<ThemeImage>& theme_images() {
         // Instead of background(_wide) while Home shows Channels.
         {"background_channels", 640, 480},
         {"background_channels_wide", 856, 480},
-        // Home's Layout button and the six cards in its picker.
+        // Home's Layout button and the seven cards in its picker.
         {"layout_covers", 28, 28},
+        {"layout_row", 28, 28},
         {"layout_covers3d", 28, 28},
         {"layout_carousel", 28, 28},
         {"layout_shelf", 28, 28},

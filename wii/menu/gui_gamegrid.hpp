@@ -74,6 +74,9 @@ const u8* MadeUpCoverFor(const GridItem& item);
 
 class GuiGameGrid : public GuiElement {
 public:
+    // The most games a page holds (and the slots kept for them): the 6x2
+    // covers, the 4x3 names and channels. The cover row holds fewer
+    // (PerPage).
     static constexpr int kPerPage = 12;
 
     GuiGameGrid();
@@ -81,6 +84,15 @@ public:
     void SetItems(const std::vector<GridItem>* items);  // must outlive the grid
     // Covers (6x2) or names (4x3).
     void SetCovers(bool on);
+    // With covers on: one row of big covers (home_tiles = row), the next
+    // page's first cover cut off at the screen's edge to show the row goes
+    // on; drawn from each game's full box art front when the card has it
+    // (sharper than the stored cover), else its cover.
+    void SetRow(bool on);
+    bool Row() const { return row; }
+    // The games on a page: kPerPage, or the cover row's (4 on a 4:3 menu,
+    // 5 on a widescreen one).
+    int PerPage() const;
     // The shelf instead of either (covers drawn on its boxes' fronts).
     void SetShelf(bool on);
     bool Shelf() const { return shelf; }
@@ -127,7 +139,7 @@ public:
     // GUI thread asks every frame, so not from the settings' string.
     void SetPagePeek(bool on) { pagePeek = on; }
     // The items on the page shown: whose icons to have ready.
-    int PageFirst() const { return page * kPerPage; }
+    int PageFirst() const { return page * PerPage(); }
     // A cover was stored for `id`: draw it from now on.
     void CoverArrived(const std::string& id);
     // B held for something else (Home's random game on the search button):
@@ -280,6 +292,10 @@ private:
     int PeekAlpha(float x, int alpha) const;  // a tile at x: dimmed the further out of the page's columns
     void DrawNeighbourPages(int alpha);
     void DrawCoverTile(int i, bool on, int alpha);
+    // The cover row's cover of item `index` at (x, y), tileW x tileH scaled
+    // about its middle; `s` gives its badge texts (nullptr for a peeking
+    // neighbour page's, drawn without them).
+    void DrawRowCover(int index, Slot* s, float x, float y, float scale, bool on, int alpha);
     // The cover zoom (CoverZoomed). zoomItem is the game zoomed (-1 none),
     // zoomSlot its tile (-1 on the shelf, which zooms from the box's middle
     // and height, zoomFrom*); zoomBack shows the box's back. zoomShown runs
@@ -387,6 +403,7 @@ private:
     GuiSound* soundOver;
     GuiSound* soundClick;
     bool covers = false;
+    bool row = false;  // with covers: the one-row view
     static riftwii::PlayerActed acted;
     int page = 0;
     float slide = 0.0f;  // the page's offset while it slides in

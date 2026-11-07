@@ -1865,6 +1865,8 @@ void TestCoverArt() {
 
     LoaderSettings s;
     EXPECT_EQ(s.home_tiles, "covers");
+    s.parse("home_tiles = row\n");
+    EXPECT_EQ(s.home_tiles, "row");
     s.parse("home_tiles = names\n");
     EXPECT_EQ(s.home_tiles, "names");
     s.parse("home_tiles = huge\n");

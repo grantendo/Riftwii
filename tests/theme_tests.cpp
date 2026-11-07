@@ -453,7 +453,7 @@ static void test_theme_color_keys() {
 
 static void test_theme_images() {
     const auto& images = theme_images();
-    EXPECT_EQ(images.size(), 82U);
+    EXPECT_EQ(images.size(), 83U);
 
     // Unique names.
     for (std::size_t i = 0; i < images.size(); ++i) {
@@ -536,7 +536,7 @@ static void test_painted_images() {
     // Each layout needs its own recognisable silhouette, with a clear
     // margin when it is enlarged on a card or shrunk onto a button.
     const char* const layouts[] = {
-        "layout_covers", "layout_covers3d", "layout_carousel",
+        "layout_covers", "layout_row", "layout_covers3d", "layout_carousel",
         "layout_shelf", "layout_channels", "layout_names"
     };
     std::vector<std::vector<std::uint8_t>> layoutPixels;

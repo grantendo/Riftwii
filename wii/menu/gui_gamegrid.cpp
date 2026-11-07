@@ -120,6 +120,16 @@ constexpr int kRoomyChannelGapPixelsX = 16, kRoomyChannelGapY = 14, kRoomyChanne
 // line under them. Both between the arrows.
 constexpr int kNameCols = 4;
 constexpr int kCoverCols = 6;
+// The cover row (home_tiles = row): one row of big covers, the first at
+// the safe area's left edge (5% in), the next page's first cut off by the
+// screen's right edge so the row is seen to go on, as a console's home row
+// shows. Five on a widescreen menu, four on 4:3; the stored cover's shape
+// (80 x 112). The box fronts drawn in them are 128 x 176, close to these
+// sizes, so they stay sharp where the stored covers would be enlarged.
+constexpr int kRowColsWide = 5, kRowCols4x3 = 4;
+constexpr int kRowCoverHWide = 192, kRowCoverH4x3 = 174;
+constexpr int kRowGapWide = 14, kRowGap4x3 = 12;
+constexpr int kRowTop = 76;
 
 // A turned page slides in from this far to the side, easing in.
 constexpr float kSlideFrom = 150.0f;
@@ -300,6 +310,8 @@ float GuiGameGrid::Stretch() const {
     return kTileNarrow * WideFactor();
 }
 
+int GuiGameGrid::PerPage() const { return covers && row && !shelf ? Geo().cols : kPerPage; }
+
 const GuiGameGrid::Geometry& GuiGameGrid::Geo() const {
     // The top row leaves room above it for the grown ring and its shadow.
     // 120 x 84, the Wii Menu's channel shape (about 1.43 to 1 on a 4:3
@@ -308,6 +320,16 @@ const GuiGameGrid::Geometry& GuiGameGrid::Geo() const {
     // Roomy: 9/10 the size and 18 apart, about 77 at each side, the rows
     // centred where the normal ones are.
     static const Geometry roomyNames = {kNameCols, 108, 76, 77, 40, 18, 14};
+    if (covers && row && !shelf) {
+        const bool wide = WideFactor() > 1.0f;
+        f32 safeX, safeW;
+        Menu_SafeArea(&safeX, &safeW);
+        const int h = wide ? kRowCoverHWide : kRowCoverH4x3;
+        const int w = (h * riftwii::kCoverWidth + riftwii::kCoverHeight / 2) / riftwii::kCoverHeight;
+        const int left = static_cast<int>(safeX + safeW * 0.05f + 0.5f);
+        coverGeo = {wide ? kRowColsWide : kRowCols4x3, w, h, left, kRowTop, wide ? kRowGapWide : kRowGap4x3, 0};
+        return coverGeo;
+    }
     if (covers) {
         // Six across about the middle, 8 apart (12 on a widescreen menu).
         const float k = CoverScale();
@@ -339,7 +361,7 @@ const GuiGameGrid::Geometry& GuiGameGrid::Geo() const {
     return stretched;
 }
 
-int GuiGameGrid::CoverCaptionY() const { return std::max(kCaptionY, TileY(kPerPage - 1) + Geo().tileH + 8); }
+int GuiGameGrid::CoverCaptionY() const { return std::max(kCaptionY, TileY(PerPage() - 1) + Geo().tileH + 8); }
 
 int GuiGameGrid::ArrowX(int dir) const {
     // At the safe area's edges, which a widescreen Channels view widens.
@@ -371,7 +393,7 @@ int GuiGameGrid::TileX(int slot) const {
 int GuiGameGrid::TileY(int slot) const { return BaseY(slot) + static_cast<int>(std::lround(shiftY[slot])); }
 
 int GuiGameGrid::ArrowY() const {
-    const int rows = kPerPage / Geo().cols;
+    const int rows = PerPage() / Geo().cols;
     return Geo().top + (rows * Geo().tileH + (rows - 1) * Geo().gapY) / 2 - 22;
 }
 
@@ -387,7 +409,7 @@ void GuiGameGrid::SetItems(const std::vector<GridItem>* list) {
     shiftPage = -1;
     EndCoverZoom();  // its index was into the old list too
     if (focus >= Count()) focus = Count() > 0 ? Count() - 1 : 0;
-    page = focus / kPerPage;
+    page = focus / PerPage();
     laidOut = false;
     leavingPage = -1;  // its names were the old list's
     captionFor = -1;
@@ -402,6 +424,18 @@ void GuiGameGrid::SetCovers(bool on) {
             for (GuiText* line : set[i].lines) line->SetFontSize(covers ? kCoverTitleSize : kTitleSize);
     }
     leavingPage = -1;
+    laidOut = false;
+    captionFor = -1;
+}
+
+void GuiGameGrid::SetRow(bool on) {
+    if (row == on) return;
+    row = on;
+    // The page holds another number of games: the focus keeps its game.
+    page = focus / PerPage();
+    shiftPage = -1;
+    leavingPage = -1;
+    slide = 0.0f;
     laidOut = false;
     captionFor = -1;
 }
@@ -454,12 +488,12 @@ void GuiGameGrid::SetShelf(bool on) {
 void GuiGameGrid::Focus(int index, bool crossfade) {
     if (index < 0 || index >= Count()) index = 0;
     focus = index;
-    if (page != focus / kPerPage) {
+    if (page != focus / PerPage()) {
         // Another page at once (a letter, a search): crossfaded, unless the
         // caller is placing the focus while Home builds up (the scan), where a
         // fade would swallow a press (Home takes none while one runs).
         if (crossfade) riftwii::wii::transition::BeginAuto();
-        page = focus / kPerPage;
+        page = focus / PerPage();
         laidOut = false;
         leavingPage = -1;
         slide = 0.0f;
@@ -479,8 +513,8 @@ bool GuiGameGrid::TileRect(int index, float& x, float& y, float& w, float& h) co
         }
         return false;
     }
-    if (index < 0 || index / kPerPage != page) return false;
-    const int slot = index % kPerPage;
+    if (index < 0 || index / PerPage() != page) return false;
+    const int slot = index % PerPage();
     x = static_cast<float>(TileX(slot));
     y = static_cast<float>(TileY(slot));
     w = static_cast<float>(Geo().tileW);
@@ -488,7 +522,7 @@ bool GuiGameGrid::TileRect(int index, float& x, float& y, float& w, float& h) co
     return true;
 }
 
-int GuiGameGrid::Pages() const { return Count() == 0 ? 1 : (Count() + kPerPage - 1) / kPerPage; }
+int GuiGameGrid::Pages() const { return Count() == 0 ? 1 : (Count() + PerPage() - 1) / PerPage(); }
 
 int GuiGameGrid::GetClicked() {
     const int c = clicked;
@@ -555,10 +589,10 @@ void GuiGameGrid::Layout() {
     const int textWidth = covers ? Geo().tileW - 2 * kCoverTextLeft : Geo().tileW - 2 * kTextLeft;
     const int lineCount = covers ? 3 : 2;
     measure->SetFontSize(size);
-    for (int i = 0; i < kPerPage; ++i) {
+    for (int i = 0; i < PerPage(); ++i) {
         Slot& s = slots[i];
         s.scale = 1.0f;
-        if (page * kPerPage + i >= Count()) continue;
+        if (page * PerPage() + i >= Count()) continue;
         const GridItem& item = (*items)[ItemAt(i)];
         // A name tile's disc (top right, from tileW - 46) keeps its name short of it.
         const bool disc = !covers && item.badge == "DISC";
@@ -590,7 +624,7 @@ void GuiGameGrid::TurnPage(int delta) {
     const int target = page + delta;
     if (target < 0 || target >= Pages()) return;
     const int cols = Cols();
-    const int row = (focus % kPerPage) / cols;
+    const int row = (focus % PerPage()) / cols;
     // Not with a game picked up: the old page's picture (or its names,
     // peeking) had it in it, and it stays where it is held.
     const bool peek = PagePeek() && carryFrom < 0;
@@ -610,7 +644,7 @@ void GuiGameGrid::TurnPage(int delta) {
         // Down past the lit game's name under the covers, all of it: an
         // edge across it showed the old name's top over the new one's foot.
         const float bottom = static_cast<float>(
-            std::max(TileY(kPerPage - 1) + Geo().tileH + 30, covers ? CoverCaptionY() + kCaptionSize + 14 : 0));
+            std::max(TileY(PerPage() - 1) + Geo().tileH + 30, covers ? CoverCaptionY() + kCaptionSize + 14 : 0));
         // Across the tiles' columns only (their lit edge included): the
         // search button above the last column and the page arrows stay
         // out, or the sliding picture took a copy of them along (a
@@ -626,8 +660,8 @@ void GuiGameGrid::TurnPage(int delta) {
     page = target;
     // Enter the new page at the facing column of the same row.
     int slot = row * cols + (delta > 0 ? 0 : cols - 1);
-    while (page * kPerPage + slot >= Count() && slot > 0) --slot;
-    focus = page * kPerPage + slot;
+    while (page * PerPage() + slot >= Count() && slot > 0) --slot;
+    focus = page * PerPage() + slot;
     laidOut = false;
     // Peeking, the strip goes on from where it was (a turn during a turn),
     // at most two pages behind (DrawNeighbourPages draws three either side).
@@ -645,15 +679,15 @@ int GuiGameGrid::SlotAt(int x, int y) const {
         const Geometry& g = Geo();
         if (x < g.left || x >= g.left + PageStride() - g.gapX) return -1;
     }
-    for (int i = 0; i < kPerPage; ++i) {
-        if (page * kPerPage + i >= Count()) break;
+    for (int i = 0; i < PerPage(); ++i) {
+        if (page * PerPage() + i >= Count()) break;
         if (x >= TileX(i) && x < TileX(i) + Geo().tileW && y >= TileY(i) && y < TileY(i) + Geo().tileH) return i;
     }
     return -1;
 }
 
 int GuiGameGrid::ArrowAt(int x, int y) const {
-    if (PagePeek() && y >= TileY(0) && y < TileY(kPerPage - 1) + Geo().tileH) {
+    if (PagePeek() && y >= TileY(0) && y < TileY(PerPage() - 1) + Geo().tileH) {
         // A neighbouring page's column is its arrow, from the screen's edge
         // to the page's own columns.
         const Geometry& g = Geo();
@@ -855,6 +889,70 @@ void GuiGameGrid::DrawCoverTile(int i, bool on, int alpha) {
     }
 }
 
+void GuiGameGrid::DrawRowCover(int index, Slot* s, float x, float y, float scale, bool on, int alpha) {
+    const GridItem& item = (*items)[index];
+    const float tileW = static_cast<float>(Geo().tileW), tileH = static_cast<float>(Geo().tileH);
+    const float cx = x + tileW / 2.0f, cy = y + tileH / 2.0f;
+    const float w = tileW * scale, h = tileH * scale;
+    const float left = cx - w / 2.0f, top = cy - h / 2.0f;
+    // The theme's cover frame and its lit ring, drawn at the row's size
+    // (their cover place is the stored cover's 80 x 112).
+    const float frameScale = scale * tileH / riftwii::kCoverHeight;
+    const skin::Tex& frame = skin::coverTile;
+    // The game's full box art front, sharper at this size than the stored
+    // cover; not for the disc drive, the player's own cover, GameTDB's
+    // second set or a mod tile's own (CoverBeforeBox), as the shelf does.
+    const bool disc = item.badge == "DISC";
+    const u8* box = disc || item.id.empty() || riftwii::wii::CoverBeforeBox(CoverName(item))
+                        ? nullptr
+                        : riftwii::wii::BoxTexture(item.id);
+    const u8* cover = box ? nullptr : riftwii::wii::CoverTexture(CoverName(item));
+    const u8* madeUp = box || cover ? nullptr : MadeUpCoverFor(item);
+    const bool art = box || cover || madeUp;
+    if (on || !art) skin::Draw(frame, cx - frame.w / 2.0f, cy - frame.h / 2.0f, alpha, frameScale);
+    if (on)
+        skin::Draw(skin::coverTileOver, cx - frame.w / 2.0f, cy - frame.h / 2.0f,
+                   static_cast<int>(alpha * riftwii::wii::transition::Pulse()), frameScale);
+    if (box) {
+        const float u0 = static_cast<float>(riftwii::kBoxSpineWidth) / riftwii::kBoxWidth;
+        const float u1 = static_cast<float>(riftwii::kBoxSpineWidth + riftwii::kBoxFrontWidth) / riftwii::kBoxWidth;
+        skin::DrawRgb5a3Part(box, riftwii::kBoxWidth, riftwii::kBoxHeight, u0, u1, left, top, w, h, alpha);
+    } else if (cover) {
+        skin::DrawRgb5a3(cover, riftwii::kCoverWidth, riftwii::kCoverHeight, cx - riftwii::kCoverWidth / 2.0f,
+                         cy - riftwii::kCoverHeight / 2.0f, alpha, frameScale);
+    } else if (madeUp) {
+        riftwii::wii::DrawMadeUpCover(madeUp, cx - riftwii::kCoverWidth / 2.0f, cy - riftwii::kCoverHeight / 2.0f, alpha,
+                                      frameScale);
+    } else if (disc && skin::discCase.data) {
+        skin::Draw(skin::discCase, cx - skin::discCase.w / 2.0f, cy - skin::discCase.h / 2.0f, alpha,
+                   scale * tileH / skin::discCase.h);
+    } else {
+        // No picture yet: the game's colour along the foot, and its name
+        // when the page's texts are laid out (not a neighbour's).
+        Menu_DrawRectangle(left + 8, top + h - 10, w - 16, 4, skin::WithAlpha(item.hue, alpha), 1);
+        if (s) {
+            for (int l = 0; l < 3; ++l) {
+                s->lines[l]->SetPosition(static_cast<int>(left) + kCoverTextLeft, static_cast<int>(top) + 10 + l * 16);
+                s->lines[l]->Draw();
+            }
+        }
+    }
+    if (!s || (disc && !art && skin::discCase.data)) return;
+    // The source badge and the MODS tag along the foot, as the covers'.
+    const int baseY = static_cast<int>(top + h) - 22;
+    const int badgeW = s->badge->GetTextWidth() + 10;
+    const int badgeX = static_cast<int>(left + w) - 5 - badgeW;
+    Menu_DrawRectangle(badgeX, baseY - 1, badgeW, 15, skin::WithAlpha(skin::WithAlpha(BadgeColor(item), 235), alpha), 1);
+    s->badge->SetPosition(badgeX + 5, baseY);
+    s->badge->Draw();
+    if (item.mods || item.to_build) {
+        const int modsX = static_cast<int>(left) + 5;
+        Menu_DrawRectangle(modsX, baseY - 1, s->mods->GetTextWidth() + 10, 15, skin::WithAlpha(skin::kAccentInk, alpha), 1);
+        s->mods->SetPosition(modsX + 5, baseY);
+        s->mods->Draw();
+    }
+}
+
 // A profile's picture: a quarter or so of the tile, in its top right
 // corner, so the game's own icon, cover or name still shows which game it is.
 float GuiGameGrid::ProfilePictureSize() const {
@@ -924,9 +1022,11 @@ void GuiGameGrid::DrawChannelLabel(int slot, int alpha) {
     caption->Draw();
 }
 
-// Channels only, as the Wii Menu's home screen: the other views' tiles
-// fill the screen between the arrows.
+// Channels, as the Wii Menu's home screen, and always the cover row, whose
+// next cover cut off at the edge shows that it goes on: the other views'
+// tiles fill the screen between the arrows.
 bool GuiGameGrid::PagePeek() const {
+    if (covers && row && !shelf) return true;
     return pagePeek && channels && iconDrawer && skin::channelCard9.data;
 }
 
@@ -938,6 +1038,8 @@ float GuiGameGrid::PageStride() const { return static_cast<float>(Cols() * (Geo(
 // middle is out of them, to kPeekDim one column out (where a peeking
 // column rests). A sliding column brightens as it comes in.
 int GuiGameGrid::PeekAlpha(float x, int alpha) const {
+    // The cover row's neighbours are whole: the screen's edge cuts them.
+    if (row && covers) return alpha;
     const Geometry& g = Geo();
     const float middle = x + g.tileW / 2.0f;
     const float pageLeft = static_cast<float>(g.left);
@@ -965,12 +1067,18 @@ void GuiGameGrid::DrawNeighbourPages(int alpha) {
     for (int p = page - 3; p <= page + 3; ++p) {
         if (p == page || p < 0 || p >= Pages()) continue;
         const float offset = (p - page) * PageStride();
-        for (int i = 0; i < kPerPage; ++i) {
+        for (int i = 0; i < PerPage(); ++i) {
             // At the slots' own places: the glide is the page shown's.
             const float x = BaseX(i) + slide + offset, y = static_cast<float>(BaseY(i));
             if (x + g.tileW + m <= vx || x - m >= vx + vw) continue;
             const int a = PeekAlpha(x, alpha);
-            const int index = ShownItem(p * kPerPage + i);
+            const int index = ShownItem(p * PerPage() + i);
+            if (covers && row) {
+                // The row has no empty places; a neighbour's covers are
+                // drawn without their badges (no texts laid out for them).
+                if (index < Count()) DrawRowCover(index, nullptr, x, y, 1.0f, false, a);
+                continue;
+            }
             if (index >= Count()) {
                 // The page's empty places, as the page's own.
                 skin::DrawNine(skin::channelCard9, x - m, y - m, g.tileW + 2 * m, g.tileH + 2 * m,
@@ -999,7 +1107,7 @@ void GuiGameGrid::PrefetchCovers() {
     int rank = 1;
     for (const int p : {page + turning, page + 2 * turning, page - turning}) {
         if (p >= 0 && p < Pages()) {
-            for (int i = p * kPerPage; i < (p + 1) * kPerPage && i < Count(); ++i)
+            for (int i = p * PerPage(); i < (p + 1) * PerPage() && i < Count(); ++i)
                 riftwii::wii::CoverPrefetch(CoverName((*items)[i]), rank);
         }
         ++rank;
@@ -1020,7 +1128,7 @@ void GuiGameGrid::ReadAllCovers() {
     std::vector<std::string> ids;
     ids.reserve(Count());
     // By the cover each tile draws (a mod tile's key), as CoverPrefetch.
-    for (int k = 0; k < Count(); ++k) ids.push_back(CoverName((*items)[(page * kPerPage + k) % Count()]));
+    for (int k = 0; k < Count(); ++k) ids.push_back(CoverName((*items)[(page * PerPage() + k) % Count()]));
     riftwii::wii::CoverReadAll(ids);
 }
 
@@ -1048,7 +1156,7 @@ void GuiGameGrid::DrawEmptyPlace(int i, int alpha) const {
                     skin::tileEmpty.data ? alpha : alpha * 70 / 255, 1.0f);
 }
 
-int GuiGameGrid::ItemAt(int slot) const { return ShownItem(page * kPerPage + slot); }
+int GuiGameGrid::ItemAt(int slot) const { return ShownItem(page * PerPage() + slot); }
 
 int GuiGameGrid::ShownItem(int shown) const {
     if (carryFrom < 0 || shown >= Count()) return shown;
@@ -1072,16 +1180,16 @@ void GuiGameGrid::EaseShifts() {
     }
     int was[kPerPage];
     float wasX[kPerPage], wasY[kPerPage];
-    for (int i = 0; i < kPerPage; ++i) {
+    for (int i = 0; i < PerPage(); ++i) {
         was[i] = shownItem[i];
         wasX[i] = BaseX(i) + shiftX[i];
         wasY[i] = BaseY(i) + shiftY[i];
     }
-    for (int i = 0; i < kPerPage; ++i) {
-        const int item = page * kPerPage + i < Count() ? ItemAt(i) : -1;
+    for (int i = 0; i < PerPage(); ++i) {
+        const int item = page * PerPage() + i < Count() ? ItemAt(i) : -1;
         if (item != was[i]) {
             shiftX[i] = shiftY[i] = 0.0f;
-            for (int j = 0; j < kPerPage && item >= 0; ++j) {
+            for (int j = 0; j < PerPage() && item >= 0; ++j) {
                 if (was[j] != item) continue;
                 shiftX[i] = wasX[j] - BaseX(i);
                 shiftY[i] = wasY[j] - BaseY(i);
@@ -1095,7 +1203,7 @@ void GuiGameGrid::EaseShifts() {
         if (std::fabs(shiftX[i]) < 0.5f) shiftX[i] = 0.0f;
         if (std::fabs(shiftY[i]) < 0.5f) shiftY[i] = 0.0f;
     }
-    const int carrySlot = carryFrom >= 0 && carryTo / kPerPage == page ? carryTo % kPerPage : -1;
+    const int carrySlot = carryFrom >= 0 && carryTo / PerPage() == page ? carryTo % PerPage() : -1;
     if (carrySlot >= 0 && carryPointer) {
         // Held by its middle, a little above the pointer's tip.
         shiftX[carrySlot] = carryX - Geo().tileW / 2.0f - BaseX(carrySlot) - slide;
@@ -1125,14 +1233,15 @@ void GuiGameGrid::Draw() {
     const float away = peek ? 0.0f : (slide < 0.0f ? -slide : slide) / kSlideFrom;
     const int tileAlpha = static_cast<int>(alpha * (1.0f - 0.9f * away));
     EaseShifts();
-    const int focusSlot = focus / kPerPage == page ? focus % kPerPage : -1;
+    const int focusSlot = focus / PerPage() == page ? focus % PerPage() : -1;
     // A game picked up is the lit one, drawn last over the others.
-    const int carrySlot = carryFrom >= 0 && carryTo / kPerPage == page ? carryTo % kPerPage : -1;
+    const int carrySlot = carryFrom >= 0 && carryTo / PerPage() == page ? carryTo % PerPage() : -1;
     const int lit = carrySlot >= 0 ? carrySlot : hover >= 0 ? hover : (AnyPointer() ? -1 : focusSlot);
     if (peek) DrawNeighbourPages(alpha);
     // Empty places first, then tiles, the lit one last so it sits on top.
-    for (int i = 0; i < kPerPage; ++i) {
-        if (page * kPerPage + i < Count()) continue;
+    for (int i = 0; i < PerPage(); ++i) {
+        if (page * PerPage() + i < Count()) continue;
+        if (row && covers) break;  // the row ends at its last game
         if (channels && iconDrawer && skin::channelCard9.data) {
             // As the Wii Menu's empty channel: the very box a channel's
             // icon fills (its size, place and rim), faded and blank. The
@@ -1162,7 +1271,8 @@ void GuiGameGrid::Draw() {
         const int a = peek ? PeekAlpha(TileX(i), alpha) : tileAlpha;
         iconShown[i] = channels && iconDrawer && DrawChannelTile(index, TileX(i), TileY(i), s.scale, on, a);
         if (iconShown[i]) return;
-        if (covers) DrawCoverTile(i, on, a);
+        if (covers && row) DrawRowCover(index, &s, TileX(i), TileY(i), s.scale, on, a);
+        else if (covers) DrawCoverTile(i, on, a);
         else DrawNameTile(index, s, TileX(i), TileY(i), on, a);
     };
     // A profile's picture over its tile, the item and alpha as the tile's
@@ -1171,13 +1281,13 @@ void GuiGameGrid::Draw() {
         draw_tile_body(i);
         if ((*items)[ItemAt(i)].profile) DrawProfilePicture(i, slots[i].scale, peek ? PeekAlpha(TileX(i), alpha) : tileAlpha);
     };
-    for (int i = 0; i < kPerPage; ++i) {
-        if (i == lit || page * kPerPage + i >= Count()) continue;
+    for (int i = 0; i < PerPage(); ++i) {
+        if (i == lit || page * PerPage() + i >= Count()) continue;
         draw_tile(i);
     }
-    if (lit >= 0 && page * kPerPage + lit < Count()) draw_tile(lit);
+    if (lit >= 0 && page * PerPage() + lit < Count()) draw_tile(lit);
     // Channels: the lit icon's name on a label across its tile's foot.
-    if (channels && lit >= 0 && lit < kPerPage && iconShown[lit] && page * kPerPage + lit < Count())
+    if (channels && lit >= 0 && lit < PerPage() && iconShown[lit] && page * PerPage() + lit < Count())
         DrawChannelLabel(lit, peek ? PeekAlpha(TileX(lit), alpha) : tileAlpha);
     if (covers) {
         // The lit game's name (the focused one's while nothing is lit).
@@ -1191,6 +1301,12 @@ void GuiGameGrid::Draw() {
         caption->SetPosition(0, CoverCaptionY());
         caption->Draw();
         PrefetchCovers();
+    }
+    // The cover row has no page arrows: its cut-off covers show where it
+    // goes on, and pointing at one turns to its page (ArrowAt).
+    if (row && covers) {
+        UpdateEffects();
+        return;
     }
     if (page > 0)
         riftwii::wii::DrawInvitingArrow(skin::arrowLeft, skin::arrowLeftOver, ArrowX(-1) - 2, ArrowY() - 2,
@@ -1291,7 +1407,7 @@ bool GuiGameGrid::LetterKeys(GuiTrigger* t) {
         letterUsed[ch] = true;
     } else if (t->Down() || t->Up()) {
         const int delta = t->Down() ? 1 : -1;
-        if (shelf) ShelfStep(delta * kPerPage);
+        if (shelf) ShelfStep(delta * PerPage());
         else TurnPage(delta);
         letterUsed[ch] = true;
     }
@@ -1353,10 +1469,10 @@ bool GuiGameGrid::TakeMove(int& from, int& to) {
 // or the nearest one when it is between or beside the tiles.
 int GuiGameGrid::NearestIndex(int x, int y) const {
     const Geometry& g = Geo();
-    const int rows = kPerPage / g.cols;
+    const int rows = PerPage() / g.cols;
     const int column = std::clamp((x - g.left + g.gapX / 2) / (g.tileW + g.gapX), 0, g.cols - 1);
     const int row = std::clamp((y - g.top + g.gapY / 2) / (g.tileH + g.gapY), 0, rows - 1);
-    const int index = page * kPerPage + row * g.cols + column;
+    const int index = page * PerPage() + row * g.cols + column;
     return std::clamp(index, fixedFirst, Count() - 1);
 }
 
@@ -1367,7 +1483,7 @@ void GuiGameGrid::CarryTo(int index) {
     focus = index;
     soundOver->Play();
     // Without a pointer, the page follows the game to its new place.
-    const int targetPage = index / kPerPage;
+    const int targetPage = index / PerPage();
     if (targetPage != page) {
         const int delta = targetPage > page ? 1 : -1;
         TurnPage(delta);
@@ -1403,10 +1519,10 @@ bool GuiGameGrid::CarryKeys(GuiTrigger* t, int shoulderPage) {
         if (pointing) {
             const int slot = SlotAt(static_cast<int>(t->wpad->ir.x), static_cast<int>(t->wpad->ir.y));
             if (slot < 0) return false;
-            index = page * kPerPage + slot;
+            index = page * PerPage() + slot;
             carryX = t->wpad->ir.x;
             carryY = t->wpad->ir.y;
-        } else if (AnyPointer() || focus / kPerPage != page) {
+        } else if (AnyPointer() || focus / PerPage() != page) {
             return false;
         }
         if (index < fixedFirst || index >= Count()) return false;
@@ -1469,24 +1585,24 @@ bool GuiGameGrid::CarryKeys(GuiTrigger* t, int shoulderPage) {
         return true;
     }
     const int cols = Cols();
-    const int slot = carryTo % kPerPage, column = slot % cols;
+    const int slot = carryTo % PerPage(), column = slot % cols;
     const int rowStart = carryTo - column;
     int target = carryTo;
     if (shoulderPage != 0 || PressedPage(t, -1) || PressedPage(t, 1)) {
         int delta = shoulderPage;
         if (delta == 0) delta = PressedPage(t, -1) ? -1 : 1;
-        target = carryTo + delta * kPerPage;
+        target = carryTo + delta * PerPage();
     } else if (t->Right()) {
         // Past the right column: the next page, the same row's first place.
-        target = column == cols - 1 ? rowStart + kPerPage : carryTo + 1;
+        target = column == cols - 1 ? rowStart + PerPage() : carryTo + 1;
     } else if (t->Left()) {
-        target = column == 0 ? rowStart - kPerPage + cols - 1 : carryTo - 1;
+        target = column == 0 ? rowStart - PerPage() + cols - 1 : carryTo - 1;
     } else if (t->Down()) {
-        if (slot + cols < kPerPage) target = carryTo + cols;
+        if (slot + cols < PerPage()) target = carryTo + cols;
     } else if (t->Up()) {
         if (slot >= cols) target = carryTo - cols;
     }
-    if (target == carryTo || target < fixedFirst || target / kPerPage >= Pages()) return true;
+    if (target == carryTo || target < fixedFirst || target / PerPage() >= Pages()) return true;
     // A place past the last game (an empty one) is the last game's.
     CarryTo(std::min(target, Count() - 1));
     return true;
@@ -1561,13 +1677,13 @@ void GuiGameGrid::Update(GuiTrigger* t) {
         if (slot != hover && slot >= 0) soundOver->Play();
         hover = slot;
         arrowHover = ArrowAt(x, y);
-        if (slot >= 0) focus = page * kPerPage + slot;
+        if (slot >= 0) focus = page * PerPage() + slot;
         if (PressedA(t)) {
             if (arrowHover != 0) {
                 TurnPage(arrowHover);
                 hover = -1;
             } else if (slot >= 0) {
-                clicked = page * kPerPage + slot;
+                clicked = page * PerPage() + slot;
                 riftwii::wii::PlayMenuSound(riftwii::wii::MenuSoundEvent::Tile);
             }
         }
@@ -1577,7 +1693,7 @@ void GuiGameGrid::Update(GuiTrigger* t) {
     hover = -1;
     arrowHover = 0;
     const int cols = Cols();
-    const int slot = focus % kPerPage, column = slot % cols;
+    const int slot = focus % PerPage(), column = slot % cols;
     int target = focus;
     // A page turned here moves the focus onto the new page itself: the
     // target follows it (it was the old page's, which kept the focus there
@@ -1597,7 +1713,7 @@ void GuiGameGrid::Update(GuiTrigger* t) {
             target = focus - 1;
         }
     } else if (t->Down()) {
-        if (slot + cols < kPerPage && focus + cols < Count()) target = focus + cols;
+        if (slot + cols < PerPage() && focus + cols < Count()) target = focus + cols;
     } else if (t->Up()) {
         if (slot >= cols) target = focus - cols;
     }
@@ -1664,7 +1780,7 @@ bool GuiGameGrid::CoverZoomKeys(GuiTrigger* t) {
         back = index == focus && shelfFlip;
     } else {
         slot = SlotAt(px, py);
-        if (slot < 0 || page * kPerPage + slot >= Count()) return false;
+        if (slot < 0 || page * PerPage() + slot >= Count()) return false;
         index = ItemAt(slot);
         // A tile drawn as a name (no cover yet) keeps 1 and 2 for the bar,
         // even when the game's box is already on the card.

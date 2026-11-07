@@ -1699,7 +1699,8 @@ static bool MoveHomeGame(const FrontendState& state, std::vector<GridItem>& item
 // on Home step through them.
 static std::string NextHomeTiles(const std::string& tiles)
 {
-	if (tiles == "covers") return "covers3d";
+	if (tiles == "covers") return "row";
+	if (tiles == "row") return "covers3d";
 	if (tiles == "covers3d") return "carousel";
 	if (tiles == "carousel") return "shelf";
 	if (tiles == "shelf") return "channels";
@@ -1713,6 +1714,7 @@ static std::string HomeTilesName(const std::string& tiles)
 	if (tiles == "shelf") return tr("Shelf");
 	if (tiles == "carousel") return tr("Carousel");
 	if (tiles == "covers3d") return tr("3D covers");
+	if (tiles == "row") return tr("Cover row");
 	if (tiles == "channels") return tr("Channels");
 	return tr("Covers");
 }
@@ -1722,6 +1724,7 @@ static std::string HomeTilesName(const std::string& tiles)
 static std::string HomeTilesNote(const std::string& tiles)
 {
 	if (tiles == "covers") return tr("Covers: each game's box art from GameTDB (fetched when downloads are on).");
+	if (tiles == "row") return tr("Cover row: one row of big covers, sharp from the full box art; the next game peeks in at the side.");
 	if (tiles == "covers3d") return tr("3D covers: GameTDB's pictures of the cases, round a ring with no end.");
 	if (tiles == "carousel") return tr("Carousel: the boxes fanned out on an arc.");
 	if (tiles == "shelf") return tr("Shelf: the boxes on a shelf.");
@@ -1729,11 +1732,13 @@ static std::string HomeTilesNote(const std::string& tiles)
 	return tr("Names: the names only.");
 }
 
-static const char* const kHomeLayouts[] = {"covers", "covers3d", "carousel", "shelf", "channels", "names"};
+// In the picker's order; skin::layoutIcons is in the same order.
+static const char* const kHomeLayouts[] = {"covers", "row", "covers3d", "carousel", "shelf", "channels", "names"};
+static constexpr int kHomeLayoutCount = static_cast<int>(sizeof(kHomeLayouts) / sizeof(kHomeLayouts[0]));
 
 static int HomeLayoutIndex(const std::string& tiles)
 {
-	for (int index = 0; index < 6; ++index) {
+	for (int index = 0; index < kHomeLayoutCount; ++index) {
 		if (tiles == kHomeLayouts[index]) return index;
 	}
 	return 0;
@@ -3662,8 +3667,8 @@ static int PickHomeChoice(const char* name, std::vector<TileSpec>& tiles, int cu
 static int PickHomeLayout()
 {
 	const int current = HomeLayoutIndex(riftwii::wii::Settings().home_tiles);
-	std::vector<TileSpec> tiles(6);
-	for (int index = 0; index < 6; ++index) {
+	std::vector<TileSpec> tiles(kHomeLayoutCount);
+	for (int index = 0; index < kHomeLayoutCount; ++index) {
 		tiles[index].label = HomeTilesName(kHomeLayouts[index]);
 		tiles[index].icon = &skin::layoutIcons[index];
 	}
@@ -6265,8 +6270,8 @@ static std::size_t NearestQueuedCover(const std::vector<std::string>& queue, con
 	std::size_t shownFrom = static_cast<std::size_t>(std::max(0, grid.FocusedIndex()));
 	std::size_t shownTo = shownFrom + 1;
 	if (!grid.Shelf()) {
-		shownFrom = static_cast<std::size_t>(grid.Page()) * GuiGameGrid::kPerPage;
-		shownTo = shownFrom + GuiGameGrid::kPerPage;
+		shownFrom = static_cast<std::size_t>(grid.Page()) * grid.PerPage();
+		shownTo = shownFrom + grid.PerPage();
 	}
 	constexpr std::size_t kNotListed = static_cast<std::size_t>(-1) - 1;
 	std::size_t best = queue.size();
@@ -6345,6 +6350,7 @@ static int MenuSource(FrontendState& state)
 	grid.SetShelf(homeTiles == "shelf" || homeTiles == "carousel" || homeTiles == "covers3d");
 	grid.SetCarousel(homeTiles == "carousel");
 	grid.SetRing(homeTiles == "covers3d");
+	grid.SetRow(homeTiles == "row");
 	grid.SetRoomy(riftwii::wii::Settings().grid_spacing == "roomy");
 	skin::SetOnHome(true);  // the wall for the view now set
 	grid.SetChannelBackdrop(riftwii::wii::Settings().channel_background == "card");
@@ -7106,7 +7112,7 @@ static int MenuSource(FrontendState& state)
 		    riftwii::wii::GameCubeBannerFetchGame().empty()) {
 			// The page shown, and the next page's column peeking in.
 			const std::size_t first = static_cast<std::size_t>(grid.PageFirst());
-			for (std::size_t k = first; k < first + GuiGameGrid::kPerPage + 4 && k < items.size(); ++k) {
+			for (std::size_t k = first; k < first + grid.PerPage() + 4 && k < items.size(); ++k) {
 				const HomeEntry& e = entries[k];
 				if (e.kind != HomeEntry::Kind::Sd && e.kind != HomeEntry::Kind::Usb) continue;
 				const riftwii::wii::ImageGame& game = e.kind == HomeEntry::Kind::Sd ? state.sd_catalog.games[e.index]
@@ -7160,7 +7166,7 @@ static int MenuSource(FrontendState& state)
 		if (!g_scanning && grid.Channels() && grid.PageFirst() != bannerPageDone) {
 			const std::size_t first = static_cast<std::size_t>(grid.PageFirst());
 			bool read = false;
-			for (std::size_t k = first; k < first + GuiGameGrid::kPerPage && k < items.size(); ++k) {
+			for (std::size_t k = first; k < first + grid.PerPage() && k < items.size(); ++k) {
 				const HomeEntry& e = entries[k];
 				if (e.kind == HomeEntry::Kind::Disc || e.kind == HomeEntry::Kind::App ||
 				    !g_bannersTried.insert(items[k].id).second) continue;
@@ -7179,7 +7185,7 @@ static int MenuSource(FrontendState& state)
 		// Not while the scan has the drives: no read on the menu's thread
 		// waits on the scan's.
 		if (!g_scanning && grid.Channels()) {
-			const int first = grid.PageFirst(), per = GuiGameGrid::kPerPage;
+			const int first = grid.PageFirst(), per = grid.PerPage();
 			const int from[3] = {first, first + per, first - per};
 			const int count[3] = {per + 4, per, per};
 			for (int r = 0; r < 3 && iconId.empty(); ++r) {
@@ -7225,8 +7231,8 @@ static int MenuSource(FrontendState& state)
 			if (grid.Shelf() && !grid.Ring()) {
 				for (const int i : grid.ShelfWanted()) nearFirst.push_back(static_cast<std::size_t>(i));
 			} else {
-				const std::size_t first = static_cast<std::size_t>(grid.Page()) * GuiGameGrid::kPerPage;
-				for (std::size_t k = first; k < first + GuiGameGrid::kPerPage && k < items.size(); ++k) nearFirst.push_back(k);
+				const std::size_t first = static_cast<std::size_t>(grid.Page()) * grid.PerPage();
+				for (std::size_t k = first; k < first + grid.PerPage() && k < items.size(); ++k) nearFirst.push_back(k);
 			}
 			std::size_t pick = 0;
 			for (std::size_t k = 0; k < nearFirst.size() && !boxesNearbyWaiting; ++k) {
@@ -7487,7 +7493,7 @@ static int MenuSource(FrontendState& state)
 		if (!g_scanning && grid.Channels()) {
 			const auto& apps = riftwii::wii::HomebrewApps();
 			const int first = grid.PageFirst();
-			for (int k = std::max(0, first); k < first + GuiGameGrid::kPerPage + 4 && k < static_cast<int>(entries.size()); ++k) {
+			for (int k = std::max(0, first); k < first + grid.PerPage() + 4 && k < static_cast<int>(entries.size()); ++k) {
 				const HomeEntry& entry = entries[static_cast<std::size_t>(k)];
 				if (entry.kind != HomeEntry::Kind::App || entry.index >= apps.size()) continue;
 				const std::string& folder = apps[entry.index].folder;
@@ -7507,7 +7513,7 @@ static int MenuSource(FrontendState& state)
 		// this loop, not a frame. One a turn; read ones are kept. Not while
 		// the scan has the drives: a pack's picture may be on the USB drive.
 		for (int k = grid.PageFirst();
-		     !g_scanning && k < grid.PageFirst() + GuiGameGrid::kPerPage && k < static_cast<int>(items.size()); ++k) {
+		     !g_scanning && k < grid.PageFirst() + grid.PerPage() && k < static_cast<int>(items.size()); ++k) {
 			const GridItem& item = items[static_cast<std::size_t>(k)];
 			if (!item.profile) continue;
 			const riftwii::Profile* profile = riftwii::wii::Profiles().find(item.key);

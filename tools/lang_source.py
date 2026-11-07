@@ -675,6 +675,7 @@ T = {
     "Carousel": ("Carrusel", "カルーセル", "Carrossel", "Carosello"),
     "Plays with": ("Se juega con", "対応コントローラー", "Joga-se com", "Si gioca con"),
     "3D covers": ("Portadas 3D", "3Dパッケージ", "Capas 3D", "Copertine 3D"),
+    "Cover row": ("Fila de portadas", "パッケージの列", "Fileira de capas", "Fila di copertine"),
     "Channels": ("Canales", "チャンネル", "Canais", "Canali"),
     # Channel corners (Settings, the Channels view)
     "Channel corners": ("Esquinas de los canales", "チャンネルの角", "Cantos dos canais", "Angoli dei canali"),
@@ -716,6 +717,11 @@ T = {
         "3Dパッケージ: GameTDBのケースの画像を終わりのない輪に並べます。",
         "Capas 3D: as imagens das caixas do GameTDB, num anel sem fim.",
         "Copertine 3D: le immagini delle custodie di GameTDB, su un anello senza fine."),
+    "Cover row: one row of big covers, sharp from the full box art; the next game peeks in at the side.": (
+        "Fila de portadas: una fila de portadas grandes, nítidas gracias a la caja completa; el siguiente juego asoma por un lado.",
+        "パッケージの列: 大きなパッケージを1列に並べます。ケース全体の画像からきれいに表示し、次のゲームが端に少し見えます。",
+        "Fileira de capas: uma fileira de capas grandes, nítidas a partir da caixa completa; o próximo jogo aparece de lado.",
+        "Fila di copertine: una fila di copertine grandi, nitide dalla custodia completa; il gioco successivo si affaccia di lato."),
     "Carousel: the boxes fanned out on an arc.": (
         "Carrusel: las cajas abiertas en abanico sobre un arco.",
         "カルーセル: ケースを弧の上に扇形に並べます。",
@@ -2884,6 +2890,8 @@ KO = {
         "캐러셀",
     "3D covers":
         "3D 커버",
+    "Cover row":
+        "커버 한 줄",
     "Plays with":
         "지원 컨트롤러",
     "Channels":
@@ -2918,6 +2926,8 @@ KO = {
         "'커버'는 다운로드 기능이 켜져 있을 때 GameTDB에서 가져온 각 게임의 패키지 이미지를 표시합니다.",
     "3D covers: GameTDB's pictures of the cases, round a ring with no end.":
         "'3D 커버'는 GameTDB의 케이스 이미지를 끝없이 도는 고리 위에 보여줍니다.",
+    "Cover row: one row of big covers, sharp from the full box art; the next game peeks in at the side.":
+        "'커버 한 줄'은 큰 커버를 한 줄로 보여줍니다. 전체 패키지 이미지로 선명하게 표시하며, 다음 게임이 옆에 살짝 보입니다.",
     "Carousel: the boxes fanned out on an arc.":
         "'캐러셀'은 게임 패키지를 호 위에 부채꼴로 펼쳐 보여줍니다.",
     "Shelf: the boxes on a shelf.":
@@ -4762,6 +4772,8 @@ FR = {
         "Carrousel",
     "3D covers":
         "Jaquettes 3D",
+    "Cover row":
+        "Rangée de jaquettes",
     "Plays with":
         "Se joue avec",
     "Channels":
@@ -4796,6 +4808,8 @@ FR = {
         "Jaquettes : la boîte de chaque jeu, depuis GameTDB quand les téléchargements sont activés.",
     "3D covers: GameTDB's pictures of the cases, round a ring with no end.":
         "Jaquettes 3D : images des boîtes GameTDB sur un anneau sans fin.",
+    "Cover row: one row of big covers, sharp from the full box art; the next game peeks in at the side.":
+        "Rangée de jaquettes : une rangée de grandes jaquettes, nettes grâce à la boîte complète ; le jeu suivant dépasse sur le côté.",
     "Carousel: the boxes fanned out on an arc.":
         "Carrousel : boîtes déployées en éventail sur un arc.",
     "Shelf: the boxes on a shelf.":

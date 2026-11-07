@@ -771,6 +771,9 @@ msgstr "Se joue avec"
 msgid "3D covers"
 msgstr "Jaquettes 3D"
 
+msgid "Cover row"
+msgstr "Rangée de jaquettes"
+
 msgid "Channels"
 msgstr "Chaînes"
 
@@ -818,6 +821,9 @@ msgstr "Jaquettes : la boîte de chaque jeu, depuis GameTDB quand les téléchar
 
 msgid "3D covers: GameTDB's pictures of the cases, round a ring with no end."
 msgstr "Jaquettes 3D : images des boîtes GameTDB sur un anneau sans fin."
+
+msgid "Cover row: one row of big covers, sharp from the full box art; the next game peeks in at the side."
+msgstr "Rangée de jaquettes : une rangée de grandes jaquettes, nettes grâce à la boîte complète ; le jeu suivant dépasse sur le côté."
 
 msgid "Carousel: the boxes fanned out on an arc."
 msgstr "Carrousel : boîtes déployées en éventail sur un arc."

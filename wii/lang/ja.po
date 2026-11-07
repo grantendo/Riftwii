@@ -771,6 +771,9 @@ msgstr "対応コントローラー"
 msgid "3D covers"
 msgstr "3Dパッケージ"
 
+msgid "Cover row"
+msgstr "パッケージの列"
+
 msgid "Channels"
 msgstr "チャンネル"
 
@@ -818,6 +821,9 @@ msgstr "パッケージ: GameTDBの各ゲームのパッケージ画像(ダウ�
 
 msgid "3D covers: GameTDB's pictures of the cases, round a ring with no end."
 msgstr "3Dパッケージ: GameTDBのケースの画像を終わりのない輪に並べます。"
+
+msgid "Cover row: one row of big covers, sharp from the full box art; the next game peeks in at the side."
+msgstr "パッケージの列: 大きなパッケージを1列に並べます。ケース全体の画像からきれいに表示し、次のゲームが端に少し見えます。"
 
 msgid "Carousel: the boxes fanned out on an arc."
 msgstr "カルーセル: ケースを弧の上に扇形に並べます。"

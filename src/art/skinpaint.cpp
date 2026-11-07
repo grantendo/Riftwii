@@ -617,6 +617,13 @@ struct Painter {
                 c.rounded_rect(x, 4 + column % 2 * 2, 3, 17 - column % 2 * 2, 0.7f, glyph);
             }
             c.line(2, 23, 26, 23, 2, accent);
+        } else if (kind == 6) {
+            // The cover row: two covers and a third cut off by the square's
+            // edge, as the row's next game is by the screen's.
+            for (int column = 0; column < 3; ++column) {
+                c.rounded_rect(2.0f + column * 10.0f, 6, 8, 12, 1, glyph);
+            }
+            c.line(2, 22, 10, 22, 2, accent);
         } else if (kind == 4) {
             for (int row = 0; row < 2; ++row) {
                 for (int column = 0; column < 2; ++column) {
@@ -1234,6 +1241,7 @@ bool paint_theme_image(const std::string& name, const Theme& theme, Canvas& out)
         {"icon_gear", [](const Painter& q) { return q.Gear(); }},
         {"icon_search", [](const Painter& q) { return q.Search(); }},
         {"layout_covers", [](const Painter& q) { return q.Layout(0); }},
+        {"layout_row", [](const Painter& q) { return q.Layout(6); }},
         {"layout_covers3d", [](const Painter& q) { return q.Layout(1); }},
         {"layout_carousel", [](const Painter& q) { return q.Layout(2); }},
         {"layout_shelf", [](const Painter& q) { return q.Layout(3); }},

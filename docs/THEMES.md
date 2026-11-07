@@ -205,6 +205,7 @@ Pictures ending in `_over` are the highlighted versions. Transparency
 | `icon_gear` | 28x28 | Gear icon |
 | `icon_search` | 28x28 | Magnifier icon on the search button |
 | `layout_covers` | 28x28 | Covers grid on Home's Layout button and picker card |
+| `layout_row` | 28x28 | A row of covers, the last cut off, on Home's Layout button and picker card |
 | `layout_covers3d` | 28x28 | Tilted covers grid on Home's Layout button and picker card |
 | `layout_carousel` | 28x28 | Boxes on an arc on Home's Layout button and picker card |
 | `layout_shelf` | 28x28 | Book spines on Home's Layout button and picker card |
