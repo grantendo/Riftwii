@@ -347,6 +347,11 @@ Theme parse_theme(const std::string& text, std::vector<std::string>& notes) {
                 if (lower_val == "ios6") theme.home_ios6 = true;
                 else if (lower_val == "wii") theme.home_ios6 = false;
                 else add_note(notes, line_num, "home_menu: \"" + val + "\" is not wii or ios6; the default stays");
+            } else if (key == "hover") {
+                const std::string lower_val = to_lower(val);
+                if (lower_val == "still") theme.hover_still = true;
+                else if (lower_val == "swell") theme.hover_still = false;
+                else add_note(notes, line_num, "hover: \"" + val + "\" is not swell or still; the default stays");
             } else {
                 add_note(notes, line_num, "unknown key '" + key + "' in [shape]; ignored");
             }

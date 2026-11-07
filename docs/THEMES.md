@@ -77,6 +77,11 @@ Controls the painted parts' shape:
   default: black bars, round pale buttons) or as iOS 6 drew things
   (`ios6`: glossy bars in the `bar` colour, dark linen between them,
   shaded buttons with a red Power off). Bookshelf uses `ios6`.
+- `hover`: `swell` or `still`. A focused button, tile or cover grows a
+  little with a small spring (`swell`, the default), or keeps its size
+  (`still`) so only its highlight shows the focus. `still` also keeps
+  Home's page arrows and the carousel's front box their size; a box on the
+  shelf still rises when pointed at, and a pressed button still dips.
 - `shelf_grain`: `yes` or `no`. Wood grain along Home's shelf (`yes`, as
   Bookshelf and Midnight), or a smooth shelf with a thin `accent` line along
   its front edge (`no`, the default). A theme's own `shelf.png` wins.

@@ -1156,7 +1156,7 @@ void GuiGameGrid::Draw() {
         const bool on = i == lit;
         const float swell = s.swell.Advance(on);
         if (i == carrySlot) s.scale = riftwii::wii::transition::Follow(s.scale, kCarryScale, 40.0f);
-        else s.scale = 1.0f + 0.06f * swell;
+        else s.scale = riftwii::wii::HoverGrows() ? 1.0f + 0.06f * swell : 1.0f;
         if (!on && s.scale < 1.002f) s.scale = 1.0f;  // settled: a channel's icon back on whole pixels
         const int index = ItemAt(i);  // with a game picked up, the tiles shifted round it
         const int a = peek ? PeekAlpha(TileX(i), alpha) : tileAlpha;

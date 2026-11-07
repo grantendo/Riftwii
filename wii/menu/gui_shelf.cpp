@@ -1367,7 +1367,8 @@ void GuiGameGrid::DrawRing(int alpha) {
         const float front = std::max(0.0f, 1.0f - std::fabs(p.angle) / step);
         const float scale = others + (1.0f - others) * front;
         const float hover = poses[p.index].hover.Advance(p.index == shelfHover);
-        const float h = kRingFrontH * scale * (1 + 0.04f * hover);
+        const float grow = riftwii::wii::HoverGrows() ? 0.04f * hover : 0.0f;
+        const float h = kRingFrontH * scale * (1 + grow);
         const float cx = 320.0f + radiusX * std::sin(p.angle);
         float foot = kRingFloor - kRingRise * (1.0f - near);
         // The ring is already tall: four percent leaves the caption clear.

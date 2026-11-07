@@ -84,6 +84,8 @@ gloss = no
 bar = dip
 home_menu = wii
 shelf_grain = no
+# A focused thing keeps its size: only the ring shows the focus
+hover = still
 
 [backdrop]
 stripes = no

@@ -20,7 +20,12 @@ private:
     bool selected_ = false;
 };
 
+// Whether a focused thing grows as it is lit: false when the theme says
+// [shape] hover = still. The swell's Amount still fades the highlight in.
+bool HoverGrows();
+
 // Wide buttons need less growth to leave their neighbours' text clear.
+// 1 when the theme keeps focused things still.
 float ButtonSwellScale(float width, float amount);
 
 // A quiet sweep every 3.5 seconds, inside the button's rounded body.

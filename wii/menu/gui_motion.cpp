@@ -27,7 +27,10 @@ float HoverSwell::Advance(bool selected) {
     return amount_;
 }
 
+bool HoverGrows() { return !MenuTheme().hover_still; }
+
 float ButtonSwellScale(float width, float amount) {
+    if (!HoverGrows()) return 1;
     // At most eight pixels added at either end, even for a full-width Play.
     return 1 + std::min(0.06f, 16.0f / std::max(1.0f, width)) * amount;
 }
@@ -71,7 +74,7 @@ void DrawInvitingArrow(const skin::Tex& plain, const skin::Tex& over,
     const float phase = transition::Cycle(1600.0f);
     const float triangle = phase < 0.5f ? phase * 2 : (1 - phase) * 2;
     const float inward = 3.0f * transition::Ease(triangle) + 3.0f * lift;
-    const float scale = 1.0f + 0.08f * lift;
+    const float scale = HoverGrows() ? 1.0f + 0.08f * lift : 1.0f;
     Menu_PushCamera(scale, x + plain.w / 2.0f, y + plain.h / 2.0f,
                     -dx * inward, -dy * inward);
     skin::Draw(plain, x, y, alpha);

@@ -156,7 +156,8 @@ void GuiButton::Draw()
 	const bool lit = defaultHighlight || state == STATE::SELECTED || state == STATE::HELD;
 	const float hover = swell.Advance(lit);
 	litAmount = std::min(1.0f, hover);
-	const float growth = pageDirection ? 1.0f + 0.08f * hover
+	// A theme with [shape] hover = still keeps page arrows their size too.
+	const float growth = pageDirection ? (riftwii::wii::HoverGrows() ? 1.0f + 0.08f * hover : 1.0f)
 		: riftwii::wii::ButtonSwellScale(GetWidth(), hover);
 	const float scale = growth * motion::PressScale(pressElapsed);
 	float offset = 0;

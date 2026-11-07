@@ -91,6 +91,9 @@ struct Theme {
     // the clock sits in the dip) or "bump" (it rises there, the clock above).
     bool bar_bump = false;
     bool home_ios6 = false;  // [shape] home_menu = ios6: the HOME Menu in iOS 6's manner, not the Wii's
+    // [shape] hover = still: a focused button, tile or cover keeps its size
+    // instead of swelling (the default, "swell"). Its highlight still fades in.
+    bool hover_still = false;
     // Not from theme.ini: the wall is big clock faces that read NOTHING
     // (time_theme(), Settings' "Disable clock" row).
     bool clock_dials = false;

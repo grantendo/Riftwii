@@ -69,6 +69,14 @@ static void test_default_theme() {
     EXPECT_TRUE(!parse_theme("[shape]\nhome_menu = mac\n", notes).home_ios6);
     EXPECT_EQ(notes.size(), 1U);
     notes.clear();
+    // Focused things swell unless a theme says still.
+    EXPECT_TRUE(!def.hover_still);
+    EXPECT_TRUE(parse_theme("[shape]\nhover = Still\n", notes).hover_still);
+    EXPECT_TRUE(!parse_theme("[shape]\nhover = swell\n", notes).hover_still);
+    EXPECT_EQ(notes.size(), 0U);
+    EXPECT_TRUE(!parse_theme("[shape]\nhover = shrink\n", notes).hover_still);
+    EXPECT_EQ(notes.size(), 1U);
+    notes.clear();
 
     // The games' colours are left alone unless a theme tints them.
     EXPECT_EQ(def.colors.banner_tint.a, 0);
