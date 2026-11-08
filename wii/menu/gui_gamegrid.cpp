@@ -132,12 +132,11 @@ constexpr int kCoverCols = 6;
 constexpr int kRowColsWide = 5, kRowCols4x3 = 4;
 constexpr int kRowCoverHWide = 192, kRowCoverH4x3 = 174;
 constexpr int kRowGapWide = 14, kRowGap4x3 = 12;
-// The row's top: low enough for the lit game's name above it, as a
-// console's home row names the game over its covers, left-aligned with the
-// first whole cover.
+// The row's top: low enough for the lit game's name above it, centred, as
+// a console's home row names the game over its covers, with room between.
 constexpr int kRowTop = 124;
 constexpr int kRowCaptionSize = 24;
-constexpr int kRowCaptionY = 88;
+constexpr int kRowCaptionY = 80;
 // The cover frame picture's margin round the 80 x 112 cover, and a corner
 // box large enough to keep its ring's curve whole when it is stretched
 // (unscaled) round the row's covers.
@@ -1167,22 +1166,21 @@ void GuiGameGrid::DrawRow(int alpha) {
             DrawRowCover(RowWrap(place), nullptr, x, static_cast<float>(g.top), 1.0f, lit, alpha);
         }
     }
-    // The lit game's name over the row, from the first whole cover's left
-    // edge, larger than the covers view's.
+    // The lit game's name over the row, centred, larger than the covers view's.
     const int shown = litPlace != kNoPlace ? RowWrap(rowStart + litPlace) : focus;
     if (captionSize != kRowCaptionSize) {
         captionSize = kRowCaptionSize;
         caption->SetFontSize(kRowCaptionSize);
-        caption->SetAlignment(ALIGN_H::LEFT, ALIGN_V::TOP);
+        caption->SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
         captionFor = -1;
     }
     if (shown != captionFor) {
         captionFor = shown;
         measure->SetFontSize(kRowCaptionSize);
-        caption->SetText(Fit((*items)[shown].title, static_cast<int>(vx + vw) - g.left - 40).c_str());
+        caption->SetText(Fit((*items)[shown].title, static_cast<int>(vw) - 80).c_str());
         measure->SetFontSize(kCoverTitleSize);
     }
-    caption->SetPosition(g.left, kRowCaptionY);
+    caption->SetPosition(0, kRowCaptionY);
     caption->SetAlpha(alpha);
     caption->Draw();
     // The covers either side read ahead, the way the row last moved first.

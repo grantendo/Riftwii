@@ -6583,11 +6583,12 @@ static int MenuSource(FrontendState& state)
 		viewTxt.SetMaxWidth(190 + wide);  // ends by x 230, clear of the clock; a longer one ends in "..."
 	}
 	if (dock) {
-		// The view in the top left corner, in the accent, as a console names
-		// what is lit; the page under the clock in the top right.
-		Place(viewTxt, 36 - wide, 28);
-		viewTxt.SetFontSize(18);
-		viewTxt.SetMaxWidth(330 + wide);
+		// The view in the accent, centred under the dock where Home's line
+		// is on other bars (that line goes to the top left corner); the page
+		// under the clock in the top right.
+		Place(viewTxt, 0, 436, true);  // statusY on a dock
+		viewTxt.SetFontSize(16);
+		viewTxt.SetMaxWidth(400 + 2 * wide);
 		pageTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
 		pageTxt.SetPosition(-36 + wide, 58);
 	}
@@ -6660,6 +6661,21 @@ static int MenuSource(FrontendState& state)
 	// Channels' small buttons end at x 156 and start at x 484. Keep
 	// the centred text inside x 164..476, with 8px of breathing room.
 	statusTxt.SetWrap(true, (channelsView ? 312 : 400) + 2 * wide, oneStatusLine ? 1 : 3);
+	// A dock's: Home's line in the top left corner after "RiftWii ·", the
+	// game count as a rule, in the clock's size and colour so the two
+	// corners read as one line across the top.
+	GuiText brandTxt("RiftWii \xC2\xB7 ", 17, skin::kClock);
+	brandTxt.SetVisible(false);
+	if (dock) {
+		Place(brandTxt, 36 - wide, 28);
+		brandTxt.SetVisible(true);
+		const int brandW = brandTxt.GetTextWidth();
+		statusTxt.SetFontSize(17);
+		statusTxt.SetColor(skin::kClock);
+		Place(statusTxt, 36 - wide + brandW, 28);
+		// Clear of the date and clock in the other corner.
+		statusTxt.SetWrap(true, 360 + wide - brandW, 1);
+	}
 	EmptyHomeNote emptyNote;
 	emptyNote.SetVisible(false);
 	HomeEmptyState emptyState;
@@ -6708,8 +6724,16 @@ static int MenuSource(FrontendState& state)
 				dockButtonX(index), dockButtonY, nullptr, 0, 0, 0, HomeFilterIcon(kDockViewOrder[index]), dockScale));
 		}
 		const float iconScale = wide > 0 ? 0.9f : 0.75f;
-		for (auto& b : viewBtns) b->icon.SetScale(iconScale);
-		for (SkinButton* b : {&searchBtn, &layoutBtn, &settingsBtn}) b->icon.SetScale(iconScale);
+		std::vector<SkinButton*> docked = {&searchBtn, &layoutBtn, &settingsBtn};
+		for (auto& b : viewBtns) docked.push_back(b.get());
+		for (SkinButton* b : docked) {
+			b->icon.SetScale(iconScale);
+			// Only the icons show on the dock until one is pointed at, when
+			// its lit picture (the disc and the ring) comes up: the plain
+			// disc, a touch darker than the dock once stored as a picture,
+			// read as a row of circles.
+			b->image.SetVisible(false);
+		}
 	}
 	// The dock's mark under the view shown (Search's while a search is on).
 	const auto markDock = [&] {
@@ -6760,6 +6784,7 @@ static int MenuSource(FrontendState& state)
 	w.Append(&lcd);
 	w.Append(&dateTxt);
 	w.Append(&statusTxt);
+	w.Append(&brandTxt);
 	w.Append(&filterBtn.button);
 	w.Append(&nextFilterBtn.button);
 	for (auto& b : viewBtns) w.Append(&b->button);
@@ -6836,7 +6861,7 @@ static int MenuSource(FrontendState& state)
 					name = std::string(tr(FilterShortLabel(g_filter))) + "\n" +
 						HomeSourceName(riftwii::wii::Settings().home_source);
 				}
-				viewTxt.SetWrap(true, (dock ? 330 : 190) + wide, sourceLimited && !dock ? 2 : 1);
+				viewTxt.SetWrap(true, dock ? 400 + 2 * wide : 190 + wide, sourceLimited && !dock ? 2 : 1);
 			}
 			setViewText(name);
 		}
