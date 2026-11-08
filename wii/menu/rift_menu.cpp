@@ -6670,11 +6670,16 @@ static int MenuSource(FrontendState& state)
 		Place(brandTxt, 36 - wide, 28);
 		brandTxt.SetVisible(true);
 		const int brandW = brandTxt.GetTextWidth();
-		statusTxt.SetFontSize(17);
+		// A size under "RiftWii", centred on its line rather than sitting
+		// on the same foot.
+		constexpr int kBrandSize = 17, kCountSize = 15;
+		statusTxt.SetFontSize(kCountSize);
 		statusTxt.SetColor(skin::kClock);
-		Place(statusTxt, 36 - wide + brandW, 28);
+		Place(statusTxt, 36 - wide + brandW, 28 + (kBrandSize - kCountSize) / 2);
 		// Clear of the date and clock in the other corner.
 		statusTxt.SetWrap(true, 360 + wide - brandW, 1);
+		// The pointed button's name under the dock, a size smaller than elsewhere.
+		actionHint.SetFontSize(15);
 	}
 	EmptyHomeNote emptyNote;
 	emptyNote.SetVisible(false);

@@ -136,7 +136,7 @@ constexpr int kRowGapWide = 14, kRowGap4x3 = 12;
 // a console's home row names the game over its covers, with room between.
 constexpr int kRowTop = 124;
 constexpr int kRowCaptionSize = 24;
-constexpr int kRowCaptionY = 80;
+constexpr int kRowCaptionY = 72;
 // The cover frame picture's margin round the 80 x 112 cover, and a corner
 // box large enough to keep its ring's curve whole when it is stretched
 // (unscaled) round the row's covers.
@@ -1166,12 +1166,14 @@ void GuiGameGrid::DrawRow(int alpha) {
             DrawRowCover(RowWrap(place), nullptr, x, static_cast<float>(g.top), 1.0f, lit, alpha);
         }
     }
-    // The lit game's name over the row, centred, larger than the covers view's.
+    // The lit game's name over the row, centred, larger than the covers
+    // view's, in the accent (as a console's home row names the lit game).
     const int shown = litPlace != kNoPlace ? RowWrap(rowStart + litPlace) : focus;
     if (captionSize != kRowCaptionSize) {
         captionSize = kRowCaptionSize;
         caption->SetFontSize(kRowCaptionSize);
         caption->SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
+        caption->SetColor(skin::kAccent);
         captionFor = -1;
     }
     if (shown != captionFor) {
@@ -1286,6 +1288,7 @@ void GuiGameGrid::DrawChannelLabel(int slot, int alpha) {
         measure->SetFontSize(kChannelLabelSize);
         caption->SetFontSize(kChannelLabelSize);
         caption->SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
+        caption->SetColor(skin::kInk);
         captionSize = kChannelLabelSize;
         caption->SetText(Fit((*items)[shown].title, 220).c_str());
         measure->SetFontSize(kTitleSize);
@@ -1584,6 +1587,7 @@ void GuiGameGrid::Draw() {
             captionSize = kCaptionSize;
             caption->SetFontSize(kCaptionSize);
             caption->SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
+            caption->SetColor(skin::kInk);
             captionFor = -1;
         }
         // The lit game's name (the focused one's while nothing is lit).
