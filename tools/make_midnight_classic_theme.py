@@ -29,7 +29,7 @@ Every picture is worked out here from arithmetic alone. Written: tile9
 tile_over / tile_empty, cover_tile / cover_tile_over, round_button /
 round_button_over, chip_off / chip_on, step_*, scroll_*, switch_on /
 switch_off, row_focus, prompt_button, arrow_*, bar / bar_wide,
-banner_stripes and theme.ini.
+banner_stripes, icon_star_on and theme.ini.
 
     python tools/make_midnight_classic_theme.py [out_dir [picture ...]]   (needs Pillow and numpy)
 
@@ -371,6 +371,34 @@ def bar(width):
     return c.image()
 
 
+def star_on():
+    """28x28: a favourite's star, filled in the glyph's white like every
+    other icon (the built-in one is gold): on the dock it is the Favourites
+    view's icon beside white ones. The star's points as the built-in
+    painter places them (a little right of and below the middle, to sit
+    in the middle of a round button); the outline star stays the painter's."""
+    c = Canvas(28, 28)
+    cx, cy = 15.0, 16.5
+    points = []
+    for i in range(10):
+        a = -np.pi / 2 + i * np.pi / 5
+        r = 12.0 if i % 2 == 0 else 5.0
+        points.append((cx + r * np.cos(a), cy + r * np.sin(a)))
+    # Signed distance to its outline: positive inside (crossings of a ray
+    # to the right counted), so the edge is smoothed as the other shapes'.
+    edge = np.full(c.x.shape, np.inf)
+    inside = np.zeros(c.x.shape, dtype=bool)
+    for i in range(10):
+        (ax, ay), (bx, by) = points[i], points[(i + 1) % 10]
+        edge = np.minimum(edge, -segment(c, ax, ay, bx, by, 0.0))
+        crosses = (ay > c.y) != (by > c.y)
+        at_x = ax + (c.y - ay) * (bx - ax) / ((by - ay) if by != ay else 1e-9)
+        inside ^= crosses & (c.x < at_x)
+    body = np.where(inside, edge, -edge)
+    c.over(fill(body), GLYPH)
+    return c.image()
+
+
 def banner_stripes():
     """640x192: clear, so the game page's band shows the game's colour plain."""
     return Image.new("RGBA", (640, 192), (0, 0, 0, 0))
@@ -426,6 +454,7 @@ def main():
         "bar": lambda: bar(640),
         "bar_wide": lambda: bar(856),
         "banner_stripes": banner_stripes,
+        "icon_star_on": star_on,
     }
     only = set(sys.argv[2:])
     written = []

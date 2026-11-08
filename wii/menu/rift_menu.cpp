@@ -6672,7 +6672,7 @@ static int MenuSource(FrontendState& state)
 		const int brandW = brandTxt.GetTextWidth();
 		// A size under "RiftWii", centred on its line rather than sitting
 		// on the same foot.
-		constexpr int kBrandSize = 17, kCountSize = 15;
+		constexpr int kBrandSize = 17, kCountSize = 13;
 		statusTxt.SetFontSize(kCountSize);
 		statusTxt.SetColor(skin::kClock);
 		Place(statusTxt, 36 - wide + brandW, 28 + (kBrandSize - kCountSize) / 2);
