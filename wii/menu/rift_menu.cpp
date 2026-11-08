@@ -3753,7 +3753,14 @@ static int PickHomeLayout()
 	return picked;
 }
 
-// Which of a dock's view buttons was pressed (its kHomeFilters index), or -1.
+// The dock's view buttons from the left, as kHomeFilters indices: the
+// sources first (All, Wii, GameCube), then Games with mods and the rest in
+// the Show chooser's order.
+static constexpr int kDockViewOrder[] = {1, 2, 3, 0, 4, 5, 6, 7};
+static_assert(sizeof(kDockViewOrder) / sizeof(kDockViewOrder[0]) == kHomeFilterCount,
+	"one dock button for each of Home's views");
+
+// Which of a dock's view buttons was pressed (its place from the left), or -1.
 static int DockViewClicked(std::vector<std::unique_ptr<SkinButton>>& buttons)
 {
 	for (std::size_t index = 0; index < buttons.size(); ++index) {
@@ -6634,18 +6641,16 @@ static int MenuSource(FrontendState& state)
 	else lcd.SetVisible(false);
 	GuiText dateTxt(date.c_str(), dip ? 22 : 18, skin::kInkSoft);
 	Place(dateTxt, 0, dip ? 407 : 359, true);
-	// A dock's: the clock in the top right corner, inside the overscan, the
-	// date just left of it (moved along as the clock's width changes).
-	const auto placeDockDate = [&] {
-		if (!dock) return;
-		dateTxt.SetPosition(-36 + wide - clockTxt.GetTextWidth() - 14, 31);
-	};
+	// A dock's: the date and the clock as one line in the top right corner,
+	// inside the overscan, one size and one colour: the date, a middle dot,
+	// the clock.
+	const auto dockClock = [&]() -> std::string { return date + " \xC2\xB7 " + clock; };
 	if (dock) {
-		clockTxt.SetFontSize(24);
+		clockTxt.SetFontSize(20);
 		clockTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
-		clockTxt.SetPosition(-36 + wide, 26);
-		dateTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
-		placeDockDate();
+		clockTxt.SetPosition(-36 + wide, 28);
+		clockTxt.SetText(dockClock().c_str());
+		dateTxt.SetVisible(false);
 	}
 	// Ending by y 456, inside a TV's overscan: one line under the date on a
 	// bar that dips (or under a dock), three above the bottom on one that bumps.
@@ -6700,7 +6705,7 @@ static int MenuSource(FrontendState& state)
 		dockShape.SetBox(dockX, dockY, dockW, dockH);
 		for (int index = 0; index < kHomeFilterCount; ++index) {
 			viewBtns.push_back(std::make_unique<SkinButton>(skin::roundBtn, skin::roundBtnOver, 0,
-				dockButtonX(index), dockButtonY, nullptr, 0, 0, 0, HomeFilterIcon(index), dockScale));
+				dockButtonX(index), dockButtonY, nullptr, 0, 0, 0, HomeFilterIcon(kDockViewOrder[index]), dockScale));
 		}
 		const float iconScale = wide > 0 ? 0.9f : 0.75f;
 		for (auto& b : viewBtns) b->icon.SetScale(iconScale);
@@ -6712,7 +6717,7 @@ static int MenuSource(FrontendState& state)
 		int marked = dockSearch;
 		if (g_search.empty()) {
 			for (int index = 0; index < kHomeFilterCount; ++index) {
-				if (kHomeFilters[index] == g_filter) marked = index;
+				if (kHomeFilters[kDockViewOrder[index]] == g_filter) marked = index;
 			}
 		}
 		dockShape.SetMark(dockCentreX(marked));
@@ -7745,7 +7750,7 @@ static int MenuSource(FrontendState& state)
 			if (searchHovered) dockHovered = dockSearch;
 			if (layoutHovered) dockHovered = dockLayout;
 			if (settingsHovered) dockHovered = dockSettings;
-			if (dockHovered >= 0 && dockHovered < kHomeFilterCount) nextActionLabel = tr(FilterLabel(kHomeFilters[dockHovered]));
+			if (dockHovered >= 0 && dockHovered < kHomeFilterCount) nextActionLabel = tr(FilterLabel(kHomeFilters[kDockViewOrder[dockHovered]]));
 			if (dockHovered == dockSettings) nextActionLabel = settingsLabel.c_str();
 			// Centred under its button, just below the dock.
 			if (dockHovered >= 0) actionHint.SetPosition(dockCentreX(dockHovered) - 320, dockY + dockH + 3);
@@ -7767,7 +7772,8 @@ static int MenuSource(FrontendState& state)
 			shownPage = grid.Page();
 			shownPages = grid.Pages();
 			// The shelf has no pages: Minus and Plus move it by 12 games.
-			if (shownPages > 1 && !grid.Shelf()) {
+			// A dock has none: the cover row goes round, and the dock says the view.
+			if (shownPages > 1 && !grid.Shelf() && !dock) {
 				setPageText(shownPage + 1, shownPages);
 			} else {
 				pageTxt.SetText("");
@@ -7778,10 +7784,9 @@ static int MenuSource(FrontendState& state)
 		if (nowClock != clock) {
 			clock = nowClock;
 			date = nowDate;
-			clockTxt.SetText(clock.c_str());
+			clockTxt.SetText(dock ? dockClock().c_str() : clock.c_str());
 			lcd.SetClock(clock);
 			dateTxt.SetText(date.c_str());
-			placeDockDate();
 		}
 
 		int movedFrom = -1, movedTo = -1;
@@ -8258,7 +8263,7 @@ static int MenuSource(FrontendState& state)
 			int picked = -1;
 			if (dockView >= 0) {
 				// A dock's button is the view itself (and ends a search).
-				picked = dockView;
+				picked = kDockViewOrder[dockView];
 			} else if (cycle) {
 				for (int index = 0; index < kHomeFilterCount; ++index) {
 					if (kHomeFilters[index] == g_filter) picked = (index + 1) % kHomeFilterCount;

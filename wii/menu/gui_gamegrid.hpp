@@ -296,6 +296,24 @@ private:
     // about its middle; `s` gives its badge texts (nullptr for a peeking
     // neighbour page's, drawn without them).
     void DrawRowCover(int index, Slot* s, float x, float y, float scale, bool on, int alpha);
+    // The cover row is one loop (gui_gamegrid.cpp, "The cover row's loop"):
+    // it moves a cover at a time, the last game followed by the first. Its
+    // places are counted along the loop without wrapping (rowStart the first
+    // whole cover's, rowFocusAt the focus's); RowWrap turns one into a game.
+    bool RowMode() const { return covers && row && !shelf; }
+    bool RowLoops() const;
+    int RowWrap(int place) const;
+    void RowShow(int index);
+    void RowStep(int delta);
+    int RowPlaceAt(int x, int y) const;  // a cover's place from rowStart under (x, y), or kNoPlace
+    float RowX(int place) const;
+    void DrawRow(int alpha);
+    void UpdateRow(GuiTrigger* t, int shoulderPage);
+    static constexpr int kNoPlace = -1000;
+    int rowStart = 0, rowFocusAt = 0;
+    int rowHover = kNoPlace;
+    float rowSlide = 0.0f;  // its offset after a step, easing back to 0
+    int captionSize = 0;    // the caption's font size as last set
     // The cover zoom (CoverZoomed). zoomItem is the game zoomed (-1 none),
     // zoomSlot its tile (-1 on the shelf, which zooms from the box's middle
     // and height, zoomFrom*); zoomBack shows the box's back. zoomShown runs

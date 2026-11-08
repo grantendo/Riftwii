@@ -133,6 +133,10 @@ constexpr int kRowColsWide = 5, kRowCols4x3 = 4;
 constexpr int kRowCoverHWide = 192, kRowCoverH4x3 = 174;
 constexpr int kRowGapWide = 14, kRowGap4x3 = 12;
 constexpr int kRowTop = 76;
+// The lit game's name under the row: larger than the covers view's, and
+// this far below the covers, clear of the lit ring.
+constexpr int kRowCaptionSize = 26;
+constexpr int kRowCaptionGap = 22;
 // The row's box fronts have their corners rounded, this much as drawn.
 constexpr float kRowCorner = 6.0f;
 
@@ -471,6 +475,10 @@ void GuiGameGrid::SetItems(const std::vector<GridItem>* list) {
     laidOut = false;
     leavingPage = -1;  // its names were the old list's
     captionFor = -1;
+    // The cover row starts again from the focus (DrawRow places it).
+    rowStart = rowFocusAt = 0;
+    rowHover = kNoPlace;
+    rowSlide = 0.0f;
 }
 
 void GuiGameGrid::SetCovers(bool on) {
@@ -496,6 +504,10 @@ void GuiGameGrid::SetRow(bool on) {
     slide = 0.0f;
     laidOut = false;
     captionFor = -1;
+    rowStart = rowFocusAt = 0;
+    rowHover = kNoPlace;
+    rowSlide = 0.0f;
+    if (RowMode()) RowShow(focus);
 }
 
 void GuiGameGrid::SetRoomy(bool on) {
@@ -546,6 +558,15 @@ void GuiGameGrid::SetShelf(bool on) {
 void GuiGameGrid::Focus(int index, bool crossfade) {
     if (index < 0 || index >= Count()) index = 0;
     focus = index;
+    if (RowMode()) {
+        // The row comes to it at once, crossfaded, when it is not in view.
+        const int before = rowStart;
+        RowShow(index);
+        if (rowStart != before && crossfade) riftwii::wii::transition::BeginAuto();
+        if (rowStart != before) rowSlide = 0.0f;
+        page = focus / PerPage();
+        return;
+    }
     if (page != focus / PerPage()) {
         // Another page at once (a letter, a search): crossfaded, unless the
         // caller is placing the focus while Home builds up (the scan), where a
@@ -568,6 +589,17 @@ bool GuiGameGrid::TileRect(int index, float& x, float& y, float& w, float& h) co
             w = r->x1 - r->x0;
             h = r->y1 - r->y0;
             return w > 0 && h > 0;
+        }
+        return false;
+    }
+    if (RowMode()) {
+        for (int k = 0; k < Cols(); ++k) {
+            if (RowWrap(rowStart + k) != index) continue;
+            x = RowX(k);
+            y = static_cast<float>(Geo().top);
+            w = static_cast<float>(Geo().tileW);
+            h = static_cast<float>(Geo().tileH);
+            return true;
         }
         return false;
     }
@@ -679,6 +711,10 @@ void GuiGameGrid::Layout() {
 }
 
 void GuiGameGrid::TurnPage(int delta) {
+    if (RowMode()) {
+        RowStep(delta * Cols());
+        return;
+    }
     const int target = page + delta;
     if (target < 0 || target >= Pages()) return;
     const int cols = Cols();
@@ -1018,6 +1054,180 @@ void GuiGameGrid::DrawRowCover(int index, Slot* s, float x, float y, float scale
     }
 }
 
+// The cover row's loop. The row moves a cover at a time, as a console's
+// home row does, and the last game is followed by the first, round and
+// round, when there are games enough that no cover would show twice (the
+// row's covers and one peeking in at each side); with fewer it simply
+// ends. The covers carry no source badges or MODS tags: the dock's views
+// say which games are which. A game is not picked up and moved here, nor
+// zoomed with 1 and 2.
+bool GuiGameGrid::RowLoops() const { return Count() >= Cols() + 2; }
+
+int GuiGameGrid::RowWrap(int place) const {
+    const int n = Count();
+    if (n <= 0) return 0;
+    return ((place % n) + n) % n;
+}
+
+// The row placed so that game `index` is one of its whole covers: where
+// it is if it is already one, else the first. Without the loop the row
+// stays inside the list.
+void GuiGameGrid::RowShow(int index) {
+    const int n = Count();
+    const int cols = Cols();
+    if (n <= 0) {
+        rowStart = rowFocusAt = 0;
+        return;
+    }
+    for (int k = 0; k < cols; ++k) {
+        const int place = rowStart + k;
+        if (!RowLoops() && (place < 0 || place >= n)) continue;
+        if (RowWrap(place) == index) {
+            rowFocusAt = place;
+            return;
+        }
+    }
+    rowStart = RowLoops() ? index : std::max(0, std::min(index, n - cols));
+    rowFocusAt = index;
+}
+
+// The focus `delta` covers on (a page: Cols()), the row following once it
+// would leave it; the covers glide from where they were.
+void GuiGameGrid::RowStep(int delta) {
+    const int n = Count();
+    if (n <= 0 || delta == 0) return;
+    const int cols = Cols();
+    int at = rowFocusAt + delta;
+    if (!RowLoops()) at = std::max(0, std::min(at, n - 1));
+    if (at == rowFocusAt) return;
+    int start = rowStart;
+    if (at < start) start = at;
+    if (at > start + cols - 1) start = at - cols + 1;
+    if (!RowLoops()) start = std::max(0, std::min(start, n - cols));
+    const float stride = static_cast<float>(Geo().tileW + Geo().gapX);
+    // At most two covers' worth behind, as quick presses pile up.
+    rowSlide = std::max(-2.0f * stride, std::min(2.0f * stride, rowSlide + (start - rowStart) * stride));
+    rowStart = start;
+    rowFocusAt = at;
+    focus = RowWrap(at);
+    page = focus / PerPage();
+    rowHover = kNoPlace;
+    soundOver->Play();
+}
+
+float GuiGameGrid::RowX(int place) const {
+    return Geo().left + place * static_cast<float>(Geo().tileW + Geo().gapX) + rowSlide;
+}
+
+// The cover under (x, y): its place from rowStart, a peeking one's (-1 or
+// Cols()) included, or kNoPlace.
+int GuiGameGrid::RowPlaceAt(int x, int y) const {
+    const Geometry& g = Geo();
+    if (y < g.top || y >= g.top + g.tileH) return kNoPlace;
+    for (int k = -1; k <= Cols(); ++k) {
+        const int place = rowStart + k;
+        if (!RowLoops() && (place < 0 || place >= Count())) continue;
+        const float left = RowX(k);
+        if (x >= left && x < left + g.tileW) return k;
+    }
+    return kNoPlace;
+}
+
+void GuiGameGrid::DrawRow(int alpha) {
+    if (Count() <= 0) return;
+    // The focus moved from outside (a letter, a search, Home placing it).
+    if (RowWrap(rowFocusAt) != focus) RowShow(focus);
+    if (rowSlide != 0.0f) {
+        rowSlide = riftwii::wii::transition::Follow(rowSlide, 0.0f, 58.0f);
+        if (rowSlide > -0.5f && rowSlide < 0.5f) rowSlide = 0.0f;
+    }
+    f32 vx, vy, vw, vh;
+    Menu_VisibleArea(&vx, &vy, &vw, &vh);
+    const Geometry& g = Geo();
+    const int cols = Cols();
+    // Lit: the cover pointed at, else the focus while nothing points.
+    const int litPlace = rowHover != kNoPlace ? rowHover : AnyPointer() ? kNoPlace : rowFocusAt - rowStart;
+    // Two either side of the row, for a glide under way.
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int k = -3; k <= cols + 2; ++k) {
+            const bool lit = k == litPlace;
+            if (lit != (pass == 1)) continue;  // the lit one last, on top
+            const int place = rowStart + k;
+            if (!RowLoops() && (place < 0 || place >= Count())) continue;
+            const float x = RowX(k);
+            if (x + g.tileW <= vx || x >= vx + vw) continue;
+            DrawRowCover(RowWrap(place), nullptr, x, static_cast<float>(g.top), 1.0f, lit, alpha);
+        }
+    }
+    // The lit game's name, larger than the covers view's and further down,
+    // clear of the lit ring.
+    const int shown = litPlace != kNoPlace ? RowWrap(rowStart + litPlace) : focus;
+    if (captionSize != kRowCaptionSize) {
+        captionSize = kRowCaptionSize;
+        caption->SetFontSize(kRowCaptionSize);
+        captionFor = -1;
+    }
+    if (shown != captionFor) {
+        captionFor = shown;
+        measure->SetFontSize(kRowCaptionSize);
+        caption->SetText(Fit((*items)[shown].title, static_cast<int>(vw) - 80).c_str());
+        measure->SetFontSize(kCoverTitleSize);
+    }
+    caption->SetPosition(0, g.top + g.tileH + kRowCaptionGap);
+    caption->SetAlpha(alpha);
+    caption->Draw();
+    // The covers either side read ahead, the way the row last moved first.
+    for (int k = -cols; k < 2 * cols; ++k) {
+        const int place = rowStart + k;
+        if (!RowLoops() && (place < 0 || place >= Count())) continue;
+        riftwii::wii::CoverPrefetch(CoverName((*items)[RowWrap(place)]), k >= 0 && k < cols ? 1 : 2);
+    }
+}
+
+void GuiGameGrid::UpdateRow(GuiTrigger* t, int shoulderPage) {
+    if (GenreKeys(t)) return;
+    if (LetterKeys(t)) return;
+    const int cols = Cols();
+    if (shoulderPage != 0) {
+        RowStep(shoulderPage * cols);
+        return;
+    }
+    // Minus and Plus: a row's worth on.
+    if (PressedPage(t, -1) || PressedPage(t, 1)) {
+        RowStep(PressedPage(t, -1) ? -cols : cols);
+        return;
+    }
+    if (t->wpad && t->wpad->ir.valid) {
+        const int k = RowPlaceAt(static_cast<int>(t->wpad->ir.x), static_cast<int>(t->wpad->ir.y));
+        if (k != rowHover && k != kNoPlace) soundOver->Play();
+        rowHover = k;
+        const bool whole = k >= 0 && k < cols;
+        if (whole) {
+            rowFocusAt = rowStart + k;
+            focus = RowWrap(rowFocusAt);
+            page = focus / PerPage();
+        }
+        if (PressedA(t) && k != kNoPlace) {
+            if (whole) {
+                clicked = focus;
+                riftwii::wii::PlayMenuSound(riftwii::wii::MenuSoundEvent::Tile);
+            } else {
+                // A peeking cover: the row moves to bring it in.
+                RowStep(k < 0 ? rowStart - 1 - rowFocusAt : rowStart + cols - rowFocusAt);
+            }
+        }
+        return;
+    }
+    if (AnyPointer()) return;  // another channel points; it decides
+    rowHover = kNoPlace;
+    if (t->Right()) RowStep(1);
+    else if (t->Left()) RowStep(-1);
+    if (PressedA(t)) {
+        clicked = focus;
+        riftwii::wii::PlayMenuSound(riftwii::wii::MenuSoundEvent::Tile);
+    }
+}
+
 // A profile's picture: a quarter or so of the tile, in its top right
 // corner, so the game's own icon, cover or name still shows which game it is.
 float GuiGameGrid::ProfilePictureSize() const {
@@ -1068,6 +1278,7 @@ void GuiGameGrid::DrawChannelLabel(int slot, int alpha) {
         captionFor = shown;
         measure->SetFontSize(kChannelLabelSize);
         caption->SetFontSize(kChannelLabelSize);
+        captionSize = kChannelLabelSize;
         caption->SetText(Fit((*items)[shown].title, 220).c_str());
         measure->SetFontSize(kTitleSize);
     }
@@ -1287,6 +1498,11 @@ void GuiGameGrid::Draw() {
         UpdateEffects();
         return;
     }
+    if (RowMode()) {
+        DrawRow(alpha);
+        UpdateEffects();
+        return;
+    }
     // A turned page eases in from the side, fading up as it comes (with
     // the pages peeking, the strip slides and each tile's place says how
     // bright it is).
@@ -1355,6 +1571,12 @@ void GuiGameGrid::Draw() {
     if (channels && lit >= 0 && lit < PerPage() && iconShown[lit] && page * PerPage() + lit < Count())
         DrawChannelLabel(lit, peek ? PeekAlpha(TileX(lit), alpha) : tileAlpha);
     if (covers) {
+        // Back to the covers' size after the cover row's (SetRow).
+        if (captionSize != 0 && captionSize != kCaptionSize) {
+            captionSize = kCaptionSize;
+            caption->SetFontSize(kCaptionSize);
+            captionFor = -1;
+        }
         // The lit game's name (the focused one's while nothing is lit).
         const int shown = lit >= 0 ? ItemAt(lit) : focus;
         if (shown != captionFor) {
@@ -1707,7 +1929,7 @@ void GuiGameGrid::Update(GuiTrigger* t) {
     // Before anything that returns early: B let go always ends the picking.
     if (t && genreHeld && t->chan == genreChan && !HeldLetterB(t)) genreHeld = false;
     if (state == STATE::DISABLED || !t || Count() == 0) return;
-    if (CoverZoomKeys(t)) return;
+    if (!RowMode() && CoverZoomKeys(t)) return;
     int shoulderPage = ShoulderPage(t);
     // Page Up and Page Down on a USB keyboard and a mouse's wheel turn a
     // page as the shoulder buttons do, one a frame (player 1's controls).
@@ -1717,6 +1939,10 @@ void GuiGameGrid::Update(GuiTrigger* t) {
     }
     if (t->chan >= 0 && t->chan < 4 &&
         (padPages[t->chan].chord || classicPages[t->chan].chord)) return;
+    if (RowMode()) {
+        UpdateRow(t, shoulderPage);
+        return;
+    }
     if (CarryKeys(t, shoulderPage)) return;
     if (GenreKeys(t)) return;
     if (LetterKeys(t)) return;
