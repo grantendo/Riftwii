@@ -330,9 +330,18 @@ Theme parse_theme(const std::string& text, std::vector<std::string>& notes) {
                 }
             } else if (key == "bar") {
                 const std::string lower_val = to_lower(val);
-                if (lower_val == "bump") theme.bar_bump = true;
-                else if (lower_val == "dip") theme.bar_bump = false;
-                else add_note(notes, line_num, "bar: \"" + val + "\" is not dip or bump; the default stays");
+                if (lower_val == "bump") {
+                    theme.bar_bump = true;
+                    theme.bar_dock = false;
+                } else if (lower_val == "dip") {
+                    theme.bar_bump = false;
+                    theme.bar_dock = false;
+                } else if (lower_val == "dock") {
+                    theme.bar_bump = false;
+                    theme.bar_dock = true;
+                } else {
+                    add_note(notes, line_num, "bar: \"" + val + "\" is not dip, bump or dock; the default stays");
+                }
             } else if (key == "shelf_grain") {
                 const std::string lower_val = to_lower(val);
                 if (lower_val == "yes" || lower_val == "true" || lower_val == "on" || lower_val == "1") {

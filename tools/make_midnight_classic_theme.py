@@ -83,7 +83,8 @@ author = grantendo
 [shape]
 corners = 0.5
 gloss = no
-bar = dip
+# Home: no bar; its round buttons in one row on a dock, the clock top right
+bar = dock
 home_menu = wii
 shelf_grain = no
 # A focused thing keeps its size: only the ring shows the focus

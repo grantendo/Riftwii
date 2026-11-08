@@ -538,6 +538,7 @@ void SetChannelCorners(const std::string& choice) {
 }
 
 bool BarBump() { return MenuTheme().bar_bump; }
+bool BarDock() { return MenuTheme().bar_dock; }
 
 bool HomeIos6() { return MenuTheme().home_ios6; }
 

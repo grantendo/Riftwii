@@ -88,8 +88,11 @@ struct Theme {
     bool shelf_grain = false;
     bool gloss = false;    // [shape] gloss: a shine across the top of buttons and tiles
     // [shape] bar: "dip" (the Wii Menu's: the bar sinks in the middle and
-    // the clock sits in the dip) or "bump" (it rises there, the clock above).
+    // the clock sits in the dip) or "bump" (it rises there, the clock above),
+    // or "dock": no bar; Home's round buttons in one row on a rounded dock,
+    // the clock and date in the top right corner (bar_bump stays false).
     bool bar_bump = false;
+    bool bar_dock = false;
     bool home_ios6 = false;  // [shape] home_menu = ios6: the HOME Menu in iOS 6's manner, not the Wii's
     // [shape] hover = still: a focused button, tile or cover keeps its size
     // instead of swelling (the default, "swell"). Its highlight still fades in.

@@ -1838,6 +1838,81 @@ private:
 	static constexpr int kBody = 40;
 };
 
+// A filled capsule (a box with half-round ends) in `colour`. Its edge
+// fades out over one more pixel, so the curve doesn't stair-step on a
+// 480-line picture. Drawn in libwiigui's plain colour state, as
+// Menu_DrawRectangle is.
+static void DrawCapsule(float x, float y, float w, float h, GXColor colour)
+{
+	constexpr float kPi = 3.14159265f;
+	constexpr int kStepsPerEnd = 16;
+	constexpr int kPoints = 2 * (kStepsPerEnd + 1);
+	const float radius = h / 2;
+	const float middleY = y + radius;
+	const float leftCentreX = x + radius, rightCentreX = x + w - radius;
+	// The outline clockwise on screen: the right end from its top to its
+	// bottom, then the left end from its bottom to its top. Each point
+	// keeps its outward direction for the fade.
+	float px[kPoints], py[kPoints], nx[kPoints], ny[kPoints];
+	for (int i = 0; i <= kStepsPerEnd; ++i) {
+		const float right = -kPi / 2 + kPi * i / kStepsPerEnd;
+		nx[i] = std::cos(right);
+		ny[i] = std::sin(right);
+		px[i] = rightCentreX + radius * nx[i];
+		py[i] = middleY + radius * ny[i];
+		const int j = kStepsPerEnd + 1 + i;
+		const float left = kPi / 2 + kPi * i / kStepsPerEnd;
+		nx[j] = std::cos(left);
+		ny[j] = std::sin(left);
+		px[j] = leftCentreX + radius * nx[j];
+		py[j] = middleY + radius * ny[j];
+	}
+	GX_Begin(GX_TRIANGLEFAN, GX_VTXFMT0, kPoints + 2);
+	GX_Position3f32(x + w / 2, middleY, 0.0f);
+	GX_Color4u8(colour.r, colour.g, colour.b, colour.a);
+	for (int i = 0; i <= kPoints; ++i) {
+		const int k = i % kPoints;
+		GX_Position3f32(px[k], py[k], 0.0f);
+		GX_Color4u8(colour.r, colour.g, colour.b, colour.a);
+	}
+	GX_End();
+	GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 2 * (kPoints + 1));
+	for (int i = 0; i <= kPoints; ++i) {
+		const int k = i % kPoints;
+		GX_Position3f32(px[k], py[k], 0.0f);
+		GX_Color4u8(colour.r, colour.g, colour.b, colour.a);
+		GX_Position3f32(px[k] + nx[k], py[k] + ny[k], 0.0f);
+		GX_Color4u8(colour.r, colour.g, colour.b, 0);
+	}
+	GX_End();
+}
+
+// Home's dock (a theme's [shape] bar = dock): no bar, but a capsule in the
+// card colour behind one row of round buttons, as a games console's home
+// screen has, with a short accent line under the button of the view shown.
+class HomeDock : public GuiElement {
+public:
+	void SetBox(int x, int y, int w, int h) {
+		boxX = x;
+		boxY = y;
+		boxW = w;
+		boxH = h;
+	}
+	// The centre of the button to mark, or kNoMark.
+	void SetMark(int centreX) { markX = centreX; }
+	static constexpr int kNoMark = -10000;
+	void Draw() override {
+		DrawCapsule(boxX, boxY, boxW, boxH, skin::kCard);
+		if (markX == kNoMark) return;
+		// Three pixels tall, so it holds on a TV that scales the picture.
+		constexpr int kMarkW = 14, kMarkH = 3;
+		Menu_DrawRectangle(markX - kMarkW / 2, boxY + boxH - kMarkH - 2, kMarkW, kMarkH, skin::kAccent, 1);
+	}
+private:
+	int boxX = 0, boxY = 0, boxW = 0, boxH = 0;
+	int markX = kNoMark;
+};
+
 static std::string g_homeNotice;
 static bool g_homeNoticeShown = false;  // its toast, once
 
@@ -3678,19 +3753,35 @@ static int PickHomeLayout()
 	return picked;
 }
 
-static int PickHomeFilter(const FrontendState& state)
+// Which of a dock's view buttons was pressed (its kHomeFilters index), or -1.
+static int DockViewClicked(std::vector<std::unique_ptr<SkinButton>>& buttons)
 {
-	const auto counts = HomeFilterCounts(state);
+	for (std::size_t index = 0; index < buttons.size(); ++index) {
+		if (buttons[index]->Clicked()) return static_cast<int>(index);
+	}
+	return -1;
+}
+
+// The picture of kHomeFilters[index], on its card in the Show chooser and
+// on its button in a theme's dock.
+static const skin::Tex* HomeFilterIcon(int index)
+{
 	const skin::Tex* icons[kHomeFilterCount] = {
 		&skin::iconMods, &skin::iconDrives, &skin::iconWii, &skin::iconGameCube, &skin::iconHome,
 		&skin::iconControllers, &skin::iconPlay, &skin::iconStarOn
 	};
+	return icons[index];
+}
+
+static int PickHomeFilter(const FrontendState& state)
+{
+	const auto counts = HomeFilterCounts(state);
 	std::vector<TileSpec> tiles(kHomeFilterCount);
 	int current = 0;
 	for (int index = 0; index < kHomeFilterCount; ++index) {
 		tiles[index].label = tr(FilterLabel(kHomeFilters[index]));
 		tiles[index].value = std::to_string(counts[index]);
-		tiles[index].icon = icons[index];
+		tiles[index].icon = HomeFilterIcon(index);
 		if (kHomeFilters[index] == g_filter) current = index;
 	}
 	logf("Home: Show chooser opened at %s\n", FilterLabel(g_filter));
@@ -6436,9 +6527,29 @@ static int MenuSource(FrontendState& state)
 	f32 safeX, safeW;
 	Menu_SafeArea(&safeX, &safeW);
 	const int wide = safeX < 0 ? static_cast<int>(-safeX) : 0;
+	// A theme's dock (bar = dock): no bar, but every view's button, Search,
+	// Layout and Settings in one row on a capsule near the bottom; the view
+	// and the page in the top left corner, the clock and date in the top
+	// right. The round button picture (80 square) is shrunk to fit the row
+	// inside a 4:3 menu's overscan (x 38..602) or a widescreen one's.
+	const bool dock = skin::BarDock();
+	const int dockCount = kHomeFilterCount + 3;
+	const int dockSearch = kHomeFilterCount, dockLayout = kHomeFilterCount + 1, dockSettings = kHomeFilterCount + 2;
+	const float dockScale = wide > 0 ? 0.72f : 0.6f;
+	const int dockPicture = static_cast<int>(80 * dockScale + 0.5f);
+	const int dockPitch = dockPicture + (wide > 0 ? 4 : 2);
+	constexpr int kDockPadX = 8, kDockPadY = 2;
+	const int dockW = (dockCount - 1) * dockPitch + dockPicture + 2 * kDockPadX;
+	const int dockH = dockPicture + 2 * kDockPadY;
+	// Its foot by y 412, leaving the pointed button's name and Home's line
+	// under it room inside the overscan (y 456).
+	const int dockX = 320 - dockW / 2, dockY = 412 - dockH;
+	const auto dockButtonX = [&](int index) { return dockX + kDockPadX + index * dockPitch; };
+	const auto dockCentreX = [&](int index) { return dockButtonX(index) + dockPicture / 2; };
+	const int dockButtonY = dockY + kDockPadY;
 	// The Wii Menu's bar (it dips under the clock): the view and the page
 	// on its high sides, under its line; a bar that bumps: above it.
-	const bool dip = !skin::BarBump();
+	const bool dip = !skin::BarBump() && !dock;
 	GuiText pageTxt("", dip ? 14 : 15, skin::kInkDim);
 	GuiText viewTxt("", dip ? 14 : 16, skin::kAccent);
 	// The room each label has beside the dip; 0 on a bar that bumps, where
@@ -6464,15 +6575,25 @@ static int MenuSource(FrontendState& state)
 		Place(viewTxt, 40 - wide, 324);
 		viewTxt.SetMaxWidth(190 + wide);  // ends by x 230, clear of the clock; a longer one ends in "..."
 	}
+	if (dock) {
+		// The view in the top left corner, in the accent, as a console names
+		// what is lit; the page under the clock in the top right.
+		Place(viewTxt, 36 - wide, 28);
+		viewTxt.SetFontSize(18);
+		viewTxt.SetMaxWidth(330 + wide);
+		pageTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
+		pageTxt.SetPosition(-36 + wide, 58);
+	}
 	// A name while the pointer rests on a round button. Layout and Search
 	// share the bar's status area so neither name covers a game's tile.
 	GuiText settingsHint(tr("Settings"), 17, skin::kInk),
 		actionHint("", 17, skin::kInk);
 	std::string filterLabel;
 	std::string searchLabel;
+	std::string settingsLabel;
 	std::string shownActionLabel;
 	const auto setButtonHints = [&] {
-		const std::string settingsLabel = (g_homePadHints ? "Z: " : "") + std::string(tr("Settings"));
+		settingsLabel = (g_homePadHints ? "Z: " : "") + std::string(tr("Settings"));
 		searchLabel = (g_homePadHints ? "B: " : "") + std::string(tr("Search"));
 		settingsHint.SetText(settingsLabel.c_str());
 	};
@@ -6487,7 +6608,8 @@ static int MenuSource(FrontendState& state)
 	const int searchX = channelsView ? 484 + wide : 568 + wide, searchY = channelsView ? 396 : 24;
 	const int layoutX = channelsView ? 120 - wide : 36 - wide;
 	const int layoutY = searchY;
-	const int statusY = dip ? 434 : 392;
+	// On a dock: under the pointed button's name, which is under the dock.
+	const int statusY = dock ? 436 : dip ? 434 : 392;
 	actionHint.SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
 	actionHint.SetPosition(0, statusY);
 	actionHint.SetMaxWidth((channelsView ? 312 : 400) + 2 * wide);
@@ -6512,13 +6634,27 @@ static int MenuSource(FrontendState& state)
 	else lcd.SetVisible(false);
 	GuiText dateTxt(date.c_str(), dip ? 22 : 18, skin::kInkSoft);
 	Place(dateTxt, 0, dip ? 407 : 359, true);
+	// A dock's: the clock in the top right corner, inside the overscan, the
+	// date just left of it (moved along as the clock's width changes).
+	const auto placeDockDate = [&] {
+		if (!dock) return;
+		dateTxt.SetPosition(-36 + wide - clockTxt.GetTextWidth() - 14, 31);
+	};
+	if (dock) {
+		clockTxt.SetFontSize(24);
+		clockTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
+		clockTxt.SetPosition(-36 + wide, 26);
+		dateTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
+		placeDockDate();
+	}
 	// Ending by y 456, inside a TV's overscan: one line under the date on a
-	// bar that dips, three above the bottom on one that bumps.
-	GuiText statusTxt("", dip ? 15 : 17, skin::kInkSoft);
+	// bar that dips (or under a dock), three above the bottom on one that bumps.
+	const bool oneStatusLine = dip || dock;
+	GuiText statusTxt("", oneStatusLine ? 15 : 17, skin::kInkSoft);
 	Place(statusTxt, 0, statusY, true);
 	// Channels' small buttons end at x 156 and start at x 484. Keep
 	// the centred text inside x 164..476, with 8px of breathing room.
-	statusTxt.SetWrap(true, (channelsView ? 312 : 400) + 2 * wide, dip ? 1 : 3);
+	statusTxt.SetWrap(true, (channelsView ? 312 : 400) + 2 * wide, oneStatusLine ? 1 : 3);
 	EmptyHomeNote emptyNote;
 	emptyNote.SetVisible(false);
 	HomeEmptyState emptyState;
@@ -6530,22 +6666,58 @@ static int MenuSource(FrontendState& state)
 	SkinButton nextFilterBtn(skin::pill, skin::pillOver, 4, 0, 0, nullptr,
 		WPAD_BUTTON_1 | WPAD_CLASSIC_BUTTON_Y, PAD_BUTTON_Y, WIIDRC_BUTTON_X);
 	HideButton(nextFilterBtn);
-	SkinButton settingsBtn(skin::roundBtn, skin::roundBtnOver, 2, 530 + wide, 376, nullptr,
-		WPAD_BUTTON_2 | WPAD_CLASSIC_BUTTON_X, PAD_TRIGGER_Z, WIIDRC_BUTTON_Y, &skin::iconGear);
+	// On a dock each button is placed by its picture's top left corner
+	// (no margin), at the dock's size.
+	const int roundMargin = dock ? 0 : 2;
+	SkinButton settingsBtn(skin::roundBtn, skin::roundBtnOver, roundMargin,
+		dock ? dockButtonX(dockSettings) : 530 + wide, dock ? dockButtonY : 376, nullptr,
+		WPAD_BUTTON_2 | WPAD_CLASSIC_BUTTON_X, PAD_TRIGGER_Z, WIIDRC_BUTTON_Y, &skin::iconGear,
+		dock ? dockScale : 1.0f);
 	// Search: B on a GameCube controller, ZL on a Classic Controller (a
 	// Wii Remote has no button left; point and press A). Small, in the top
 	// right corner above the page arrow, inside the overscan (ends at x 606,
 	// starts at y 24), so the gear's name has room; in Channels on the bar.
-	SkinButton searchBtn(skin::roundBtn, skin::roundBtnOver, 2, searchX, searchY, nullptr,
-		WPAD_CLASSIC_BUTTON_ZL, PAD_BUTTON_B, 0, &skin::iconSearch, 0.5f);
+	SkinButton searchBtn(skin::roundBtn, skin::roundBtnOver, roundMargin,
+		dock ? dockButtonX(dockSearch) : searchX, dock ? dockButtonY : searchY, nullptr,
+		WPAD_CLASSIC_BUTTON_ZL, PAD_BUTTON_B, 0, &skin::iconSearch, dock ? dockScale : 0.5f);
 	searchBtn.backAction = false;
 	// GameCube L/R already turn pages and L modifies letter jumps. Keep
 	// them; its control-stick pointer can reach this button. ZR and GamePad R
 	// are free on Home, and F2 is the keyboard's shortcut.
-	SkinButton layoutBtn(skin::roundBtn, skin::roundBtnOver, 2, layoutX, layoutY, nullptr,
+	SkinButton layoutBtn(skin::roundBtn, skin::roundBtnOver, roundMargin,
+		dock ? dockButtonX(dockLayout) : layoutX, dock ? dockButtonY : layoutY, nullptr,
 		WPAD_CLASSIC_BUTTON_ZR, 0, WIIDRC_BUTTON_R,
-		&skin::layoutIcons[HomeLayoutIndex(riftwii::wii::Settings().home_tiles)], 0.5f);
+		&skin::layoutIcons[HomeLayoutIndex(riftwii::wii::Settings().home_tiles)], dock ? dockScale : 0.5f);
 	HomeLayoutKey layoutKey(layoutBtn);
+	// A dock: a button for each view (the Show chooser's choices, in its
+	// order, which 1 also steps through), then Search, Layout and Settings;
+	// the Show button itself is not needed. The icons a little smaller than
+	// drawn on a full-size round button (28 px), as a console's dock has them.
+	HomeDock dockShape;
+	std::vector<std::unique_ptr<SkinButton>> viewBtns;
+	if (dock) {
+		HideButton(filterBtn);
+		dockShape.SetBox(dockX, dockY, dockW, dockH);
+		for (int index = 0; index < kHomeFilterCount; ++index) {
+			viewBtns.push_back(std::make_unique<SkinButton>(skin::roundBtn, skin::roundBtnOver, 0,
+				dockButtonX(index), dockButtonY, nullptr, 0, 0, 0, HomeFilterIcon(index), dockScale));
+		}
+		const float iconScale = wide > 0 ? 0.9f : 0.75f;
+		for (auto& b : viewBtns) b->icon.SetScale(iconScale);
+		for (SkinButton* b : {&searchBtn, &layoutBtn, &settingsBtn}) b->icon.SetScale(iconScale);
+	}
+	// The dock's mark under the view shown (Search's while a search is on).
+	const auto markDock = [&] {
+		if (!dock) return;
+		int marked = dockSearch;
+		if (g_search.empty()) {
+			for (int index = 0; index < kHomeFilterCount; ++index) {
+				if (kHomeFilters[index] == g_filter) marked = index;
+			}
+		}
+		dockShape.SetMark(dockCentreX(marked));
+	};
+	markDock();
 	// Point at the search button and hold B on a Wii Remote: a game at
 	// random starts, as Start on its page would. Long enough (about a
 	// second) that a B pressed in passing is not taken for it.
@@ -6572,7 +6744,8 @@ static int MenuSource(FrontendState& state)
 	w.Append(&grid);
 	w.Append(&emptyNote);
 	w.Append(&emptyState);
-	w.Append(&bar);
+	if (dock) w.Append(&dockShape);
+	else w.Append(&bar);
 	w.Append(&pageTxt);
 	w.Append(&viewTxt);
 	w.Append(&settingsChip);
@@ -6584,6 +6757,7 @@ static int MenuSource(FrontendState& state)
 	w.Append(&statusTxt);
 	w.Append(&filterBtn.button);
 	w.Append(&nextFilterBtn.button);
+	for (auto& b : viewBtns) w.Append(&b->button);
 	w.Append(&settingsBtn.button);
 	w.Append(&searchBtn.button);
 	w.Append(&layoutBtn.button);
@@ -6652,11 +6826,12 @@ static int MenuSource(FrontendState& state)
 			} else {
 				// Two short lines keep both the category and the source
 				// readable beside the clock in themes with a raised bar.
-				if (sourceLimited) {
+				// A dock's corner has room for both on one line.
+				if (sourceLimited && !dock) {
 					name = std::string(tr(FilterShortLabel(g_filter))) + "\n" +
 						HomeSourceName(riftwii::wii::Settings().home_source);
 				}
-				viewTxt.SetWrap(true, 190 + wide, sourceLimited ? 2 : 1);
+				viewTxt.SetWrap(true, (dock ? 330 : 190) + wide, sourceLimited && !dock ? 2 : 1);
 			}
 			setViewText(name);
 		}
@@ -6759,6 +6934,7 @@ static int MenuSource(FrontendState& state)
 		// already changing some other way).
 		if (crossfade) transition::BeginAuto();
 		showView();
+		markDock();
 		const int focus = keepFocus ? grid.FocusedIndex() : 0;
 		riftwii::wii::ConfigureEmulatorCovers(state.emulators);
 		BuildHome(state, items, entries);
@@ -7544,13 +7720,16 @@ static int MenuSource(FrontendState& state)
 			showStatus();
 		}
 		ClearStaleButtons({&filterBtn.button, &settingsBtn.button, &searchBtn.button, &layoutBtn.button});
+		for (auto& b : viewBtns) ClearStaleButtons({&b->button});
 		// A hover name fades in while the pointer rests on its button, and out after.
 		const auto fade = [](GuiText& hint, int& a, bool on) {
 			a = std::max(0, std::min(255, a + (on ? 40 : -40)));
 			hint.SetAlpha(a);
 			hint.SetVisible(a > 0);
 		};
-		fade(settingsHint, settingsHintAlpha, settingsBtn.button.GetState() == STATE::SELECTED);
+		const bool settingsHovered = settingsBtn.button.GetState() == STATE::SELECTED;
+		// On a dock every button's name comes up under it instead.
+		fade(settingsHint, settingsHintAlpha, settingsHovered && !dock);
 		const bool filterHovered = filterBtn.button.GetState() == STATE::SELECTED;
 		const bool layoutHovered = layoutBtn.button.GetState() == STATE::SELECTED;
 		const bool searchHovered = searchBtn.button.GetState() == STATE::SELECTED;
@@ -7558,12 +7737,26 @@ static int MenuSource(FrontendState& state)
 		if (layoutHovered) nextActionLabel = tr("Layout");
 		else if (searchHovered) nextActionLabel = searchLabel.c_str();
 		else if (filterHovered) nextActionLabel = filterLabel.c_str();
+		int dockHovered = -1;
+		if (dock) {
+			for (int index = 0; index < static_cast<int>(viewBtns.size()); ++index) {
+				if (viewBtns[index]->button.GetState() == STATE::SELECTED) dockHovered = index;
+			}
+			if (searchHovered) dockHovered = dockSearch;
+			if (layoutHovered) dockHovered = dockLayout;
+			if (settingsHovered) dockHovered = dockSettings;
+			if (dockHovered >= 0 && dockHovered < kHomeFilterCount) nextActionLabel = tr(FilterLabel(kHomeFilters[dockHovered]));
+			if (dockHovered == dockSettings) nextActionLabel = settingsLabel.c_str();
+			// Centred under its button, just below the dock.
+			if (dockHovered >= 0) actionHint.SetPosition(dockCentreX(dockHovered) - 320, dockY + dockH + 3);
+		}
 		if (nextActionLabel && shownActionLabel != nextActionLabel) {
 			shownActionLabel = nextActionLabel;
 			actionHint.SetText(nextActionLabel);
 		}
-		fade(actionHint, actionHintAlpha, layoutHovered || searchHovered || filterHovered);
-		statusTxt.SetVisible(actionHintAlpha == 0);
+		fade(actionHint, actionHintAlpha, dock ? dockHovered >= 0 : layoutHovered || searchHovered || filterHovered);
+		// A dock's names have a line of their own, above Home's line.
+		statusTxt.SetVisible(dock || actionHintAlpha == 0);
 		// Not while the scan has the drives and the network: an update
 		// writes to the card and downloads.
 		if (!g_scanning) {
@@ -7588,6 +7781,7 @@ static int MenuSource(FrontendState& state)
 			clockTxt.SetText(clock.c_str());
 			lcd.SetClock(clock);
 			dateTxt.SetText(date.c_str());
+			placeDockDate();
 		}
 
 		int movedFrom = -1, movedTo = -1;
@@ -8042,10 +8236,12 @@ static int MenuSource(FrontendState& state)
 			}
 			g_focusRestored = true;  // a search is the player's own doing
 			refresh(false);
-		} else if (filterBtn.Clicked() || nextFilterBtn.Clicked()) {
+		} else if (filterBtn.Clicked() || nextFilterBtn.Clicked() || DockViewClicked(viewBtns) >= 0) {
+			const int dockView = DockViewClicked(viewBtns);
 			const bool cycle = nextFilterBtn.Clicked();
 			filterBtn.button.ResetState();
 			nextFilterBtn.button.ResetState();
+			for (auto& b : viewBtns) b->button.ResetState();
 			if (grid.Carrying() || grid.CoverZoomed()) {
 				ResumeGui();
 				continue;
@@ -8060,7 +8256,10 @@ static int MenuSource(FrontendState& state)
 			}
 			// Keep the shortcut order fixed, including empty categories.
 			int picked = -1;
-			if (cycle) {
+			if (dockView >= 0) {
+				// A dock's button is the view itself (and ends a search).
+				picked = dockView;
+			} else if (cycle) {
 				for (int index = 0; index < kHomeFilterCount; ++index) {
 					if (kHomeFilters[index] == g_filter) picked = (index + 1) % kHomeFilterCount;
 				}

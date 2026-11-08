@@ -62,6 +62,13 @@ static void test_default_theme() {
     notes.clear();
     EXPECT_TRUE(parse_theme("[shape]\nbar = bump\n", notes).bar_bump);
     EXPECT_EQ(notes.size(), 0U);
+    // bar = dock: Home's buttons in one row; not a bump. A later bar line wins.
+    EXPECT_TRUE(!def.bar_dock);
+    const Theme docked = parse_theme("[shape]\nbar = Dock\n", notes);
+    EXPECT_TRUE(docked.bar_dock);
+    EXPECT_TRUE(!docked.bar_bump);
+    EXPECT_TRUE(!parse_theme("[shape]\nbar = dock\nbar = bump\n", notes).bar_dock);
+    EXPECT_EQ(notes.size(), 0U);
     // The HOME Menu is the Wii's unless a theme says ios6.
     EXPECT_TRUE(!def.home_ios6);
     EXPECT_TRUE(parse_theme("[shape]\nhome_menu = iOS6\n", notes).home_ios6);

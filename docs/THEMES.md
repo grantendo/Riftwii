@@ -72,7 +72,10 @@ Controls the painted parts' shape:
 - `bar`: `dip` or `bump`. Home's bottom bar sinks in the middle with the
   clock in the dip and the date under it, as the Wii Menu's (`dip`, the
   default), or rises there with the clock above it (`bump`). A theme's own
-  `bar.png` should have the same shape.
+  `bar.png` should have the same shape. `dock` draws no bar: Home's round
+  buttons (each view, Search, Layout and Settings) sit in one row on a
+  rounded dock in the `card` colour, the pointed one's name under it, the
+  view in the top left corner and the clock and date in the top right.
 - `home_menu`: `wii` or `ios6`. The HOME Menu as the Wii's own (`wii`, the
   default: black bars, round pale buttons) or as iOS 6 drew things
   (`ios6`: glossy bars in the `bar` colour, dark linen between them,

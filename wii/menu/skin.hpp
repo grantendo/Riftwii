@@ -67,6 +67,7 @@ void SetOnHome(bool home);
 extern Tex noticeIcon[2];                // 28x28 Home's notice signs: news, error
 extern Tex clockDigits;                  // 308x44: Home's clock figures 0-9 and the colon, 28 apart
 bool BarBump();                          // the theme's bar rises in the middle (the clock above it)
+bool BarDock();                          // no bar: Home's buttons in one row on a dock (bar = dock)
 extern Tex tile, tileOver;
 extern Tex tileEmpty;                    // 134x84 an empty place, drawn at -7,-7               // 134x84 game tiles, drawn at -7,-7
 extern Tex coverTile, coverTileOver;     // 80x112 cover tiles, drawn at -7,-7
