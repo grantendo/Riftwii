@@ -5,10 +5,12 @@
 A plain charcoal backdrop, flat grey buttons with no gloss, and one colour
 for the focus: a bold cyan ring a little outside whatever is focused.
 
-The colour values follow RetroArch's Ozone menu, its dark theme
-(menu/drivers/ozone.c, ozone_theme_dark; GPL-3.0-or-later): the #2D2D2D
-backdrop and the #9F9FA1 second lines; the cursor's blue-cyan is brighter
-here so it reads on a TV.
+The greys are the Switch home screen's dark ones, read off screenshots:
+the #1C1C1C backdrop and #2F2F2F for what sits on it (the icon bar there,
+the buttons and cards here). The other colours follow RetroArch's Ozone
+menu, its dark theme (menu/drivers/ozone.c, ozone_theme_dark;
+GPL-3.0-or-later), whose #9F9FA1 second lines it uses; the cursor's
+blue-cyan is brighter here so it reads on a TV.
 
 Drawn for a 480-line picture that a TV scales up, where a one-pixel line
 shimmers or smears:
@@ -48,16 +50,16 @@ def hexrgb(value):
     return np.array([int(value[i:i + 2], 16) for i in (1, 3, 5)], dtype=np.float64)
 
 
-BACKDROP = hexrgb("#2D2D2D")
-CARD = hexrgb("#444446")
-FIELD = hexrgb("#333335")
+BACKDROP = hexrgb("#1C1C1C")
+CARD = hexrgb("#2F2F2F")
+FIELD = hexrgb("#262626")
 LINE = hexrgb("#FFFFFF")
 TEXT = hexrgb("#FFFFFF")
 GLYPH = hexrgb("#E8E8EA")
 CURSOR = hexrgb("#35C0EE")
 PRIMARY = hexrgb("#1F4D5E")
 CHIP_ON = hexrgb("#1F4D5E")
-SELECTION = hexrgb("#38383A")
+SELECTION = hexrgb("#2F2F2F")
 SWITCH_OFF = hexrgb("#5A5A5C")
 KNOB_OFF = hexrgb("#C8C8CA")
 
@@ -104,33 +106,33 @@ warn = #F2545B
 
 # Flat grey cards a clear step lighter than the backdrop. Their edges are
 # the card's own colour (no outlines) and there is no shadow.
-card = #444446
-card_edge = #444446
-card_edge_strong = #444446
+card = #2F2F2F
+card_edge = #2F2F2F
+card_edge_strong = #2F2F2F
 shadow = #00000000
 glow = #35C0EE33
 glyph = #E8E8EA
 
 # Option chips and switches
 chip_on = #1F4D5E
-chip_off = #333335
-chip_off_edge = #333335
+chip_off = #262626
+chip_off_edge = #262626
 switch_off = #5A5A5C
 
 # One charcoal everywhere: the bands and the bar match the backdrop
-bar = #2D2D2D
-backdrop = #2D2D2D
-backdrop_stripe = #2D2D2D
+bar = #1C1C1C
+backdrop = #1C1C1C
+backdrop_stripe = #1C1C1C
 banner_stripe = #FFFFFF0A
-banner_tint = #2D2D2D59
+banner_tint = #1C1C1C59
 
 # Lists and badges
-divider = #3E3E40
-scroll_track = #38383A
+divider = #333333
+scroll_track = #2F2F2F
 scroll_thumb = #6A6A6C
-badge = #555557
-shelf = #444446
-shelf_edge = #262626
+badge = #404040
+shelf = #2F2F2F
+shelf_edge = #141414
 
 # Player pointers
 pointer1 = #3B8FD6
