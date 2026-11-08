@@ -6646,7 +6646,7 @@ static int MenuSource(FrontendState& state)
 	// the clock.
 	const auto dockClock = [&]() -> std::string { return date + " \xC2\xB7 " + clock; };
 	if (dock) {
-		clockTxt.SetFontSize(20);
+		clockTxt.SetFontSize(17);
 		clockTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
 		clockTxt.SetPosition(-36 + wide, 28);
 		clockTxt.SetText(dockClock().c_str());

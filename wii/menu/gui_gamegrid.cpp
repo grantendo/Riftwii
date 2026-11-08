@@ -132,11 +132,17 @@ constexpr int kCoverCols = 6;
 constexpr int kRowColsWide = 5, kRowCols4x3 = 4;
 constexpr int kRowCoverHWide = 192, kRowCoverH4x3 = 174;
 constexpr int kRowGapWide = 14, kRowGap4x3 = 12;
-constexpr int kRowTop = 76;
-// The lit game's name under the row: larger than the covers view's, and
-// this far below the covers, clear of the lit ring.
-constexpr int kRowCaptionSize = 26;
-constexpr int kRowCaptionGap = 22;
+// The row's top: low enough for the lit game's name above it, as a
+// console's home row names the game over its covers, left-aligned with the
+// first whole cover.
+constexpr int kRowTop = 124;
+constexpr int kRowCaptionSize = 24;
+constexpr int kRowCaptionY = 88;
+// The cover frame picture's margin round the 80 x 112 cover, and a corner
+// box large enough to keep its ring's curve whole when it is stretched
+// (unscaled) round the row's covers.
+constexpr float kCoverFrameMargin = 8.0f;
+constexpr float kCoverFrameCorner = 16.0f;
 // The row's box fronts have their corners rounded, this much as drawn.
 constexpr float kRowCorner = 6.0f;
 
@@ -989,10 +995,12 @@ void GuiGameGrid::DrawRowCover(int index, Slot* s, float x, float y, float scale
     const float cx = x + tileW / 2.0f, cy = y + tileH / 2.0f;
     const float w = tileW * scale, h = tileH * scale;
     const float left = cx - w / 2.0f, top = cy - h / 2.0f;
-    // The theme's cover frame and its lit ring, drawn at the row's size
-    // (their cover place is the stored cover's 80 x 112).
+    // The theme's cover frame and its lit ring, stretched round the row's
+    // cover without scaling their edges: the ring stays as thin and as close
+    // as the theme drew it (scaled with the cover it was 1.7 times both).
     const float frameScale = scale * tileH / riftwii::kCoverHeight;
     const skin::Tex& frame = skin::coverTile;
+    const float m = kCoverFrameMargin;
     // The game's full box art front, sharper at this size than the stored
     // cover; not for the disc drive, the player's own cover, GameTDB's
     // second set or a mod tile's own (CoverBeforeBox), as the shelf does.
@@ -1003,10 +1011,10 @@ void GuiGameGrid::DrawRowCover(int index, Slot* s, float x, float y, float scale
     const u8* cover = box ? nullptr : riftwii::wii::CoverTexture(CoverName(item));
     const u8* madeUp = box || cover ? nullptr : MadeUpCoverFor(item);
     const bool art = box || cover || madeUp;
-    if (on || !art) skin::Draw(frame, cx - frame.w / 2.0f, cy - frame.h / 2.0f, alpha, frameScale);
+    if (on || !art) skin::DrawNine(frame, left - m, top - m, w + 2 * m, h + 2 * m, kCoverFrameCorner, alpha);
     if (on)
-        skin::Draw(skin::coverTileOver, cx - frame.w / 2.0f, cy - frame.h / 2.0f,
-                   static_cast<int>(alpha * riftwii::wii::transition::Pulse()), frameScale);
+        skin::DrawNine(skin::coverTileOver, left - m, top - m, w + 2 * m, h + 2 * m, kCoverFrameCorner,
+                       static_cast<int>(alpha * riftwii::wii::transition::Pulse()));
     if (box) {
         // Rounded kRowCorner as drawn: in the front's own texels.
         const float radius = kRowCorner * riftwii::kBoxHeight / tileH;
@@ -1159,21 +1167,22 @@ void GuiGameGrid::DrawRow(int alpha) {
             DrawRowCover(RowWrap(place), nullptr, x, static_cast<float>(g.top), 1.0f, lit, alpha);
         }
     }
-    // The lit game's name, larger than the covers view's and further down,
-    // clear of the lit ring.
+    // The lit game's name over the row, from the first whole cover's left
+    // edge, larger than the covers view's.
     const int shown = litPlace != kNoPlace ? RowWrap(rowStart + litPlace) : focus;
     if (captionSize != kRowCaptionSize) {
         captionSize = kRowCaptionSize;
         caption->SetFontSize(kRowCaptionSize);
+        caption->SetAlignment(ALIGN_H::LEFT, ALIGN_V::TOP);
         captionFor = -1;
     }
     if (shown != captionFor) {
         captionFor = shown;
         measure->SetFontSize(kRowCaptionSize);
-        caption->SetText(Fit((*items)[shown].title, static_cast<int>(vw) - 80).c_str());
+        caption->SetText(Fit((*items)[shown].title, static_cast<int>(vx + vw) - g.left - 40).c_str());
         measure->SetFontSize(kCoverTitleSize);
     }
-    caption->SetPosition(0, g.top + g.tileH + kRowCaptionGap);
+    caption->SetPosition(g.left, kRowCaptionY);
     caption->SetAlpha(alpha);
     caption->Draw();
     // The covers either side read ahead, the way the row last moved first.
@@ -1278,6 +1287,7 @@ void GuiGameGrid::DrawChannelLabel(int slot, int alpha) {
         captionFor = shown;
         measure->SetFontSize(kChannelLabelSize);
         caption->SetFontSize(kChannelLabelSize);
+        caption->SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
         captionSize = kChannelLabelSize;
         caption->SetText(Fit((*items)[shown].title, 220).c_str());
         measure->SetFontSize(kTitleSize);
@@ -1575,6 +1585,7 @@ void GuiGameGrid::Draw() {
         if (captionSize != 0 && captionSize != kCaptionSize) {
             captionSize = kCaptionSize;
             caption->SetFontSize(kCaptionSize);
+            caption->SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
             captionFor = -1;
         }
         // The lit game's name (the focused one's while nothing is lit).

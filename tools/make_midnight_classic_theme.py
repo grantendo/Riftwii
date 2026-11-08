@@ -230,10 +230,10 @@ def fill(body):
     return np.clip(body + 0.5, 0, 1)
 
 
-def focus_ring(c, body):
-    """The ring GAP pixels outside a body's signed distance, RING wide."""
+def focus_ring(c, body, gap=GAP, ring=RING):
+    """The ring `gap` pixels outside a body's signed distance, `ring` wide."""
     outward = -body
-    coverage = np.clip(GAP + RING - outward + 0.5, 0, 1) * np.clip(outward - GAP + 0.5, 0, 1)
+    coverage = np.clip(gap + ring - outward + 0.5, 0, 1) * np.clip(outward - gap + 0.5, 0, 1)
     c.over(coverage, CURSOR)
 
 
@@ -335,12 +335,15 @@ def tile_empty():
 
 def cover_tile(over):
     """96x128: behind a cover (80x112 at 8, 8: the cover is drawn on top),
-    a flat slot; focused, the ring round the cover (3 + 4 fits the 8)."""
+    a flat slot; focused, a thinner ring hugging the cover, 2 out and 3 wide,
+    as a console's home row has it (the Cover row draws it unscaled, round
+    covers rounded 6). Covers are the biggest things lit, so the buttons'
+    bolder ring read as too heavy round them."""
     c = Canvas(96, 128)
-    body = rounded_box(c, 8, 8, 80, 112, 3)
+    body = rounded_box(c, 8, 8, 80, 112, 6)
     c.over(fill(body), CARD)
     if over:
-        focus_ring(c, body)
+        focus_ring(c, body, gap=2.0, ring=3.0)
     return c.image()
 
 
