@@ -761,10 +761,10 @@ bool find_pad_functions(const DolHeader& dol, bool demo, bool as_classic, bool u
     }
     if (pad.read == 0) {
         // GameCube controllers as Classic Controllers: the hook reads the
-        // adapter itself from the game's KPAD reads (#587's question 4);
-        // the video library's two screen-dimming resets are found as a pair.
-        const std::uint32_t remotes_reset = find_remotes_idle_reset(text);
-        pad.idle_reset = remotes_reset != 0 ? remotes_reset + 16u : 0u;
+        // adapter itself from the game's KPAD reads (#587's question 4).
+        // The screen stays lit through the Wii Remotes' dimming reset,
+        // which GameCube presses never reach (there's no ports' one to use).
+        pad.idle_reset = find_wii_remote_idle_reset(text, find_wpad_probe(text));
         logf("GameCube adapter: no PADRead in this game; the hook reads the GameCube controllers itself for them as "
              "Classic Controllers\n");
     }
@@ -774,8 +774,15 @@ bool find_pad_functions(const DolHeader& dol, bool demo, bool as_classic, bool u
     out.idle_reset = pad.idle_reset;
     // A screen-dimming reset of 0 means none was found: with the Wii's
     // burn-in reduction on, adapter-only play may then dim the screen.
-    logf("GameCube adapter: PADRead at 0x%08x (%u error stores), PADControlMotor at 0x%08x, screen-dimming reset at 0x%08x\n",
-         out.read, out.read_sites, out.motor, out.idle_reset);
+    if (out.read != 0) {
+        logf("GameCube adapter: PADRead at 0x%08x (%u error stores), PADControlMotor at 0x%08x, screen-dimming reset at "
+             "0x%08x\n",
+             out.read, out.read_sites, out.motor, out.idle_reset);
+    } else {
+        logf("GameCube adapter: the Wii Remotes' screen-dimming reset at 0x%08x (0: none found; with the Wii's burn-in "
+             "reduction on, play on GameCube controllers alone may dim the screen)\n",
+             out.idle_reset);
+    }
     // Settings > Leaving a game, HOME only: the combo leaves nothing, so
     // its hooks are not put in at all (HOME opens the game's HOME Menu).
     if (Settings().leave_buttons == "off") {
