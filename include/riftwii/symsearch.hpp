@@ -99,6 +99,14 @@ struct PadSymbols {
 // when the game has none.
 bool find_pad_symbols(const std::vector<CodeRange>& text, PadSymbols& out, std::string& error);
 
+// The Wii Remotes' screen-dimming reset (__VIResetRFIdle), found without a
+// PADRead to start from: the one-store reset (a flag cleared, 1 returned,
+// the flag r13- or lis-based) that the Wii Remote library calls, from
+// within 64 KiB of `wpad_probe`. Clearing it keeps the picture on, as the
+// ports' reset does in games that read GameCube controllers. 0 when none,
+// or two different ones, are called there.
+std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std::uint32_t wpad_probe);
+
 // PADControlMotor(chan, command) in a GameCube game's own SDK (the one the
 // game was linked with, not the Wii's): after its checks it keeps the
 // command's two low bits (`rlwinm rX, rY, 0, 30, 31`), ORs them into the

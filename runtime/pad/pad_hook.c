@@ -534,15 +534,24 @@ static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t 
  * Interrupts on, as a game thread calls it. */
 static void pad_gcwii_read_pads(struct rt_pad_context* c) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
-    uint32_t msr;
+    uint32_t msr, i;
     int read;
-    if (c->pad_read == 0) return;
     msr = interrupts_off();
     read = rtgcwii_should_read(w, now(), c->ticks_per_ms);
     interrupts_restore(msr);
     if (!read) return;
     w->reading = 1;
-    ((uint32_t(*)(uint8_t*))(uintptr_t)c->pad_read)(c->pad_scratch);
+    if (c->pad_read != 0) {
+        ((uint32_t(*)(uint8_t*))(uintptr_t)c->pad_read)(c->pad_scratch);
+    } else {
+        /* A game with no PADRead at all (#587's question 4: LEGO Star Wars
+         * III, Batman): the hook's own side is run as if PADRead had found
+         * no controller in any of the console's ports, and the adapter
+         * fills them as it would. */
+        for (i = 0; i < sizeof(c->pad_scratch); ++i) c->pad_scratch[i] = 0;
+        for (i = 0; i < GCAD_PORTS; ++i) c->pad_scratch[i * PAD_STATUS_BYTES + 10] = 0xFF;  /* no controller */
+        (void)pad_on_read(c, c->pad_scratch, 0);
+    }
     w->reading = 0;
 }
 

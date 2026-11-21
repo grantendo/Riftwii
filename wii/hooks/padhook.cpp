@@ -755,9 +755,18 @@ bool find_pad_functions(const DolHeader& dol, bool demo, bool as_classic, bool u
         why = "the PAD search is unsure: " + error;
         return false;
     }
-    if (pad.read == 0) {
+    if (pad.read == 0 && !as_classic) {
         why = "this game has no GameCube controller support (no PADRead)";
         return false;
+    }
+    if (pad.read == 0) {
+        // GameCube controllers as Classic Controllers: the hook reads the
+        // adapter itself from the game's KPAD reads (#587's question 4);
+        // the video library's two screen-dimming resets are found as a pair.
+        const std::uint32_t remotes_reset = find_remotes_idle_reset(text);
+        pad.idle_reset = remotes_reset != 0 ? remotes_reset + 16u : 0u;
+        logf("GameCube adapter: no PADRead in this game; the hook reads the GameCube controllers itself for them as "
+             "Classic Controllers\n");
     }
     out.read = pad.read;
     out.read_sites = pad.read_sites;
@@ -910,7 +919,9 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
                    const std::vector<MemoryPatch>& patches, PadHook& out, std::string& why,
                    std::uint32_t mem1_veneer, std::uint32_t stage_base) {
     const bool demo = out.demo;
-    if (out.read == 0) {
+    // Without PADRead only GameCube controllers as Classic Controllers can
+    // go on (checked again once their KPAD hooks are known, below).
+    if (out.read == 0 && !out.as_classic) {
         why = "PADRead was not found";
         return false;
     }
@@ -1040,6 +1051,12 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     // byte, and with Settings > Leaving a game on HOME only none were
     // looked for. Else the blob without it, as before it.
     out.home_blob = !code_build && out.kpad_read != 0 && out.wpad_probe != 0 && out.hbm_calc != 0 && out.hbm_select != 0;
+    if (out.read == 0 && !out.home_blob) {
+        why = "the game has no PADRead, and the KPAD read, WPADProbe or HOME Menu that GameCube controllers as "
+              "Classic Controllers would use instead wasn't found";
+        close_pad_handles(out);
+        return false;
+    }
     if (!out.home_blob) {
         if (code_build && out.kpad_read != 0)
             logf("GameCube adapter: no HOME Menu by the controller in a code build (the combo is the way back)\n");

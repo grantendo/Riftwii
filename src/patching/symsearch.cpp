@@ -559,6 +559,65 @@ std::uint32_t function_start(const std::vector<CodeRange>& text, std::uint32_t a
 
 }  // namespace
 
+namespace {
+
+// One of the video library's screen-dimming resets at word `i` of `r`: a
+// flag cleared by one store, and 1 returned. `li r0,0; stw r0,d(r13);
+// li r3,1; blr` (the middle two either way round), or with the flag's address made by `lis rX` before or
+// after the `li r0,0` (LEGO Star Wars III's other reset).
+bool one_store_reset(const CodeRange& r, std::size_t i) {
+    const std::size_t words = r.size / 4;
+    const auto w = [&](std::size_t k) { return be32(r.bytes + (i + k) * 4); };
+    if (i + 4 > words) return false;
+    // The store and the return value in either order, as idle_reset_flag takes them.
+    if (w(0) == kLiR0Zero && w(3) == kBlr &&
+        ((is_stw_r0_sda(w(1)) && w(2) == kLiR3One) || (w(1) == kLiR3One && is_stw_r0_sda(w(2)))))
+        return true;
+    if (i + 5 > words) return false;
+    const auto lis_then_store = [&](std::uint32_t lis, std::uint32_t store) {
+        const std::uint32_t rx = (lis >> 21) & 31u;
+        return (lis & 0xFC1F0000u) == 0x3C000000u && (store >> 26) == 36u && ((store >> 21) & 31u) == 0u &&
+               ((store >> 16) & 31u) == rx && rx != 0u;
+    };
+    if (w(0) == kLiR0Zero && lis_then_store(w(1), w(2)) && w(3) == kLiR3One && w(4) == kBlr) return true;
+    return lis_then_store(w(0), w(2)) && w(1) == kLiR0Zero && w(3) == kLiR3One && w(4) == kBlr;
+}
+
+}  // namespace
+
+std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std::uint32_t wpad_probe) {
+    if (wpad_probe == 0) return 0;
+    // Every bl within kWpadReach of WPADProbe (the Wii Remote library's own
+    // code) whose target is a one-store reset: the library calls the Wii
+    // Remotes' one on each report (LEGO Star Wars III: 0x8080B700 from
+    // 0x807C1578 and 0x807C35F8, WPADProbe at 0x807C3A10; Kamen Rider:
+    // Dragon Knight: 0x8026C520 from 0x8026F988 and 0x80271864, WPADProbe
+    // at 0x80271CB0). One such target, or none.
+    constexpr std::uint32_t kWpadReach = 0x10000;
+    std::uint32_t found = 0;
+    for (const CodeRange& r : text) {
+        const std::size_t words = r.size / 4;
+        for (std::size_t i = 0; i < words; ++i) {
+            const std::uint32_t at = r.address + static_cast<std::uint32_t>(i * 4);
+            if (at + kWpadReach < wpad_probe || at > wpad_probe + kWpadReach) continue;
+            const std::uint32_t w = be32(r.bytes + i * 4);
+            if (!is_bl(w)) continue;
+            const std::uint32_t target = bl_target(at, w);
+            bool shaped = false;
+            for (const CodeRange& t : text) {
+                if (target >= t.address && target - t.address + 16 <= t.size && ((target - t.address) & 3u) == 0) {
+                    shaped = one_store_reset(t, (target - t.address) / 4);
+                    break;
+                }
+            }
+            if (!shaped) continue;
+            if (found != 0 && found != target) return 0;  // two: not guessed
+            found = target;
+        }
+    }
+    return found;
+}
+
 bool find_pad_symbols(const std::vector<CodeRange>& text, PadSymbols& out, std::string& error) {
     out = PadSymbols{};
     std::map<std::uint32_t, std::set<std::uint32_t>> read_memsets;  // function -> memset targets
