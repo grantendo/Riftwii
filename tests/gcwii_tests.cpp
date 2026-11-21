@@ -253,31 +253,31 @@ void TestOneChangeAtATimeAndKpadRead() {
     rtgcwii_pads(&w, pads.s, 1000);
     std::uint32_t chan = 99;
     std::int32_t reason = 5;
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 0u);
     EXPECT_EQ(reason, 0);
     // A nested read unplugs port 1 before port 3 is told: the next change
     // comes from the state now, so channel 0 goes, then channel 2 joins.
     pads.unplug(0);
     rtgcwii_pads(&w, pads.s, 1000 + kGrace);
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 0u);
     EXPECT_EQ(reason, -1);
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 2u);
     EXPECT_EQ(reason, 0);
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 0);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 0);
 
     // A real Wii Remote's samples on channel 2: it wins at once.
     rtgcwii_kpad_read(&w, 2, 1, RTGCWII_NO_ERROR);
     EXPECT_EQ(rtgcwii_on(&w, 2), 0);
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 0);  // its library tells the game
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 0);  // its library tells the game
     // No samples this frame isn't "gone"; the read's "no controller" is.
     rtgcwii_kpad_read(&w, 2, 0, RTGCWII_NO_ERROR);
     EXPECT_EQ(rtgcwii_on(&w, 2), 0);
     rtgcwii_kpad_read(&w, 2, 0, -1);
     EXPECT_EQ(rtgcwii_on(&w, 2), 1);
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 2u);
     EXPECT_EQ(reason, 0);
 
@@ -311,26 +311,55 @@ void TestSkipMissingCallback() {
     rtgcwii_pads(&w, pads.s, 1000);
     std::uint32_t chan = 99;
     std::int32_t reason = 5;
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 0u);
     rtgcwii_not_told(&w, 0);  // channel 0's callback isn't set
-    EXPECT_EQ(rtgcwii_next_change(&w, 1u, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 1u, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 1u);
     EXPECT_EQ(reason, 0);
-    EXPECT_EQ(rtgcwii_next_change(&w, 3u, &chan, &reason), 0);
+    EXPECT_EQ(rtgcwii_next_change(&w, 3u, 0, &chan, &reason), 0);
     // Next pass: channel 0 again.
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 0u);
 
     // A "gone" that couldn't be told stays pending.
     pads.unplug(1);
     rtgcwii_pads(&w, pads.s, 1000 + kGrace);
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 1u);
     EXPECT_EQ(reason, -1);
     rtgcwii_still_told(&w, 1);
-    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 1u);
+    EXPECT_EQ(reason, -1);
+}
+
+// A dropped report doesn't give a press again; a channel the HOME Menu's
+// stand-in holds isn't reported gone until it lets go.
+void TestDroppedReportAndHomeKeep() {
+    rtgcwii w = fresh();
+    Pads pads;
+    std::uint32_t hold = 0, trig = 0, release = 0;
+    std::int32_t axes[6];
+    pads.plug(0);
+    rtgcwii_pads(&w, pads.s, 1000);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    pads.plug(0, kGcA);
+    rtgcwii_pads(&w, pads.s, 1016);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    EXPECT_EQ(trig, RTHOME_CL_A);
+    pads.unplug(0);                    // a dropped report
+    rtgcwii_pads(&w, pads.s, 1032);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    EXPECT_EQ(trig, 0u);               // not pressed again
+    EXPECT_EQ(hold, RTHOME_CL_A);      // still held
+
+    std::uint32_t chan = 99;
+    std::int32_t reason = 5;
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);  // channel 0 joined
+    rtgcwii_pads(&w, pads.s, 1032 + kGrace);                       // unplugged for good
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 1u, &chan, &reason), 0);  // the HOME Menu's stand-in has it
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);   // let go: gone now
     EXPECT_EQ(reason, -1);
 }
 
@@ -345,6 +374,7 @@ int main() {
     TestPressBetweenReadsAndLateCallback();
     TestOneChangeAtATimeAndKpadRead();
     TestSkipMissingCallback();
+    TestDroppedReportAndHomeKeep();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

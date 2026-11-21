@@ -94,8 +94,10 @@ void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel);
  * from what is true now (so a PADRead nested in another, from an SI
  * callback, can't leave a stale "gone" last): 1 with `channel` and
  * `reason` (0 connected, -1 gone), noted as told; 0 when there is none.
- * Channels in `skip` (one bit each) are passed over this time. */
-int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t* channel, int32_t* reason);
+ * Channels in `skip` (one bit each) are passed over this time; channels in
+ * `keep` are never reported gone (the HOME Menu's stand-in has them now,
+ * and its own end tells the game). */
+int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason);
 
 /* A KPAD read on `channel` returned `result` samples, `error` its WPAD
  * error where the read gives one (RTGCWII_NO_ERROR otherwise): samples mean

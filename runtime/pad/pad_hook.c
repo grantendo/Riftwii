@@ -817,11 +817,19 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
         return;
     }
     w->telling = 1;
+    /* The HOME Menu's stand-in's channel stays connected while it is up
+     * (a GameCube controller unplugged with its HOME Menu open); the gone
+     * comes once the stand-in has ended. */
+    uint32_t keep = 0;
+    if (c->home_on) {
+        const uint32_t home_channel = rthome_stand_in(&c->home, now());
+        if (home_channel != RTHOME_NO_CHANNEL) keep = 1u << home_channel;
+    }
     /* A channel whose callback isn't set yet is passed over for the rest
      * of this pass (each channel tried once), not left blocking the others;
      * it is tried again at the next PADRead. */
     uint32_t skip = 0;
-    while (rtgcwii_next_change(w, skip, &chan, &reason)) {
+    while (rtgcwii_next_change(w, skip, keep, &chan, &reason)) {
         int told;
         interrupts_restore(msr);
         told = pad_tell_connect(c, chan, reason);
@@ -937,7 +945,12 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
          * that reads only the channels its connect callback heard of; on a
          * channel the permanent stand-in holds, the game already has it. */
         uint32_t now_channel = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
-        if (now_channel != RTHOME_NO_CHANNEL && ((c->home.own >> now_channel) & 1u)) now_channel = RTHOME_NO_CHANNEL;
+        /* On a channel the permanent stand-in holds, or has told the game
+         * about (its controller may have just been unplugged), the game has
+         * it already; the permanent stand-in's telling covers its end. */
+        const uint32_t told_by_gcwii = c->gcwii ? ((const struct rtgcwii*)(uintptr_t)c->gcwii)->told : 0u;
+        if (now_channel != RTHOME_NO_CHANNEL && (((c->home.own | told_by_gcwii) >> now_channel) & 1u))
+            now_channel = RTHOME_NO_CHANNEL;
         const uint32_t told_byte = (c->kpad_connect_info >> 16) & 0xFFu;
         const uint32_t told = told_byte == 0 ? RTHOME_NO_CHANNEL : told_byte - 1u;
         const uint32_t next = rthome_connect_change(told, now_channel, &leave, &join);
