@@ -174,6 +174,36 @@ void TestHomeOnOwnChannel() {
     EXPECT_EQ(rthome_stand_in(&h, 1200), 1u);
 }
 
+// When the blob calls the game's PADRead itself: only when the game hasn't
+// within 50 ms, at most every 8 ms, and never fooled by the time base's low
+// word wrapping (a signed difference 35 s after the game's one PADRead
+// looked recent, and Dragon Knight's save screens took no presses).
+void TestShouldRead() {
+    constexpr std::uint32_t kTicksPerMs = 1000;  // the tests' clock
+    rtgcwii w = fresh();
+    // The game never called PADRead: read, then not again within 8 ms.
+    EXPECT_EQ(rtgcwii_should_read(&w, 1000000, kTicksPerMs), 1);
+    EXPECT_EQ(rtgcwii_should_read(&w, 1000000 + 7 * kTicksPerMs, kTicksPerMs), 0);
+    EXPECT_EQ(rtgcwii_should_read(&w, 1000000 + 9 * kTicksPerMs, kTicksPerMs), 1);
+    // The game reads its pads itself: the blob stays out while it does.
+    rtgcwii_read_by(&w, 2000000, 0);
+    EXPECT_EQ(rtgcwii_should_read(&w, 2000000 + 20 * kTicksPerMs, kTicksPerMs), 0);
+    // The blob's own reads don't count as the game's.
+    rtgcwii_read_by(&w, 2000000 + 30 * kTicksPerMs, 1);
+    EXPECT_EQ(rtgcwii_should_read(&w, 2000000 + 60 * kTicksPerMs, kTicksPerMs), 1);
+    // The game called it once, long ago (more than half the time base's
+    // range): still stale, and forgotten, not "just now".
+    rtgcwii v = fresh();
+    rtgcwii_read_by(&v, 0x10000000u, 0);
+    EXPECT_EQ(rtgcwii_should_read(&v, 0x10000000u + 0x90000000u, kTicksPerMs), 1);
+    EXPECT_EQ(v.game_read, 0u);
+    // ... and once forgotten, the low word coming round again can't bring it back.
+    EXPECT_EQ(rtgcwii_should_read(&v, 0x10000000u + 9 * kTicksPerMs, kTicksPerMs), 1);
+    // Not while its own call is under way (the game's PADRead runs the hook).
+    v.reading = 1;
+    EXPECT_EQ(rtgcwii_should_read(&v, 0x20000000u, kTicksPerMs), 0);
+}
+
 }  // namespace
 
 int main() {
@@ -181,6 +211,7 @@ int main() {
     TestRealControllerWins();
     TestButtonsAndSticks();
     TestHomeOnOwnChannel();
+    TestShouldRead();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

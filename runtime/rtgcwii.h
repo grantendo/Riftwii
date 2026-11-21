@@ -68,4 +68,18 @@ void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join);
 void rtgcwii_classic(const struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
                      int32_t axes[6]);
 
+/* At a KPAD read or WPADProbe: whether the blob should call the game's
+ * PADRead now (and, if so, notes the time it does). Only when the game
+ * hasn't called it itself within 50 ms, and at most every 8 ms (about once
+ * a frame). Times are compared unsigned, and a read by the game that has
+ * gone stale is forgotten: the time base's low word passes its halfway
+ * mark every 35 s, and a signed difference from a read that long ago
+ * turned negative and looked recent (Dragon Knight called PADRead once at
+ * start-up, and its save screens then took no presses). */
+int rtgcwii_should_read(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
+
+/* PADRead ran at `now`; `own`: the blob's own call (rtgcwii_should_read),
+ * else the game's. */
+void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own);
+
 #endif

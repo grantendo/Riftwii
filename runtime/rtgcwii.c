@@ -59,6 +59,21 @@ void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join) 
     w->told = (w->told | *join) & ~*leave;
 }
 
+int rtgcwii_should_read(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
+    if (w->reading) return 0;
+    if (w->game_read != 0) {
+        if (elapsed(now, w->game_read) <= 50u * ticks_per_ms) return 0;
+        w->game_read = 0;
+    }
+    if (w->own_read != 0 && elapsed(now, w->own_read) < 8u * ticks_per_ms) return 0;
+    w->own_read = now | 1u;
+    return 1;
+}
+
+void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own) {
+    if (!own) w->game_read = now | 1u;
+}
+
 void rtgcwii_classic(const struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
                      int32_t axes[6]) {
     uint32_t i;
