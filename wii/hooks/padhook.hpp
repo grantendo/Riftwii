@@ -130,6 +130,12 @@ struct PadHook {
     // hooks it shares (runtime/rtgcwii.h).
     bool as_classic = false;
     std::uint32_t gcwii_base = 0;           // where the state went, 0: none
+    // For it with no adapter (a Wii's own ports): the hook goes in, USB
+    // untouched (RT_PAD_FLAG_NO_USB).
+    bool no_usb = false;
+    // Settings > Leaving a game, HOME only: its hooks were found for it,
+    // but the HOME Menu's stand-in stays off (the combo leaves nothing).
+    bool home_combo_off = false;
     // The HOME Menu; any of the four required (kpad_read, wpad_probe,
     // hbm_calc, hbm_select) 0: off.
     std::uint32_t kpad_read = 0;          // the KPAD read (KPADReadEx in newer SDKs)
@@ -187,9 +193,12 @@ AdapterSeen ogc_adapter(std::int32_t& dev_id, std::string& devices);
 
 // While boot.log is still open: PADRead and PADControlMotor in the
 // loaded game, into a fresh `out`, then /dev/usb/hid opened for the game
-// (libogc's USB is shut down for it). False (with a reason) turns the
-// adapter off.
-bool find_pad_functions(const DolHeader& dol, bool demo, PadHook& out, std::string& why);
+// (libogc's USB is shut down for it). `as_classic`: the game's GameCube
+// controllers as Classic Controllers setting (its KPAD hooks are looked
+// for even with Leaving a game on HOME only); `usb` false: no adapter is
+// wanted and /dev/usb/hid is never opened (the Wii's own ports only).
+// False (with a reason) turns the adapter off.
+bool find_pad_functions(const DolHeader& dol, bool demo, bool as_classic, bool usb, PadHook& out, std::string& why);
 
 // The adapter's /dev/usb/hid handle for the game, with its HID version and
 // the adapter's v5 device id from the USB list (-1: none): the one

@@ -548,10 +548,10 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
 
 /* The permanent stand-in's status on `chan` (rtgcwii.h): the Classic
  * Controller alone, the Wii Remote's own buttons and pointer at rest. */
-static void pad_gcwii_status(const struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
+static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
     struct pad_classic p;
     uint32_t i;
-    rtgcwii_classic((const struct rtgcwii*)(uintptr_t)c->gcwii, chan, &p.hold, &p.trig, &p.release, p.axes);
+    rtgcwii_classic((struct rtgcwii*)(uintptr_t)c->gcwii, chan, &p.hold, &p.trig, &p.release, p.axes);
     p.remote_hold = p.remote_trig = p.remote_release = 0;
     for (i = 0; i < 2; ++i) p.pointer[i] = 0;
     p.menu_open = 0;
@@ -762,7 +762,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
-            rtgcwii_classic((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan, &hold, &trig, &release, axes);
+            hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
             for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
         }
         interrupts_restore(msr);
@@ -777,13 +777,14 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 /* The game's connect callback for channel `chan`, told `reason` (0:
  * connected, -1: no controller, as WPAD reports them). Interrupts as the
  * game's PADRead had them: the game's code runs here. */
-static void pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32_t reason) {
+static int pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32_t reason) {
     const uint32_t stride = c->kpad_connect_info & 0xFFFFu;
     uint32_t callback;
-    if (chan >= RTHOME_CHANNELS || c->kpad_connect == 0) return;
+    if (chan >= RTHOME_CHANNELS || c->kpad_connect == 0) return 0;
     callback = *(const volatile uint32_t*)(uintptr_t)(c->kpad_connect + chan * stride);
-    if (callback == 0 || !pad_in_ram((const void*)(uintptr_t)callback)) return;
+    if (callback == 0 || !pad_in_ram((const void*)(uintptr_t)callback)) return 0;
     ((void (*)(int32_t, int32_t))(uintptr_t)callback)((int32_t)chan, reason);
+    return 1;
 }
 
 #endif
@@ -808,8 +809,12 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
          * its analog bytes (from 2: stick x, y, C x, y, L, R). */
         if (cal) rtpadcal_apply(&cal->console[i], own + 2);
     }
-    gcad_tick(g, t);
-    usb_present = gcad_read_ports(g, taken, usb_pads, t);
+    if (c->flags & RT_PAD_FLAG_NO_USB) {
+        usb_present = 0;
+    } else {
+        gcad_tick(g, t);
+        usb_present = gcad_read_ports(g, taken, usb_pads, t);
+    }
     for (i = 0; i < GCAD_PORTS; ++i) {
         uint8_t* s = status + i * PAD_STATUS_BYTES;
         gcad_pad pad;
@@ -882,11 +887,17 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
 #endif
     interrupts_restore(msr);
 #ifndef RT_PAD_NO_HOME
-    if (leave != RTHOME_NO_CHANNEL) pad_tell_connect(c, leave, -1);
-    if (join != RTHOME_NO_CHANNEL) pad_tell_connect(c, join, 0);
+    if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
+    if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
-        if ((gcwii_leave >> i) & 1u) pad_tell_connect(c, i, -1);
-        if ((gcwii_join >> i) & 1u) pad_tell_connect(c, i, 0);
+        if ((gcwii_leave >> i) & 1u) (void)pad_tell_connect(c, i, -1);
+        /* A game that sets its callback after the first PADRead hears of
+         * the controller at the next one. */
+        if (((gcwii_join >> i) & 1u) && !pad_tell_connect(c, i, 0)) {
+            const uint32_t msr2 = interrupts_off();
+            rtgcwii_not_told((struct rtgcwii*)(uintptr_t)c->gcwii, i);
+            interrupts_restore(msr2);
+        }
     }
 #endif
     return motor;
@@ -904,7 +915,7 @@ uint32_t pad_on_si_probe(struct rt_pad_context* c, uint32_t chan, uint32_t type)
 
 void pad_on_motor(struct rt_pad_context* c, int32_t chan, uint32_t command) {
     uint32_t msr;
-    if (chan < 0 || chan >= (int32_t)GCAD_PORTS || !c->inited) return;
+    if (chan < 0 || chan >= (int32_t)GCAD_PORTS || !c->inited || (c->flags & RT_PAD_FLAG_NO_USB)) return;
     msr = interrupts_off();
     gcad_rumble((gcad*)(uintptr_t)c->state, (uint32_t)chan, (c->overlay_mask >> chan) & 1u ? command : 0u);
     interrupts_restore(msr);

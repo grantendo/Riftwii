@@ -204,6 +204,43 @@ void TestShouldRead() {
     EXPECT_EQ(rtgcwii_should_read(&v, 0x20000000u, kTicksPerMs), 0);
 }
 
+// A press the blob read at a WPADProbe, before the game's next KPAD read,
+// still reaches the game as newly pressed, even after another sample of it
+// held; and a game whose connect callback wasn't set yet is told later.
+void TestPressBetweenReadsAndLateCallback() {
+    rtgcwii w = fresh();
+    Pads pads;
+    std::uint32_t hold = 0, trig = 0, release = 0;
+    std::int32_t axes[6];
+    pads.plug(0);
+    rtgcwii_pads(&w, pads.s, 1000);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    EXPECT_EQ(trig, 0u);
+    pads.plug(0, kGcA);
+    rtgcwii_pads(&w, pads.s, 1010);  // at a probe
+    rtgcwii_pads(&w, pads.s, 1020);  // at the KPAD read, A still held
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    EXPECT_EQ(trig, RTHOME_CL_A);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);  // read twice
+    EXPECT_EQ(trig, RTHOME_CL_A);
+    rtgcwii_pads(&w, pads.s, 1036);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    EXPECT_EQ(trig, 0u);  // held, already got
+    EXPECT_EQ(rtgcwii_hold(&w, 0), RTHOME_CL_A);
+
+    std::uint32_t leave = 0, join = 0;
+    rtgcwii_connect_change(&w, &leave, &join);
+    EXPECT_EQ(join, 1u);
+    rtgcwii_not_told(&w, 0);  // no callback yet
+    rtgcwii_connect_change(&w, &leave, &join);
+    EXPECT_EQ(join, 1u);
+    rtgcwii_connect_change(&w, &leave, &join);
+    EXPECT_EQ(join, 0u);
+    // A channel number past the four is ignored, not shifted out of range.
+    rtgcwii_probed(&w, 40, 0);
+    EXPECT_EQ(w.real, 0u);
+}
+
 }  // namespace
 
 int main() {
@@ -212,6 +249,7 @@ int main() {
     TestButtonsAndSticks();
     TestHomeOnOwnChannel();
     TestShouldRead();
+    TestPressBetweenReadsAndLateCallback();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

@@ -26,8 +26,16 @@ struct rtgcwii {
     uint32_t real;     /* channels where WPADProbe last found a real controller: the stand-in steps aside */
     uint32_t told;     /* channels the game's connect callback last heard are connected (by this) */
     uint32_t seen[RTGCWII_CHANNELS];  /* when each port last had a controller (low bit set), 0: gone */
-    uint32_t last[RTGCWII_CHANNELS];  /* each channel's Classic buttons the sample before */
-    uint32_t hold[RTGCWII_CHANNELS];  /* and now */
+    uint32_t hold[RTGCWII_CHANNELS];       /* each channel's Classic buttons now */
+    uint32_t samples[RTGCWII_CHANNELS];    /* PADRead samples taken for it */
+    /* What the game's KPAD read last got (newly pressed and let go are
+     * against that, not the sample before: a sample the blob takes at a
+     * WPADProbe the game never reads in between, and its press still
+     * counts), worked out once per sample so a second read in a frame
+     * sees the same words. */
+    uint32_t worked[RTGCWII_CHANNELS];     /* the sample the words below are from */
+    uint32_t delivered[RTGCWII_CHANNELS];  /* the buttons the game last got */
+    uint32_t trig[RTGCWII_CHANNELS], release[RTGCWII_CHANNELS];
     uint8_t pad[RTGCWII_CHANNELS][RTGCWII_PAD_BYTES];  /* each port's PADStatus as the last PADRead had it */
     /* Many games that take a Classic Controller never call PADRead (Kamen
      * Rider: Dragon Knight reads only through KPAD), so the adapter would
@@ -59,14 +67,23 @@ int rtgcwii_on(const struct rtgcwii* w, uint32_t channel);
  * controller took is neither: the game's own library tells it about that. */
 void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join);
 
-/* The stand-in's Classic Controller on `channel`: its hold, trig (newly
- * pressed) and release words, the same for every read until the next
- * PADRead, and its sticks and triggers as numerators over RTHOME_AXIS_FULL
+/* The stand-in's Classic Controller on `channel`, for the game's KPAD read:
+ * its hold, trig (newly pressed since the game last got it) and release
+ * words, the same for every read until the next sample, and its sticks and
+ * triggers as numerators over RTHOME_AXIS_FULL
  * (rthome_classic_axes). The default layout of #587: the control stick and
  * C-stick as the two sticks, A B X Y as a b x y, L and R as themselves, Z
  * as ZR, Start as +, the D-pad as the D-pad. */
-void rtgcwii_classic(const struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
+void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
                      int32_t axes[6]);
+
+/* Its buttons alone, for a raw status (KPADGetUnifiedWpadStatus), which
+ * moves nothing on; 0 where the stand-in doesn't answer. */
+uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel);
+
+/* The connect callback could not be told `channel` joined (the game hasn't
+ * set one yet): it is told again at the next PADRead. */
+void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel);
 
 /* At a KPAD read or WPADProbe: whether the blob should call the game's
  * PADRead now (and, if so, notes the time it does). Only when the game
