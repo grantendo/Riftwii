@@ -29,6 +29,13 @@ struct rtgcwii {
     uint32_t last[RTGCWII_CHANNELS];  /* each channel's Classic buttons the sample before */
     uint32_t hold[RTGCWII_CHANNELS];  /* and now */
     uint8_t pad[RTGCWII_CHANNELS][RTGCWII_PAD_BYTES];  /* each port's PADStatus as the last PADRead had it */
+    /* Many games that take a Classic Controller never call PADRead (Kamen
+     * Rider: Dragon Knight reads only through KPAD), so the adapter would
+     * never be read: the blob then calls the game's PADRead itself, once a
+     * frame, as that game's pack did. */
+    uint32_t game_read;  /* when the game itself last called PADRead (low bit set), 0: never */
+    uint32_t own_read;   /* when the blob last called it (low bit set), 0: never */
+    uint32_t reading;    /* the blob's own PADRead call is under way */
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game

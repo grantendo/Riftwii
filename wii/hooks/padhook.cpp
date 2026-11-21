@@ -1057,6 +1057,10 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     const bool gcwii = out.as_classic && out.home_blob;
     const std::uint32_t gcwii_at = gcwii ? out.state_bytes : 0;
     if (gcwii) out.state_bytes += align_up(sizeof(rtgcwii));
+    if (gcwii)
+        logf("GameCube adapter: GameCube controllers as Classic Controllers (the game's setting): %u bytes of MEM2 "
+             "for their state\n",
+             static_cast<unsigned>(align_up(sizeof(rtgcwii))));
     if (out.as_classic && !out.home_blob)
         logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the game's KPAD read, WPADProbe "
              "or HOME Menu wasn't found\n");

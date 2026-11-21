@@ -526,6 +526,38 @@ static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t 
     ++c->home_writes;
 }
 
+/* At a KPAD read or WPADProbe, at most every 8 ms (about once a frame): the
+ * game's PADRead (through its hook, so the adapter fills it) when the game
+ * hasn't called it itself within 50 ms, which a game that reads only KPAD
+ * never does (Kamen Rider: Dragon Knight, whose pack did the same; its save
+ * screens read no channel 0, so any channel and WPADProbe count).
+ * Interrupts on, as a game thread calls it. */
+static void pad_gcwii_read_pads(struct rt_pad_context* c) {
+    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+    uint32_t msr, t, game_read, own_read;
+    if (c->pad_read == 0 || w->reading) return;
+    msr = interrupts_off();
+    t = now();
+    game_read = w->game_read;
+    own_read = w->own_read;
+    interrupts_restore(msr);
+    /* Unsigned ticks since each: the time base's low word passes its
+     * halfway mark every 35 s, so a signed difference from a read that long
+     * ago turns negative and looks recent (Dragon Knight called PADRead once
+     * at start-up, and its save screens then took no presses). A read by
+     * the game more than 50 ms ago is forgotten, so it can't wrap round to
+     * "just now" either. */
+    if (game_read != 0) {
+        if (t - (game_read & ~1u) <= 50u * c->ticks_per_ms) return;
+        w->game_read = 0;
+    }
+    if (own_read != 0 && t - (own_read & ~1u) < 8u * c->ticks_per_ms) return;
+    w->own_read = t | 1u;
+    w->reading = 1;
+    ((uint32_t(*)(uint8_t*))(uintptr_t)c->pad_read)(c->pad_scratch);
+    w->reading = 0;
+}
+
 /* The permanent stand-in's status on `chan` (rtgcwii.h): the Classic
  * Controller alone, the Wii Remote's own buttons and pointer at rest. */
 static void pad_gcwii_status(const struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
@@ -607,6 +639,7 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     uint32_t msr, t, stand_in;
     if (!c->home_on && !c->gcwii) return result;
     if (chan < 0 || !pad_in_ram(status) || c->kpad_status_bytes < PAD_KPAD_END) return result;
+    if (c->gcwii) pad_gcwii_read_pads(c);
     msr = interrupts_off();
     t = now();
     stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
@@ -641,6 +674,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
     uint32_t msr, t, stand_in;
     if (c->gcwii && chan >= 0) {
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+        pad_gcwii_read_pads(c);
         msr = interrupts_off();
         rtgcwii_probed(w, (uint32_t)chan, result);
         c->home.own = w->present & ~w->real;
@@ -837,6 +871,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         /* Before the HOME Menu's stand-in looks at the combo: a port with a
          * permanent stand-in has its HOME on its own channel. */
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+        if (!w->reading) w->game_read = t | 1u;
         rtgcwii_pads(w, status, t);
         c->home.own = w->present & ~w->real;
         if (c->kpad_connect != 0) rtgcwii_connect_change(w, &gcwii_leave, &gcwii_join);
