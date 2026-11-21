@@ -759,6 +759,12 @@ bool find_pad_functions(const DolHeader& dol, bool demo, bool as_classic, bool u
         why = "this game has no GameCube controller support (no PADRead)";
         return false;
     }
+    // The Wii's own ports are read only through the game's PADRead: with no
+    // PADRead and no adapter, nothing could read a GameCube controller.
+    if (pad.read == 0 && !usb) {
+        why = "this game has no GameCube controller code, and with no adapter nothing reads the Wii's own GameCube ports";
+        return false;
+    }
     if (pad.read == 0) {
         // GameCube controllers as Classic Controllers: the hook reads the
         // adapter itself from the game's KPAD reads (#587's question 4).
