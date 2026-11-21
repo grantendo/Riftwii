@@ -820,16 +820,17 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
     /* The HOME Menu's stand-in's channel stays connected while it is up
      * (a GameCube controller unplugged with its HOME Menu open); the gone
      * comes once the stand-in has ended. */
-    uint32_t keep = 0;
-    if (c->home_on) {
-        const uint32_t home_channel = rthome_stand_in(&c->home, now());
-        if (home_channel != RTHOME_NO_CHANNEL) keep = 1u << home_channel;
-    }
+    /* Looked at again before each change: a callback (and the PADReads
+     * it may make) can start or end the HOME Menu's stand-in. */
+    uint32_t keep, home_channel;
     /* A channel whose callback isn't set yet is passed over for the rest
      * of this pass (each channel tried once), not left blocking the others;
      * it is tried again at the next PADRead. */
     uint32_t skip = 0;
-    while (rtgcwii_next_change(w, skip, keep, &chan, &reason)) {
+    for (;;) {
+        home_channel = c->home_on ? rthome_stand_in(&c->home, now()) : RTHOME_NO_CHANNEL;
+        keep = home_channel != RTHOME_NO_CHANNEL ? 1u << home_channel : 0u;
+        if (!rtgcwii_next_change(w, skip, keep, &chan, &reason)) break;
         int told;
         interrupts_restore(msr);
         told = pad_tell_connect(c, chan, reason);
