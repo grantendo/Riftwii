@@ -253,31 +253,31 @@ void TestOneChangeAtATimeAndKpadRead() {
     rtgcwii_pads(&w, pads.s, 1000);
     std::uint32_t chan = 99;
     std::int32_t reason = 5;
-    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 0u);
     EXPECT_EQ(reason, 0);
     // A nested read unplugs port 1 before port 3 is told: the next change
     // comes from the state now, so channel 0 goes, then channel 2 joins.
     pads.unplug(0);
     rtgcwii_pads(&w, pads.s, 1000 + kGrace);
-    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 0u);
     EXPECT_EQ(reason, -1);
-    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 2u);
     EXPECT_EQ(reason, 0);
-    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 0);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 0);
 
     // A real Wii Remote's samples on channel 2: it wins at once.
     rtgcwii_kpad_read(&w, 2, 1, RTGCWII_NO_ERROR);
     EXPECT_EQ(rtgcwii_on(&w, 2), 0);
-    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 0);  // its library tells the game
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 0);  // its library tells the game
     // No samples this frame isn't "gone"; the read's "no controller" is.
     rtgcwii_kpad_read(&w, 2, 0, RTGCWII_NO_ERROR);
     EXPECT_EQ(rtgcwii_on(&w, 2), 0);
     rtgcwii_kpad_read(&w, 2, 0, -1);
     EXPECT_EQ(rtgcwii_on(&w, 2), 1);
-    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 2u);
     EXPECT_EQ(reason, 0);
 
@@ -301,6 +301,28 @@ void TestOneChangeAtATimeAndKpadRead() {
     EXPECT_EQ(rthome_stand_in(&h, 1200), 2u);
 }
 
+// A channel whose callback isn't set yet is passed over for this pass; the
+// next channel's change is still told.
+void TestSkipMissingCallback() {
+    rtgcwii w = fresh();
+    Pads pads;
+    pads.plug(0);
+    pads.plug(1);
+    rtgcwii_pads(&w, pads.s, 1000);
+    std::uint32_t chan = 99;
+    std::int32_t reason = 5;
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(chan, 0u);
+    rtgcwii_not_told(&w, 0);  // channel 0's callback isn't set
+    EXPECT_EQ(rtgcwii_next_change(&w, 1u, &chan, &reason), 1);
+    EXPECT_EQ(chan, 1u);
+    EXPECT_EQ(reason, 0);
+    EXPECT_EQ(rtgcwii_next_change(&w, 3u, &chan, &reason), 0);
+    // Next pass: channel 0 again.
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(chan, 0u);
+}
+
 }  // namespace
 
 int main() {
@@ -311,6 +333,7 @@ int main() {
     TestShouldRead();
     TestPressBetweenReadsAndLateCallback();
     TestOneChangeAtATimeAndKpadRead();
+    TestSkipMissingCallback();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

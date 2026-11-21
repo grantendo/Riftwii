@@ -812,15 +812,29 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
         return;
     }
     w->telling = 1;
-    while (rtgcwii_next_change(w, &chan, &reason)) {
+    /* A channel whose callback isn't set yet is passed over for the rest
+     * of this pass (each channel tried once), not left blocking the others;
+     * it is tried again at the next PADRead. */
+    uint32_t skip = 0;
+    while (rtgcwii_next_change(w, skip, &chan, &reason)) {
         int told;
         interrupts_restore(msr);
         told = pad_tell_connect(c, chan, reason);
         msr = interrupts_off();
         if (!told) {
             if (reason == 0) rtgcwii_not_told(w, chan);
-            break;
+            skip |= 1u << chan;
+            continue;
         }
+        /* A real controller that arrived while "gone" was being told (its
+         * own "connected" may have come first): the channel has a controller,
+         * so the game hears so last. */
+        if (reason == -1 && ((w->real >> chan) & 1u)) {
+            interrupts_restore(msr);
+            (void)pad_tell_connect(c, chan, 0);
+            msr = interrupts_off();
+        }
+        skip |= 1u << chan;
     }
     w->telling = 0;
     interrupts_restore(msr);

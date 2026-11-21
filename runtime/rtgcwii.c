@@ -99,11 +99,11 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
     return rtgcwii_on(w, channel) ? w->hold[channel] : 0u;
 }
 
-int rtgcwii_next_change(struct rtgcwii* w, uint32_t* channel, int32_t* reason) {
+int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t* channel, int32_t* reason) {
     uint32_t leave = 0, join = 0, i;
     const uint32_t now_on = w->present & ~w->real;
-    join = now_on & ~w->told;
-    leave = w->told & ~now_on & ~w->real;
+    join = now_on & ~w->told & ~skip;
+    leave = w->told & ~now_on & ~w->real & ~skip;
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
         const uint32_t bit = 1u << i;
         if (!((join | leave) & bit)) continue;

@@ -925,17 +925,21 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     if (ioctl_async == 0) {
         IpcSymbols ipc;
         // With no USB (the Wii's own ports only) the blob makes no IOS
-        // calls of its own, so the game's aren't needed.
-        if (!find_ipc_symbols(text, ipc, error) && !out.no_usb) {
+        // calls of its own, so the game's aren't needed: a failed search
+        // leaves them at zero.
+        const bool found = find_ipc_symbols(text, ipc, error);
+        if (!found && !out.no_usb) {
             why = "the game's IOS_IoctlAsync was not found: " + error;
             close_pad_handles(out);
             return false;
         }
-        ioctl_async = ipc.ioctl_async;
-        ioctlv_async = ipc.ioctlv_async;
-        if (ioctlv_async == 0) {
-            IpcApi api;
-            if (find_ipc_api(text, ipc, api, error)) ioctlv_async = api.async[kIpcIoctlvCmd];
+        if (found) {
+            ioctl_async = ipc.ioctl_async;
+            ioctlv_async = ipc.ioctlv_async;
+            if (ioctlv_async == 0) {
+                IpcApi api;
+                if (find_ipc_api(text, ipc, api, error)) ioctlv_async = api.async[kIpcIoctlvCmd];
+            }
         }
     }
 
@@ -1011,6 +1015,9 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         out.map_bytes = catalog.layout_bytes;
         std::memcpy(&kept, &catalog, sizeof(kept));
     }
+    // With no USB (the Wii's own ports only) the driver is never asked
+    // anything: the smallest layout, without room for other USB pads.
+    if (out.no_usb) out.adapter_only = true;
     if (out.adapter_only) {
         out.link_count = 0;
         out.map_count = 0;
