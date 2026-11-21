@@ -99,6 +99,35 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
     return rtgcwii_on(w, channel) ? w->hold[channel] : 0u;
 }
 
+int rtgcwii_next_change(struct rtgcwii* w, uint32_t* channel, int32_t* reason) {
+    uint32_t leave = 0, join = 0, i;
+    const uint32_t now_on = w->present & ~w->real;
+    join = now_on & ~w->told;
+    leave = w->told & ~now_on & ~w->real;
+    for (i = 0; i < RTGCWII_CHANNELS; ++i) {
+        const uint32_t bit = 1u << i;
+        if (!((join | leave) & bit)) continue;
+        *channel = i;
+        *reason = (join & bit) ? 0 : -1;
+        if (join & bit) {
+            w->told |= bit;
+        } else {
+            w->told &= ~bit;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error) {
+    if (channel >= RTGCWII_CHANNELS) return;
+    if (result > 0) {
+        rtgcwii_probed(w, channel, 0);
+    } else if (error == -1) {
+        rtgcwii_probed(w, channel, -1);
+    }
+}
+
 void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel) {
     if (channel < RTGCWII_CHANNELS) w->told &= ~(1u << channel);
 }

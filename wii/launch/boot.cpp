@@ -1680,7 +1680,9 @@ void prepare_restart_request(const BootOptions& options) {
         // restarts the way the console always does.
         PadResetLaunch launch;
         launch.reset_wanted = true;
-        launch.pads_on = g_extras.gc_adapter != GcAdapterMode::Off;
+        // GameCube controllers as Classic Controllers put the hook in even
+        // with no adapter (the Wii's own ports).
+        launch.pads_on = g_extras.gc_adapter != GcAdapterMode::Off || g_extras.gc_as_classic;
         launch.runtime_in = false;
         // The test that puts the pad blob in MEM2 (boot_after_unmount): a small code mod in the code
         // handler's own space leaves it in MEM1, where OSRestart can reach it.

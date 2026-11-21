@@ -241,6 +241,66 @@ void TestPressBetweenReadsAndLateCallback() {
     EXPECT_EQ(w.real, 0u);
 }
 
+// The connect callback hears one change at a time, from what is true now;
+// a KPAD read that brings samples marks a real controller before any
+// WPADProbe, and "no controller" from the read gives the channel back; the
+// HOME Menu's stand-in never takes another player's channel.
+void TestOneChangeAtATimeAndKpadRead() {
+    rtgcwii w = fresh();
+    Pads pads;
+    pads.plug(0);
+    pads.plug(2);
+    rtgcwii_pads(&w, pads.s, 1000);
+    std::uint32_t chan = 99;
+    std::int32_t reason = 5;
+    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(chan, 0u);
+    EXPECT_EQ(reason, 0);
+    // A nested read unplugs port 1 before port 3 is told: the next change
+    // comes from the state now, so channel 0 goes, then channel 2 joins.
+    pads.unplug(0);
+    rtgcwii_pads(&w, pads.s, 1000 + kGrace);
+    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(chan, 0u);
+    EXPECT_EQ(reason, -1);
+    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(chan, 2u);
+    EXPECT_EQ(reason, 0);
+    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 0);
+
+    // A real Wii Remote's samples on channel 2: it wins at once.
+    rtgcwii_kpad_read(&w, 2, 1, RTGCWII_NO_ERROR);
+    EXPECT_EQ(rtgcwii_on(&w, 2), 0);
+    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 0);  // its library tells the game
+    // No samples this frame isn't "gone"; the read's "no controller" is.
+    rtgcwii_kpad_read(&w, 2, 0, RTGCWII_NO_ERROR);
+    EXPECT_EQ(rtgcwii_on(&w, 2), 0);
+    rtgcwii_kpad_read(&w, 2, 0, -1);
+    EXPECT_EQ(rtgcwii_on(&w, 2), 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, &chan, &reason), 1);
+    EXPECT_EQ(chan, 2u);
+    EXPECT_EQ(reason, 0);
+
+    // The HOME Menu's stand-in for port 1 (a real Wii Remote on channel 0,
+    // so not its own) skips channel 1, which port 2's stand-in holds, even
+    // though the game never asked about channel 1.
+    rthome h;
+    std::memset(&h, 0, sizeof(h));
+    h.hold = 100;
+    h.press = 50;
+    h.wait = 1000;
+    h.linger = 100;
+    h.channel = RTHOME_NO_CHANNEL;
+    h.selected = RTHOME_NO_SELECTION;
+    rthome_probed(&h, 0, 0);
+    h.own = 1u << 1;
+    Pads combo;
+    combo.plug(0, kGcCombo);
+    rthome_pads(&h, combo.s, 1000);
+    rthome_pads(&h, combo.s, 1200);
+    EXPECT_EQ(rthome_stand_in(&h, 1200), 2u);
+}
+
 }  // namespace
 
 int main() {
@@ -250,6 +310,7 @@ int main() {
     TestHomeOnOwnChannel();
     TestShouldRead();
     TestPressBetweenReadsAndLateCallback();
+    TestOneChangeAtATimeAndKpadRead();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

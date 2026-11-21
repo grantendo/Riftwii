@@ -632,7 +632,14 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     t = now();
     stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
-        /* The permanent stand-in's channel, where no real controller is. */
+        /* The permanent stand-in's channel, where no real controller is:
+         * a read that brought samples, or "no controller", says first. */
+        if (c->gcwii) {
+            const int32_t err = c->kpad_takes_error && pad_in_ram(error) ? *error : RTGCWII_NO_ERROR;
+            rtgcwii_kpad_read((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan, result, err);
+            c->home.own = ((const struct rtgcwii*)(uintptr_t)c->gcwii)->present &
+                          ~((const struct rtgcwii*)(uintptr_t)c->gcwii)->real;
+        }
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
             pad_gcwii_status(c, (uint32_t)chan, status);
             if (c->kpad_takes_error && pad_in_ram(error)) *error = 0;
@@ -789,11 +796,41 @@ static int pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32
 
 #endif
 
+#ifndef RT_PAD_NO_HOME
+/* The game's connect callback hears of the permanent stand-ins coming and
+ * going, one change at a time from what is true now (rtgcwii_next_change),
+ * with interrupts on for the game's code. A PADRead nested in this one (an
+ * SI callback's) leaves the telling to it, which picks its change up. A
+ * game that sets its callback after the first PADRead hears of the
+ * controller at the next one. */
+static void pad_gcwii_tell(struct rt_pad_context* c) {
+    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+    uint32_t msr = interrupts_off(), chan;
+    int32_t reason;
+    if (w->telling) {
+        interrupts_restore(msr);
+        return;
+    }
+    w->telling = 1;
+    while (rtgcwii_next_change(w, &chan, &reason)) {
+        int told;
+        interrupts_restore(msr);
+        told = pad_tell_connect(c, chan, reason);
+        msr = interrupts_off();
+        if (!told) {
+            if (reason == 0) rtgcwii_not_told(w, chan);
+            break;
+        }
+    }
+    w->telling = 0;
+    interrupts_restore(msr);
+}
+#endif
+
 uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) {
     const uint32_t msr = interrupts_off();
 #ifndef RT_PAD_NO_HOME
     uint32_t leave = RTHOME_NO_CHANNEL, join = RTHOME_NO_CHANNEL;
-    uint32_t gcwii_leave = 0, gcwii_join = 0;
 #endif
     const uint32_t t = now();
     gcad* g = state(c);
@@ -867,7 +904,6 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         rtgcwii_read_by(w, t, (int)w->reading);
         rtgcwii_pads(w, status, t);
         c->home.own = w->present & ~w->real;
-        if (c->kpad_connect != 0) rtgcwii_connect_change(w, &gcwii_leave, &gcwii_join);
     }
 #endif
     pad_leave_check(c, status, t);
@@ -889,16 +925,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
 #ifndef RT_PAD_NO_HOME
     if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
     if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
-    for (i = 0; i < RTGCWII_CHANNELS; ++i) {
-        if ((gcwii_leave >> i) & 1u) (void)pad_tell_connect(c, i, -1);
-        /* A game that sets its callback after the first PADRead hears of
-         * the controller at the next one. */
-        if (((gcwii_join >> i) & 1u) && !pad_tell_connect(c, i, 0)) {
-            const uint32_t msr2 = interrupts_off();
-            rtgcwii_not_told((struct rtgcwii*)(uintptr_t)c->gcwii, i);
-            interrupts_restore(msr2);
-        }
-    }
+    if (c->gcwii && c->kpad_connect != 0) pad_gcwii_tell(c);
 #endif
     return motor;
 }

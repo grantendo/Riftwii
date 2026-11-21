@@ -44,6 +44,7 @@ struct rtgcwii {
     uint32_t game_read;  /* when the game itself last called PADRead (low bit set), 0: never */
     uint32_t own_read;   /* when the blob last called it (low bit set), 0: never */
     uint32_t reading;    /* the blob's own PADRead call is under way */
+    uint32_t telling;    /* the game's connect callback is being told (nested PADReads leave it to that) */
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -84,6 +85,19 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel);
 /* The connect callback could not be told `channel` joined (the game hasn't
  * set one yet): it is told again at the next PADRead. */
 void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel);
+
+/* The next change the game's connect callback should hear, one at a time
+ * from what is true now (so a PADRead nested in another, from an SI
+ * callback, can't leave a stale "gone" last): 1 with `channel` and
+ * `reason` (0 connected, -1 gone), noted as told; 0 when there is none. */
+int rtgcwii_next_change(struct rtgcwii* w, uint32_t* channel, int32_t* reason);
+
+/* A KPAD read on `channel` returned `result` samples, `error` its WPAD
+ * error where the read gives one (RTGCWII_NO_ERROR otherwise): samples mean
+ * a real controller is there (it wins, before any WPADProbe says so); "no
+ * controller" (-1) means it left. */
+#define RTGCWII_NO_ERROR 0x7FFFFFFF
+void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error);
 
 /* At a KPAD read or WPADProbe: whether the blob should call the game's
  * PADRead now (and, if so, notes the time it does). Only when the game

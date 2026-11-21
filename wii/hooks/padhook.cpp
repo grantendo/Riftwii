@@ -924,7 +924,9 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     std::string error;
     if (ioctl_async == 0) {
         IpcSymbols ipc;
-        if (!find_ipc_symbols(text, ipc, error)) {
+        // With no USB (the Wii's own ports only) the blob makes no IOS
+        // calls of its own, so the game's aren't needed.
+        if (!find_ipc_symbols(text, ipc, error) && !out.no_usb) {
             why = "the game's IOS_IoctlAsync was not found: " + error;
             close_pad_handles(out);
             return false;
@@ -938,7 +940,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     }
 
     // 2. /dev/usb/hid, opened by find_pad_functions.
-    if (out.version == 5 && ioctlv_async == 0) {
+    if (out.version == 5 && ioctlv_async == 0 && !out.no_usb) {
         why = "/dev/usb/hid v5 needs the game's IOS_IoctlvAsync, which was not found";
         close_pad_handles(out);
         return false;

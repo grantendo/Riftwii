@@ -52,10 +52,11 @@ static uint32_t combo_port(const uint8_t* status) {
 static uint32_t free_channel(const struct rthome* h, uint32_t port) {
     uint32_t i;
     if ((h->own >> port) & 1u) return port;
+    /* Never another player's permanent stand-in's channel. */
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (((h->probed & h->free) >> i) & 1u) return i;
+        if (((h->probed & h->free & ~h->own) >> i) & 1u) return i;
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (!((h->probed >> i) & 1u)) return i;
+        if (!(((h->probed | h->own) >> i) & 1u)) return i;
     return RTHOME_NO_CHANNEL;
 }
 
