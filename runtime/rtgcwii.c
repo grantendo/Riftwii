@@ -128,6 +128,10 @@ void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int3
     }
 }
 
+void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel) {
+    if (channel < RTGCWII_CHANNELS) w->told |= 1u << channel;
+}
+
 void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel) {
     if (channel < RTGCWII_CHANNELS) w->told &= ~(1u << channel);
 }

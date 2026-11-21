@@ -86,6 +86,10 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel);
  * set one yet): it is told again at the next PADRead. */
 void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel);
 
+/* The same for "gone": it stays to be told (the channel counts as told
+ * connected until then). */
+void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel);
+
 /* The next change the game's connect callback should hear, one at a time
  * from what is true now (so a PADRead nested in another, from an SI
  * callback, can't leave a stale "gone" last): 1 with `channel` and

@@ -627,19 +627,24 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     uint32_t msr, t, stand_in;
     if (!c->home_on && !c->gcwii) return result;
     if (chan < 0 || !pad_in_ram(status) || c->kpad_status_bytes < PAD_KPAD_END) return result;
-    if (c->gcwii) pad_gcwii_read_pads(c);
+    if (c->gcwii) {
+        /* What the game's own read found says first (a read that brought
+         * samples is a real controller; "no controller" gives the channel
+         * back), before the blob's PADRead, whose connect callbacks may
+         * note something newer. */
+        struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+        const int32_t err = c->kpad_takes_error && pad_in_ram(error) ? *error : RTGCWII_NO_ERROR;
+        msr = interrupts_off();
+        rtgcwii_kpad_read(w, (uint32_t)chan, result, err);
+        c->home.own = w->present & ~w->real;
+        interrupts_restore(msr);
+        pad_gcwii_read_pads(c);
+    }
     msr = interrupts_off();
     t = now();
     stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
-        /* The permanent stand-in's channel, where no real controller is:
-         * a read that brought samples, or "no controller", says first. */
-        if (c->gcwii) {
-            const int32_t err = c->kpad_takes_error && pad_in_ram(error) ? *error : RTGCWII_NO_ERROR;
-            rtgcwii_kpad_read((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan, result, err);
-            c->home.own = ((const struct rtgcwii*)(uintptr_t)c->gcwii)->present &
-                          ~((const struct rtgcwii*)(uintptr_t)c->gcwii)->real;
-        }
+        /* The permanent stand-in's channel, where no real controller is. */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
             pad_gcwii_status(c, (uint32_t)chan, status);
             if (c->kpad_takes_error && pad_in_ram(error)) *error = 0;
@@ -669,11 +674,11 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
     uint32_t msr, t, stand_in;
     if (c->gcwii && chan >= 0) {
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
-        pad_gcwii_read_pads(c);
         msr = interrupts_off();
         rtgcwii_probed(w, (uint32_t)chan, result);
         c->home.own = w->present & ~w->real;
         interrupts_restore(msr);
+        pad_gcwii_read_pads(c);
     }
     if (!c->home_on) {
         if (c->gcwii && chan >= 0 && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
@@ -822,7 +827,12 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
         told = pad_tell_connect(c, chan, reason);
         msr = interrupts_off();
         if (!told) {
-            if (reason == 0) rtgcwii_not_told(w, chan);
+            /* Still to tell, at the next PADRead. */
+            if (reason == 0) {
+                rtgcwii_not_told(w, chan);
+            } else {
+                rtgcwii_still_told(w, chan);
+            }
             skip |= 1u << chan;
             continue;
         }

@@ -321,6 +321,17 @@ void TestSkipMissingCallback() {
     // Next pass: channel 0 again.
     EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 0u);
+
+    // A "gone" that couldn't be told stays pending.
+    pads.unplug(1);
+    rtgcwii_pads(&w, pads.s, 1000 + kGrace);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(chan, 1u);
+    EXPECT_EQ(reason, -1);
+    rtgcwii_still_told(&w, 1);
+    EXPECT_EQ(rtgcwii_next_change(&w, 0, &chan, &reason), 1);
+    EXPECT_EQ(chan, 1u);
+    EXPECT_EQ(reason, -1);
 }
 
 }  // namespace

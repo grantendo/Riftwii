@@ -1304,7 +1304,9 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
             gc_adapter = false;
         }
     }
-    if (!gc_adapter) close_adapter_session();
+    // No USB for the game (the Wii's own ports only, or the adapter off):
+    // the menu's adapter session is let go.
+    if (!gc_adapter || !usb) close_adapter_session();
     // Settings > GameCube rumble Off: the SDK's PADControlMotor returns at
     // once, for the Wii's own ports and the adapter alike (the adapter's
     // hook is not put on it then).
