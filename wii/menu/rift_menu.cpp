@@ -9100,6 +9100,11 @@ static bool GameRowNotApplied(const std::string& gameId, RowRef::What what)
 	case RowRef::What::Server:
 		kind = K::Wfc;
 		break;
+	case RowRef::What::GcControllers:
+		// The adapter's hook, which this setting needs: a game that checks
+		// its own code keeps it off (the launch's own guard).
+		kind = K::RuntimeHooks;
+		break;
 	default: return false;
 	}
 	return !riftwii::gx_patch_allowed(gameId, kind);
