@@ -1,0 +1,64 @@
+/* SPDX-FileCopyrightText: 2026 RiftWii contributors */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* GameCube controllers as Classic Controllers (#587): with the game's own
+ * setting on (off by default), each GameCube controller in port N stands in
+ * on Wii Remote channel N-1 as a Classic Controller for as long as it is
+ * plugged in, so a game that takes a Classic Controller plays from it. The
+ * HOME Menu's stand-in (rthome.h) does the same for a moment; this one stays.
+ *
+ * The decisions, kept free of the hardware so the host tests can run them;
+ * the pad blob (runtime/pad) calls them from its PADRead, KPAD read and
+ * WPADProbe hooks, and writes the Classic Controller's status into the
+ * game's KPAD buffer as it does for the HOME Menu's stand-in. The state
+ * lives in MEM2 next to the adapter driver's (the blob's context has no
+ * room for four ports), and the context holds its address. */
+#ifndef RIFTWII_RTGCWII_H
+#define RIFTWII_RTGCWII_H
+
+#include <stdint.h>
+
+#define RTGCWII_CHANNELS 4u
+#define RTGCWII_PAD_BYTES 12u
+
+struct rtgcwii {
+    uint32_t grace;    /* ticks a port may report no controller before its channel's goes (loader-filled) */
+    uint32_t present;  /* channels with a GameCube controller behind them, one bit each */
+    uint32_t real;     /* channels where WPADProbe last found a real controller: the stand-in steps aside */
+    uint32_t told;     /* channels the game's connect callback last heard are connected (by this) */
+    uint32_t seen[RTGCWII_CHANNELS];  /* when each port last had a controller (low bit set), 0: gone */
+    uint32_t last[RTGCWII_CHANNELS];  /* each channel's Classic buttons the sample before */
+    uint32_t hold[RTGCWII_CHANNELS];  /* and now */
+    uint8_t pad[RTGCWII_CHANNELS][RTGCWII_PAD_BYTES];  /* each port's PADStatus as the last PADRead had it */
+};
+
+/* At each PADRead, the four ports' statuses (12 bytes each) as the game
+ * will see them (the adapter's already in): a port with a controller keeps
+ * its status and its Classic buttons move on one sample; a port with none
+ * for `grace` ticks loses its channel's stand-in. A short gap (a wireless
+ * pad's dropped report) never unplugs the player. */
+void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
+
+/* WPADProbe(`channel`) answered `result` (0 a controller, -1 none, -2
+ * busy) before the blob's own answer: a real controller there wins over
+ * the stand-in. When it goes again, the stand-in is announced afresh (the
+ * game's library told the game that channel's controller left). */
+void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result);
+
+/* Whether the stand-in answers on `channel` now. */
+int rtgcwii_on(const struct rtgcwii* w, uint32_t channel);
+
+/* The game's connect callback: the channels to report gone (*leave) and
+ * connected (*join), one bit each, since it was last told. A channel a real
+ * controller took is neither: the game's own library tells it about that. */
+void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join);
+
+/* The stand-in's Classic Controller on `channel`: its hold, trig (newly
+ * pressed) and release words, the same for every read until the next
+ * PADRead, and its sticks and triggers as numerators over RTHOME_AXIS_FULL
+ * (rthome_classic_axes). The default layout of #587: the control stick and
+ * C-stick as the two sticks, A B X Y as a b x y, L and R as themselves, Z
+ * as ZR, Start as +, the D-pad as the D-pad. */
+void rtgcwii_classic(const struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
+                     int32_t axes[6]);
+
+#endif

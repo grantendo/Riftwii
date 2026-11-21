@@ -9056,7 +9056,7 @@ static bool PrepareWadInMenu(riftwii::wii::NandChannel& channel)
 }
 
 struct RowRef {
-	enum class What { Mods, Saves, Cheats, Width, Deflicker, Borders, VideoMode, RegionVideo, Aspect, Rumble, Speaker,
+	enum class What { Mods, Saves, Cheats, Width, Deflicker, Borders, VideoMode, RegionVideo, Aspect, Rumble, Speaker, GcControllers,
 		RegionStrings, Language, Cios, NandSource, Server, Favorite, Pack, Option, Note, ResetOptions,
 		AddCodes, ForgetCodes, MakeImage, Cover, Memory, About, GcDiscReads, GcCard, GcProgressive, GcWidescreen,
 		GcSharp, GcWidth, GcSpeed, GcVolume, GcLanguage, GcControls, SaveTile, RenameTile, RemoveTile, CodeStart, CrashLogs, CoverSet, CoverPick } what = What::Note;
@@ -9134,6 +9134,9 @@ static const char* const kDeflickers[] = {"global", "game", "off", "low", "mediu
 static const char* const kBorderModes[] = {"global", "keep", "remove", "remove_all"};
 static const char* const kVideoModes[] = {"global", "game", "system", "ntsc", "pal60", "pal50", "480p", "240p"};
 static const char* const kAspects[] = {"global", "game", "4:3", "16:9"};
+// GameCube controllers in a Wii game (GameSettings::gc_controllers, #587):
+// as they are, or as Classic Controllers.
+static const char* const kGcControllers[] = {"off", "classic"};
 static std::string AspectName(const std::string& v)
 {
 	return v == "4:3" || v == "16:9" ? v : std::string(tr("Game's own"));
@@ -9489,6 +9492,12 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 	speaker.on = game.speaker != "off";
 	speaker.value = speaker.on ? tr("On") : tr("Off");
 	add(speaker, {RowRef::What::Speaker});
+	FlowRow gcControllers;
+	gcControllers.kind = FlowRow::Kind::Option;
+	gcControllers.label = tr("GameCube controllers");
+	gcControllers.on = game.gc_controllers == "classic";
+	gcControllers.value = gcControllers.on ? tr("As Classic Controllers") : tr("Off");
+	add(gcControllers, {RowRef::What::GcControllers});
 	FlowRow regionStrings;
 	regionStrings.kind = FlowRow::Kind::Toggle;
 	regionStrings.label = tr("Region strings fix");
@@ -9730,7 +9739,7 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 	show({W::Width, W::Deflicker, W::Borders, W::VideoMode, W::RegionVideo, W::Aspect});
 	heading(tr("Other"));
 	if (settingsOnly && GameRowNotApplied(state.game_id, W::Cheats)) show({W::Cheats});
-	show({W::Language, W::RegionStrings, W::Cios, W::Server, W::Rumble, W::Speaker});
+	show({W::Language, W::RegionStrings, W::Cios, W::Server, W::Rumble, W::Speaker, W::GcControllers});
 	if (settingsOnly) show({W::Cover, W::CoverSet, W::CoverPick});
 	// What RiftWii's extras take of the game's memory this time.
 	const riftwii::ExtrasBudget budget = riftwii::wii::EstimateExtras(state);
@@ -15283,6 +15292,7 @@ static int ChangedGameSettings(const riftwii::GameSettings& g, const std::string
 	if (riftwii::gc_volume_boost_db(g) != 0) ++changed;
 	if (g.rumble == "off") ++changed;
 	if (g.speaker == "off") ++changed;
+	if (g.gc_controllers == "classic") ++changed;
 	return changed;
 }
 
@@ -15514,6 +15524,8 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 				say(tr("Off: the Wii Remotes never rumble in this game."));
 			else if (ref.what == RowRef::What::Speaker)
 				say(tr("Off: no sound from the Wii Remotes' speakers in this game."));
+			else if (ref.what == RowRef::What::GcControllers)
+				say(tr("As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. Off: as before."));
 			else if (ref.what == RowRef::What::RegionStrings)
 				say(tr("For a game from another region (an import): the game sees its own region's country names where it looks for the console's."));
 			else if (ref.what == RowRef::What::Language)
@@ -15621,6 +15633,7 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 			else if (ref.what == RowRef::What::Aspect) game.aspect = StepValue(kAspects, game.aspect, direction);
 			else if (ref.what == RowRef::What::Rumble) game.rumble = game.rumble == "off" ? "on" : "off";
 			else if (ref.what == RowRef::What::Speaker) game.speaker = game.speaker == "off" ? "on" : "off";
+			else if (ref.what == RowRef::What::GcControllers) game.gc_controllers = StepValue(kGcControllers, game.gc_controllers, direction);
 			else if (ref.what == RowRef::What::RegionStrings) game.region_strings = game.region_strings == "on" ? "off" : "on";
 			else if (ref.what == RowRef::What::Language) game.language = StepValue(kGameLanguages, game.language, direction);
 			else if (ref.what == RowRef::What::Cios && state.use_channel) {
@@ -15740,6 +15753,7 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 					game.language = fresh.language;
 					game.rumble = fresh.rumble;
 					game.speaker = fresh.speaker;
+					game.gc_controllers = fresh.gc_controllers;
 					game.cios = fresh.cios;
 					game.server = fresh.server;
 					game.region_video = fresh.region_video;

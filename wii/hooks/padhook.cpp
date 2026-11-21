@@ -20,6 +20,7 @@
 #include "loadersettings.hpp"
 #include "log.hpp"
 #include "pad_hook.h"
+#include "rtgcwii.h"
 #include "pentablet.h"
 #include "riftwii/hbmsearch.hpp"
 #include "riftwii/hook.hpp"
@@ -66,6 +67,10 @@ constexpr std::uint32_t kHomePressMs = 600;
 constexpr std::uint32_t kHomeAnnounceMs = 200;
 constexpr std::uint32_t kHomeWaitMs = 2000;
 constexpr std::uint32_t kHomeLingerMs = 300;
+// A GameCube controller as a Classic Controller (#587): how long its port
+// may report nothing (a wireless pad's dropped reports) before the game
+// hears the controller left.
+constexpr std::uint32_t kGcwiiGraceMs = 500;
 // v5 serves 16 handles, picked by the open mode: libogc's USB takes 0 and
 // fakemote (a cIOS module) 15. 0 is tried first (free once libogc's USB
 // is shut down; a Wii U's IOS 58 answered nothing on 1), then 1. v4
@@ -1047,6 +1052,14 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     // code build may have no room to spare.
     const std::uint32_t calibration_at = out.calibration != nullptr ? out.state_bytes : 0;
     if (out.calibration != nullptr) out.state_bytes += align_up(sizeof(rtpadcal_table));
+    // GameCube controllers as Classic Controllers, after them: only with the
+    // HOME Menu's blob, whose KPAD read and WPADProbe hooks it takes.
+    const bool gcwii = out.as_classic && out.home_blob;
+    const std::uint32_t gcwii_at = gcwii ? out.state_bytes : 0;
+    if (gcwii) out.state_bytes += align_up(sizeof(rtgcwii));
+    if (out.as_classic && !out.home_blob)
+        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the game's KPAD read, WPADProbe "
+             "or HOME Menu wasn't found\n");
     logf("USB controllers: %s driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
          kind % kBlobNoHome == kBlobAdapter ? "the adapter's" : kind % kBlobNoHome == kBlobPads ? "the USB pads'" : "the full",
          static_cast<unsigned>(h.size), static_cast<unsigned>(out.link_count), static_cast<unsigned>(out.map_count),
@@ -1133,6 +1146,13 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         std::memcpy(reinterpret_cast<void*>(out.calibration_base), out.calibration, sizeof(rtpadcal_table));
         logf("GameCube controllers: calibrations at 0x%08x (%u bytes)\n", out.calibration_base,
              static_cast<unsigned>(sizeof(rtpadcal_table)));
+    }
+    out.gcwii_base = 0;
+    if (gcwii) {
+        out.gcwii_base = out.state_base + gcwii_at;
+        auto* state = reinterpret_cast<rtgcwii*>(out.gcwii_base);
+        std::memset(state, 0, sizeof(rtgcwii));
+        state->grace = kGcwiiGraceMs * (kBusClock / 4000u);
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;
@@ -1378,9 +1398,19 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     ctx->home.wait = kHomeWaitMs * ctx->ticks_per_ms;
     ctx->home.linger = kHomeLingerMs * ctx->ticks_per_ms;
     ctx->home.channel = RTHOME_NO_CHANNEL;
+    // The permanent stand-in needs the KPAD read's and WPADProbe's hooks,
+    // which are in when the HOME Menu's are.
+    ctx->gcwii = home ? hook.gcwii_base : 0u;
     ctx->home_on = home ? 1u : 0u;
     DCFlushRange(ctx, context_bytes(kind));
     logf("GameCube adapter: hooked%s\n", motor_site.function == 0 ? " (PADRead only)" : "");
+    if (ctx->gcwii != 0) {
+        logf("GameCube adapter: GameCube controllers are Classic Controllers in this game (port 1 plays as Wii "
+             "Remote 1 and so on; state at 0x%08x)%s\n",
+             ctx->gcwii, hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");
+    } else if (hook.as_classic && hook.gcwii_base != 0) {
+        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: a HOME Menu hook didn't go in\n");
+    }
     if (home) {
         logf("GameCube adapter: the HOME Menu by the controller is on: the combo held %u ms opens the game's own "
              "HOME Menu (a Classic Controller on a free channel, HOME held %u ms)%s\n",

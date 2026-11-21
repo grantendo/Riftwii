@@ -124,6 +124,12 @@ struct PadHook {
     // after the driver's state in MEM2; nullptr: none stored, none placed.
     const rtpadcal_table* calibration = nullptr;
     std::uint32_t calibration_base = 0;     // where the table went, 0: none
+    // GameCube controllers as Classic Controllers (#587): the game's own
+    // setting (off by default). Its state goes after the calibrations in
+    // MEM2, only with the HOME Menu's blob, whose KPAD read and WPADProbe
+    // hooks it shares (runtime/rtgcwii.h).
+    bool as_classic = false;
+    std::uint32_t gcwii_base = 0;           // where the state went, 0: none
     // The HOME Menu; any of the four required (kpad_read, wpad_probe,
     // hbm_calc, hbm_select) 0: off.
     std::uint32_t kpad_read = 0;          // the KPAD read (KPADReadEx in newer SDKs)

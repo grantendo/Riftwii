@@ -1569,6 +1569,15 @@ T = {
         "オフ: このゲームではWiiリモコンのスピーカーから音が出ません。",
         "Desligado: sem som dos alto-falantes dos Wii Remotes neste jogo.",
         "Disattivato: nessun suono dagli altoparlanti dei telecomandi Wii in questo gioco."),
+    "GameCube controllers": ("Mandos de GameCube", "ゲームキューブコントローラー", "Controles de GameCube",
+        "Controller GameCube"),
+    "As Classic Controllers": ("Como mandos clásicos", "クラシックコントローラーとして", "Como Classic Controllers",
+        "Come Classic Controller"),
+    "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. Off: as before.": (
+        "Como mandos clásicos: cada mando de GameCube juega como un mando clásico, el puerto 1 como el mando de Wii 1, y así sucesivamente, en los juegos que lo admiten. Desactivado: como antes.",
+        "クラシックコントローラーとして: 各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。オフ: これまでどおり。",
+        "Como Classic Controllers: cada controle de GameCube joga como um Classic Controller, a porta 1 como o Wii Remote 1 e assim por diante, nos jogos que aceitam um. Desligado: como antes.",
+        "Come Classic Controller: ogni controller GameCube gioca come un Classic Controller, la porta 1 come il telecomando Wii 1 e così via, nei giochi che lo supportano. Disattivato: come prima."),
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.": (
         "Para un juego de otra región (importado): el juego ve los nombres de país de su región donde busca los de la consola.",
         "ほかの地域のゲーム（輸入版）用: 本体の国名を探す場所で、ゲームは自分の地域の国名を見ます。",
@@ -3414,6 +3423,12 @@ KO = {
         "끔: 이 게임에서는 Wii 리모컨이 절대 진동하지 않습니다.",
     "Off: no sound from the Wii Remotes' speakers in this game.":
         "끔: 이 게임에서는 Wii 리모컨 스피커에서 소리가 나지 않습니다.",
+    "GameCube controllers":
+        "게임큐브 컨트롤러",
+    "As Classic Controllers":
+        "클래식 컨트롤러로",
+    "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. Off: as before.":
+        "클래식 컨트롤러로: 각 게임큐브 컨트롤러가 클래식 컨트롤러로 작동합니다(포트 1은 Wii 리모컨 1 등). 지원하는 게임용입니다. 끔: 이전과 같습니다.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "타 지역 게임(수입판)의 경우: 해당 게임은 콘솔의 지역 정보를 확인해야 할 위치에서 자사 지역의 국가명을 인식합니다.",
     "Don't show again":
@@ -5294,6 +5309,12 @@ FR = {
         "Désactivé : désactive totalement les vibrations de la Télécommande Wii sur ce jeu.",
     "Off: no sound from the Wii Remotes' speakers in this game.":
         "Désactivé : coupe le haut-parleur intégré des Télécommandes Wii pour ce jeu.",
+    "GameCube controllers":
+        "Manettes GameCube",
+    "As Classic Controllers":
+        "Comme manettes Classic",
+    "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. Off: as before.":
+        "Comme manettes Classic : chaque manette GameCube joue comme une manette Classic, le port 1 comme la Télécommande Wii 1, et ainsi de suite, dans les jeux qui l'acceptent. Désactivé : comme avant.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine.",
     "Don't show again":

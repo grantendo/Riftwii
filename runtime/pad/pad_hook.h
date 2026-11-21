@@ -186,6 +186,12 @@ struct rt_pad_context {
      * the game was last told is connected, plus one (0: none). */
     uint32_t kpad_connect;
     uint32_t kpad_connect_info;
+    /* GameCube controllers as Classic Controllers (#587, rtgcwii.h): the
+     * state's address in MEM2, 0: off (the game's setting is off, the
+     * default, or the KPAD read or WPADProbe wasn't found). Loader-filled.
+     * Independent of home_on: a game that can't take the HOME Menu's
+     * stand-in may still take this one. */
+    uint32_t gcwii;
 };
 
 #ifdef RT_TARGET_PPC

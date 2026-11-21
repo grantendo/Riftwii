@@ -1410,6 +1410,7 @@ void plan_game_extras(const DolHeader& dol, const ExtrasContext& ctx, GameExtras
         const std::uint32_t resident_stage = resident != nullptr && resident->data_base != resident->stage_base
                                                  ? resident->stage_base : 0;
         out.pad.calibration = g_extras.pad_calibrated ? &g_extras.pad_calibration : nullptr;
+        out.pad.as_classic = g_extras.gc_as_classic;
         if (!plan_pad_hook(dol, ctx.arena1_hi, ctx.mem1_floor, ctx.arena2_lo,
                            resident != nullptr ? resident->ioctl_async_original : 0,
                            resident != nullptr ? resident->ioctlv_async_original : 0, patches, out.pad, why,
@@ -3883,6 +3884,7 @@ bool boot_game(const DiscProbe& probe, BootOptions options, std::string& error) 
         g_extras.aspect = -1;
         g_extras.rumble_off = false;
         g_extras.speaker_off = false;
+        g_extras.gc_as_classic = false;
         g_extras.region_strings = false;
         g_extras.language = -1;
         g_extras.gc_rumble_off = false;
