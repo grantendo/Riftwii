@@ -100,6 +100,33 @@ struct WpadConnect2006 {
 };
 WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text);
 
+// The same for the later WPAD (2007 on), for a game that reads its Wii
+// Remotes below KPAD and hears of them only through WPAD's connect callback
+// (Punch-Out!!: its own pad manager calls WPADRead for the players that
+// callback told it of). WPAD has several setters of that shape (the
+// connect, sampling and extension callbacks, side by side in the channel's
+// control block), so the connect one is told by how WPAD calls its slot:
+// through `lwz r12,O(rB)` and `bctrl` with `li r4,-1` (no controller, as
+// a Wii Remote leaves) in between, which the other two never get. The table
+// and O (+2212 in Punch-Out!!'s 2008 WPAD); both 0 when not exactly one.
+WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text);
+
+// WPADRead(chan, status), which copies a channel's newest report into the
+// game's WPADStatus: the one function that indexes the channels
+// (`slwi rX,r3,2`), copies 42 bytes (`li r5,42`, the bare Wii Remote's
+// status, for a report whose error is -2 or -7: `cmpwi` with both) and
+// stores the error into the game's status (`stb` at 41 through its second
+// argument, kept with `mr` from r4). 0 when not exactly one.
+std::uint32_t find_wpad_read(const std::vector<CodeRange>& text);
+
+// WPADSetDataFormat(chan, format): the one function that answers no
+// controller (`li rX,-1`, or `cmpwi` with -1 where it returns the probe's
+// result) and busy (`li rX,-2`), compares the format it is
+// given (kept with `mr` from r4) with the channel's (`cmplw`), and stores
+// it there (`stw` of that register at an offset of at least 0x400, the
+// control block's). 0 when not exactly one.
+std::uint32_t find_wpad_set_format(const std::vector<CodeRange>& text);
+
 // The small-data base the game's start-up code loads into r13 (`lis
 // r13,hi` then `ori` or `addi r13,r13,lo`), within its first 256 words
 // from `entry`; 0 when not found.

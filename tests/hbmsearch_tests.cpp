@@ -356,6 +356,188 @@ void TestWpadConnect2006() {
     }
 }
 
+std::uint32_t slwi(std::uint32_t a, std::uint32_t s, std::uint32_t n) {
+    return (21u << 26) | (s << 21) | (a << 16) | (n << 11) | ((31u - n) << 1);
+}
+std::uint32_t cmpwi(std::uint32_t a, std::int32_t v) { return d_form(11, 0, a, v); }
+std::uint32_t cmplw(std::uint32_t a, std::uint32_t b) { return (31u << 26) | (a << 16) | (b << 11) | (32u << 1); }
+constexpr std::uint32_t kMtctrR12 = 0x7D8903A6u;
+constexpr std::uint32_t kBctrl = 0x4E800421u;
+constexpr std::uint32_t kBeqPlus8 = 0x41820008u;
+
+// A 2008 WPAD setter (Punch-Out!!'s shape): the channel's control block from
+// the table at 0x803CAF10, the slot at `slot` swapped for the second argument.
+void put_later_setter(Section& t, std::int32_t slot) {
+    t.put(stwu_r1(0x20));
+    t.put(kMflrR0);
+    t.put(lis(5, 0x803D));
+    t.put(slwi(3, 3, 2));
+    t.put(addi(5, 5, -20720));
+    t.put(mr(29, 4));
+    t.put(lwzx(31, 5, 3));
+    t.put(lwz(30, 31, slot));
+    t.put(stw(29, 31, slot));
+    t.put(kBlr);
+}
+
+// WPAD calling the slot at `slot`, with `li r4,reason` first unless `reason`
+// is 1 (a call with the channel alone, as the sampling callback's).
+void put_slot_call(Section& t, std::int32_t slot, std::int32_t reason) {
+    t.put(lwz(12, 29, slot));
+    t.put(cmpwi(12, 0));
+    t.put(kBeqPlus8);
+    t.put(mr(3, 30));
+    if (reason != 1) t.put(li(4, reason));
+    t.put(kMtctrR12);
+    t.put(kBctrl);
+}
+
+void TestWpadConnectLater() {
+    {
+        // The extension, connect and sampling setters side by side; WPAD
+        // calls the connect slot with "no controller" as a Wii Remote leaves.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        put_later_setter(t, 2216);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2208, 0);
+        put_slot_call(t, 2216, 1);
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        const riftwii::WpadConnect2006 found = riftwii::find_wpad_connect_later({t.range()});
+        EXPECT_EQ(found.table, 0x803CAF10u);
+        EXPECT_EQ(found.offset, 2212u);
+    }
+    {
+        // No slot called with "no controller": none.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2212);
+        put_later_setter(t, 2216);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, 0);
+        put_slot_call(t, 2216, 1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
+    }
+    {
+        // Two slots called with it: unsure, none.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2208, -1);
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
+    }
+    {
+        // The -1 belongs to a later call, past a jump: not this slot's.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(0x48000010u);  // b
+        t.put(li(4, -1));
+        t.put(kMtctrR12);
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
+    }
+}
+
+// WPADRead (the 2008 WPAD's shape): the channel's block, the error compared
+// with -2 and -7, 42 bytes copied, the error stored into the game's status
+// (through r29, its copy of r4) unless `stores_error` is false (another
+// reader). `channel_copy`: the channel indexed from a copy of r3, as The
+// Complete Saga's 2007 WPAD does.
+void put_wpad_read(Section& t, bool stores_error, bool channel_copy) {
+    t.put(stwu_r1(0x20));
+    t.put(kMflrR0);
+    t.put(mr(29, 4));
+    if (channel_copy) {
+        t.put(mr(28, 3));
+        t.put(slwi(0, 28, 2));
+    } else {
+        t.put(kSlwiR0R3By2);
+    }
+    t.put(lis(5, 0x803D));
+    t.put(addi(5, 5, -20720));
+    t.put(lwzx(31, 5, 0));
+    t.put(lbz(0, 31, 41));
+    t.put(cmpwi(0, -2));
+    t.put(cmpwi(0, -7));
+    t.put(mr(3, 29));
+    t.put(li(5, 42));
+    if (stores_error) t.put(stb(0, 29, 41));
+    t.put(kBlr);
+}
+
+void TestWpadRead() {
+    {
+        Section t{0x80218000, {}};
+        put_wpad_read(t, false, false);  // a decoy
+        const std::uint32_t read = t.here();
+        put_wpad_read(t, true, false);
+        EXPECT_EQ(riftwii::find_wpad_read({t.range()}), read);
+    }
+    {
+        Section t{0x80333000, {}};
+        put_wpad_read(t, true, true);
+        EXPECT_EQ(riftwii::find_wpad_read({t.range()}), 0x80333000u);
+    }
+    {
+        // Two: unsure, none.
+        Section t{0x80218000, {}};
+        put_wpad_read(t, true, false);
+        put_wpad_read(t, true, false);
+        EXPECT_EQ(riftwii::find_wpad_read({t.range()}), 0u);
+    }
+}
+
+// WPADSetDataFormat: the block's probe result, busy flag and format read;
+// -1 kept or returned (`returns_none`), busy, the format compared with the
+// one given (r27, its copy of r4) and stored at +2232 unless `stores` is
+// false (another request with the same checks).
+void put_set_format(Section& t, bool returns_none, bool stores) {
+    t.put(stwu_r1(0x20));
+    t.put(kMflrR0);
+    t.put(kSlwiR0R3By2);
+    t.put(mr(27, 4));
+    t.put(lwzx(31, 5, 0));
+    t.put(lwz(30, 31, 2236));
+    t.put(lwz(28, 31, 2232));
+    t.put(cmpwi(30, -1));
+    if (returns_none) t.put(li(3, -1));
+    t.put(li(30, -2));
+    t.put(cmplw(28, 27));
+    if (stores) t.put(stw(27, 31, 2232));
+    t.put(kBlr);
+}
+
+void TestWpadSetFormat() {
+    {
+        Section t{0x80218000, {}};
+        put_set_format(t, true, false);  // a decoy
+        const std::uint32_t set = t.here();
+        put_set_format(t, true, true);
+        EXPECT_EQ(riftwii::find_wpad_set_format({t.range()}), set);
+    }
+    {
+        // The probe's -1 compared and kept (The Complete Saga's): found too.
+        Section t{0x80333000, {}};
+        put_set_format(t, false, true);
+        EXPECT_EQ(riftwii::find_wpad_set_format({t.range()}), 0x80333000u);
+    }
+    {
+        // Two: unsure, none.
+        Section t{0x80218000, {}};
+        put_set_format(t, true, true);
+        put_set_format(t, true, true);
+        EXPECT_EQ(riftwii::find_wpad_set_format({t.range()}), 0u);
+    }
+}
+
 void put_probe(Section& t, bool returns_busy) {
     t.put(stwu_r1(0x20));
     t.put(kMflrR0);
@@ -632,6 +814,9 @@ int main() {
     TestWpadProbe();
     TestWpadGetInfo();
     TestWpadConnect2006();
+    TestWpadConnectLater();
+    TestWpadRead();
+    TestWpadSetFormat();
     TestSmallDataBase();
     TestHbmFunctions(true, true);
     TestHbmFunctions(false, true);
