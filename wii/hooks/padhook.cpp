@@ -755,8 +755,8 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     out.wpad_probe = probe;
     if (missing_menu != nullptr) {
         logf("GameCube adapter: no HOME Menu by the controller (the combo is the way back): %s was not found; the "
-             "KPAD read at 0x%08x (%u-byte statuses%s) and WPADProbe at 0x%08x go in for GameCube controllers as "
-             "Classic Controllers\n",
+             "KPAD read at 0x%08x (%u-byte statuses%s) and WPADProbe at 0x%08x go in for the GameCube "
+             "controllers' stand-in\n",
              missing_menu, kpad.address, kpad.status_bytes, kpad.takes_error ? ", with the error's address" : "",
              probe);
     } else {
@@ -865,8 +865,8 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         // The screen stays lit through the Wii Remotes' dimming reset,
         // which GameCube presses never reach (there's no ports' one to use).
         pad.idle_reset = find_wii_remote_idle_reset(text, find_wpad_probe(text));
-        logf("GameCube adapter: no PADRead in this game; the hook reads the GameCube controllers itself for them as "
-             "Classic Controllers\n");
+        logf("GameCube adapter: no PADRead in this game; the hook reads the GameCube controllers itself for their "
+             "stand-in\n");
     }
     out.read = pad.read;
     out.read_in_patch = from_patch;
@@ -910,7 +910,7 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
                  out.sleep_thread);
         else
             logf("GameCube adapter: OSSleepThread not found: a game that reads nothing until its connect callback "
-                 "hears of a controller won't start GameCube controllers as Classic Controllers\n");
+                 "hears of a controller won't start the GameCube controllers' stand-in\n");
     }
     // SIProbe is told by PADRead's own calls, so with a pack's PADRead it
     // is searched in the game's code as the patches will leave it.
@@ -927,7 +927,7 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         // No adapter: the Wii's own ports play as Classic Controllers, and
         // USB is never asked anything (on some d2x a USB check broke the
         // game's disc reads, settle_gc_adapter).
-        logf("GameCube adapter: none in use; the hook goes in for GameCube controllers as Classic Controllers (the "
+        logf("GameCube adapter: none in use; the hook goes in for the GameCube controllers' stand-in (the "
              "Wii's own GameCube ports)\n");
         out.fd = -1;
         out.version = 5;
@@ -1286,7 +1286,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     // the HOME Menu's hooks; a build without them would ask USB on every
     // PADRead anyway (only the stand-in builds leave it alone).
     if (out.no_usb && !out.home_blob) {
-        why = "GameCube controllers as Classic Controllers need the game's KPAD read, WPADProbe and HOME Menu, which "
+        why = "GameCube controllers as Wii controllers need the game's KPAD read, WPADProbe and HOME Menu, which "
               "weren't found";
         close_pad_handles(out);
         return false;
@@ -1353,11 +1353,11 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     const std::uint32_t gcwii_at = gcwii ? out.state_bytes : 0;
     out.state_bytes += gcwii_bytes;
     if (gcwii)
-        logf("GameCube adapter: GameCube controllers as Classic Controllers (the game's setting): %u bytes of MEM2 "
+        logf("GameCube adapter: GameCube controllers as Wii controllers (the game's setting): %u bytes of MEM2 "
              "for their state\n",
              static_cast<unsigned>(align_up(sizeof(rtgcwii))));
     if (out.standin && !out.home_blob)
-        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the game's KPAD read or "
+        logf("GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the game's KPAD read or "
              "WPADProbe wasn't found\n");
     logf("USB controllers: %s driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
          kind % kBlobNoHome == kBlobAdapter ? "the adapter's" : kind % kBlobNoHome == kBlobPads ? "the USB pads'" : "the full",
@@ -1760,7 +1760,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
              hook.standin_nunchuk ? "Wii Remotes + Nunchuks" : "Classic Controllers", ctx->gcwii,
              hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");
     } else if (hook.standin && hook.gcwii_base != 0) {
-        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the KPAD read's or WPADProbe's "
+        logf("GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the KPAD read's or WPADProbe's "
              "hook didn't go in\n");
     }
     if (home) {
