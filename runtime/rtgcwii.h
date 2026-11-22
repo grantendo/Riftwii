@@ -139,6 +139,11 @@ struct rtgcwii_fs {
  * after the C-stick moves. */
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode);
 
+/* A numerator over RTHOME_AXIS_FULL as a float's bits, as rthome_float_bits
+ * but with no cap at 1: the Wii Remote's shake swings past 3 g, and the
+ * pointer's distance at rest is about 1.95 (the form's KPAD status). */
+uint32_t rtgcwii_float_bits(int32_t numerator);
+
 /* The stand-in's Wii Remote + Nunchuk on `channel` (RT_PAD_FORM_NUNCHUK),
  * for the game's KPAD read at `now`: the same words for every read until
  * the next sample, as rtgcwii_classic gives. All 0 (a still controller,
