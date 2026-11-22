@@ -330,10 +330,18 @@ static void pad_leave_check(struct rt_pad_context* c, const uint8_t* status, uin
 #if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
 static void pad_gcwii_read_pads(struct rt_pad_context* c);
 /* Whether the game has a connect callback the stand-in tells: KPAD's, or
- * the 2006 WPAD's (rtgcwii.h). */
+ * WPAD's own (rtgcwii.h). */
 static int pad_can_tell(const struct rt_pad_context* c) {
     return c->kpad_connect != 0 ||
            (c->gcwii != 0 && ((const struct rtgcwii*)(uintptr_t)c->gcwii)->wpad_connect_table != 0);
+}
+/* Whether the game's sleeps read the pads for it (pad_on_sleep): where its
+ * callback is KPAD's or the 2006 WPAD's, not the later WPAD's (a game that
+ * reads WPAD itself reads every frame, and LEGO Star Wars: The Complete
+ * Saga stops at start-up when its sleeps read them, Dolphin 22 Nov). */
+static int pad_reads_at_sleep(const struct rt_pad_context* c) {
+    return c->kpad_connect != 0 || (c->gcwii != 0 && pad_can_tell(c) &&
+                                    !((const struct rtgcwii*)(uintptr_t)c->gcwii)->wpad_connect_later);
 }
 #endif
 
@@ -350,7 +358,7 @@ uint32_t pad_on_sleep(struct rt_pad_context* c) {
      * for the retrace), through the same throttle as the reads' (at most
      * every 8 ms, and only while the game's own PADRead hasn't run in
      * 50 ms). */
-    if (c->gcwii != 0 && pad_can_tell(c)) pad_gcwii_read_pads(c);
+    if (c->gcwii != 0 && pad_reads_at_sleep(c)) pad_gcwii_read_pads(c);
 #endif
     if (c->leave_asked != RT_PAD_LEAVE_ASKED) return 0;  /* every sleep: the quick way out */
     msr = interrupts_off();
