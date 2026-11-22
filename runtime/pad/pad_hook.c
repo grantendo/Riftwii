@@ -52,7 +52,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 #ifdef RT_PAD_STANDIN
 int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result);
 uint32_t pad_on_kpad_enter(struct rt_pad_context* c);
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status);
 int32_t pad_on_set_format(struct rt_pad_context* c, int32_t chan, uint32_t format, int32_t result);
 #endif
@@ -614,7 +614,7 @@ static void pad_put32(uint8_t* p, uint32_t v) { *(volatile uint32_t*)(void*)p = 
 #define PAD_DEV_STANDIN PAD_DEV_FREESTYLE
 #define PAD_FORMAT_STANDIN PAD_FORMAT_FREESTYLE_ACC
 #define PAD_FORMAT_STANDIN_DPD PAD_FORMAT_FREESTYLE_ACC_DPD  /* with the camera on (KPADEnableDPD sets it) */
-#elif defined(RT_PAD_FORM_SIDEWAYS)
+#elif defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 #define RT_PAD_FORM_REMOTE 1
 #define PAD_DEV_STANDIN PAD_DEV_CORE
 #define PAD_FORMAT_STANDIN PAD_FORMAT_CORE_ACC
@@ -847,6 +847,13 @@ static void pad_gcwii_camera_now(struct rt_pad_context* c, uint32_t chan) {
         const uint8_t* wants = (const uint8_t*)(uintptr_t)(w->kpad_dpd + chan * w->kpad_dpd_stride + w->kpad_dpd_offset);
         if (pad_in_ram(wants)) rtgcwii_camera(w, chan, *(const volatile uint8_t*)wants);
     }
+#ifdef RT_PAD_FORM_POINTING
+    else {
+        /* KPAD's camera switch not found: a pointing game wants its
+         * pointer, so the camera counts as on. */
+        rtgcwii_camera(w, chan, 1u);
+    }
+#endif
 }
 
 static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status, uint32_t takes) {
@@ -864,7 +871,13 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     pad_put32(status + PAD_KPAD_ACC_SPEED, rtgcwii_float_bits(f.acc_speed));
     pad_put32(status + PAD_KPAD_POS_X, rthome_float_bits(f.pointer[0] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
     pad_put32(status + PAD_KPAD_POS_Y, rthome_float_bits(f.pointer[1] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
+#ifdef RT_PAD_FORM_POINTING
+    /* The pointing form's horizon turns with its roll (rtshape_pointing). */
+    pad_put32(status + PAD_KPAD_HORIZON_X, rthome_float_bits(f.horizon[0]));
+    pad_put32(status + PAD_KPAD_HORIZON_X + 4, rthome_float_bits(f.horizon[1]));
+#else
     pad_put32(status + PAD_KPAD_HORIZON_X, PAD_FLOAT_ONE);
+#endif
     pad_put32(status + PAD_KPAD_DIST, rtgcwii_float_bits(PAD_DIST_AT_REST));
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
     pad_put_device(c, status, PAD_DEV_STANDIN, f.pointer_shown ? PAD_DPD_SEEN : 0u,
@@ -1569,7 +1582,7 @@ static int pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32
 #if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
 /* The attachment the stand-in's form has, as WPAD reports it: a Nunchuk
  * (1), a Classic Controller (2); the sideways Wii Remote has none (-1). */
-#if defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 #define PAD_EXTENSION_TYPE (-1)
 #elif defined(RT_PAD_FORM_NUNCHUK)
 #define PAD_EXTENSION_TYPE 1

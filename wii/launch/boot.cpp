@@ -1324,7 +1324,8 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
         // a game with no PADRead isn't taken on for a hook it can't get
         // (CodeRabbit on #609).
         if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, classic_without_usb,
-                                g_extras.gc_standin_nunchuk, g_extras.gc_standin_sideways, usb, pad, why)) {
+                                g_extras.gc_standin_nunchuk, g_extras.gc_standin_sideways, g_extras.gc_standin_pointing,
+                                usb, pad, why)) {
             logf("GameCube adapter: off: %s\n", why.c_str());
             gc_adapter = false;
         }

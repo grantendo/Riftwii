@@ -387,6 +387,13 @@ if(BUILD_TESTING)
         target_compile_options(rtdeliver_tests PRIVATE -Wall -Wextra -Werror)
     endif()
     add_test(NAME rtdeliver COMMAND rtdeliver_tests)
+    add_executable(gcwii_pointing_tests tests/gcwii_pointing_tests.cpp runtime/rtgcwii.c runtime/rtslot.c runtime/rtsrc.c runtime/rtshape.c runtime/rtdeliver.c runtime/rthome.c)
+    target_include_directories(gcwii_pointing_tests PRIVATE runtime)
+    target_compile_definitions(gcwii_pointing_tests PRIVATE RT_PAD_STANDIN RT_PAD_FORM_POINTING)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(gcwii_pointing_tests PRIVATE -Wall -Wextra -Werror)
+    endif()
+    add_test(NAME gcwii_pointing COMMAND gcwii_pointing_tests)
     # The adapter-only pad blob's driver (runtime/pad, wiiu#45): the
     # adapter's tests again, against rtgcad.c built without the other USB
     # pads' code. Its own copy of rtgcad.c takes the library's place.

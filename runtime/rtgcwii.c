@@ -28,6 +28,12 @@ uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
     return rtshape_sideways_buttons(&p);
 }
 
+uint32_t rtgcwii_map_pointing(const uint8_t* pad) {
+    struct rtsrc_sample p;
+    rtsrc_decode(pad, &p);
+    return rtshape_pointing_buttons(&p);
+}
+
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     uint32_t i;
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
@@ -40,6 +46,8 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             w->hold[i] = rtshape_nunchuk_buttons(&p);
 #elif defined(RT_PAD_FORM_SIDEWAYS)
             w->hold[i] = rtshape_sideways_buttons(&p);
+#elif defined(RT_PAD_FORM_POINTING)
+            w->hold[i] = rtshape_pointing_buttons(&p);
 #else
             w->hold[i] = rtshape_classic_buttons(&p);
 #endif
@@ -101,11 +109,17 @@ static inline __attribute__((always_inline)) void rtgcwii_shape(struct rtgcwii* 
     if (takes & RTGCWII_TAKE_WORDS)
         rtdeliver_take(&w->deliver, channel, w->src.samples[channel], out->hold, &out->trig, &out->release);
     rtsrc_latest(&w->src, channel, &p);
+#ifdef RT_PAD_FORM_POINTING
+    (void)sideways;
+    (void)now;
+    rtshape_pointing(&w->shape, channel, &p, out);
+#else
     if (sideways) {
         rtshape_sideways(&w->shape, channel, &p, out);
     } else {
         rtshape_nunchuk(&w->shape, channel, &p, now, out);
     }
+#endif
     if (takes & RTGCWII_TAKE_STEP) rtshape_take_step(&w->shape, channel);
 }
 
@@ -117,8 +131,14 @@ void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtshape_out* o
     rtgcwii_shape(w, channel, 0, out, RTGCWII_TAKE_WORDS | RTGCWII_TAKE_STEP, 1);
 }
 
+#ifdef RT_PAD_FORM_POINTING
+void rtgcwii_pointing(struct rtgcwii* w, uint32_t channel, struct rtshape_out* out) {
+    rtgcwii_shape(w, channel, 0, out, RTGCWII_TAKE_WORDS | RTGCWII_TAKE_STEP, 0);
+}
+#endif
+
 void rtgcwii_wii_remote(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out, uint32_t takes) {
-#ifdef RT_PAD_FORM_SIDEWAYS
+#if defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
     rtgcwii_shape(w, channel, now, out, takes, 1);
 #else
     rtgcwii_shape(w, channel, now, out, takes, 0);
@@ -131,7 +151,7 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
     return rtgcwii_on(w, channel) ? w->hold[channel] : 0u;
 }
 
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 /* The raw report on `channel` in data format `report_format` (its length),
  * the camera as the game set it (KPAD's switch, `kpad_camera`, or the format
  * the game asked for). */

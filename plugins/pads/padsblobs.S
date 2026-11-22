@@ -68,6 +68,16 @@ riftwii_padasw_bin:
     .incbin "riftwii_padasw.bin"
 riftwii_padasw_bin_end:
 
+    .balign 32
+riftwii_padpt_bin:
+    .incbin "riftwii_padpt.bin"
+riftwii_padpt_bin_end:
+
+    .balign 32
+riftwii_padapt_bin:
+    .incbin "riftwii_padapt.bin"
+riftwii_padapt_bin_end:
+
     .balign 4
     .global pads_builds
 pads_builds:
@@ -83,3 +93,5 @@ pads_builds:
     .long riftwii_padaw_bin, riftwii_padaw_bin_end - riftwii_padaw_bin
     .long riftwii_padsw_bin, riftwii_padsw_bin_end - riftwii_padsw_bin
     .long riftwii_padasw_bin, riftwii_padasw_bin_end - riftwii_padasw_bin
+    .long riftwii_padpt_bin, riftwii_padpt_bin_end - riftwii_padpt_bin
+    .long riftwii_padapt_bin, riftwii_padapt_bin_end - riftwii_padapt_bin

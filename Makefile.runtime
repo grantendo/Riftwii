@@ -129,13 +129,13 @@ PADNOHOME := $(OUT)/riftwii_padn.bin $(OUT)/riftwii_padan.bin $(OUT)/riftwii_pad
 # runtime/rtgcwii.c), built with RT_PAD_STANDIN: the full one and the
 # adapter-only one, for each form (GameCube controllers as Classic
 # Controllers, padc and padac; as a Wii Remote + Nunchuk, padw and padaw; as a sideways Wii
-# Remote, padsw and padasw). Only a game whose
+# Remote, padsw and padasw; as a pointing Wii Remote, padpt and padapt). Only a game whose
 # GameCube controllers setting is on takes one (padhook.cpp picks); every
 # other game keeps the builds above, byte for byte as before the stand-ins.
 # $(1): its folder and name, $(2): its defines, $(3): rthid.o for the one
 # with other USB pads, $(4): the form's (none for the Classic Controller,
 # -DRT_PAD_FORM_NUNCHUK for the Wii Remote + Nunchuk, -DRT_PAD_FORM_SIDEWAYS for the sideways
-# Wii Remote).
+# Wii Remote, -DRT_PAD_FORM_POINTING for the pointing Wii Remote).
 # The stand-in's layer headers (rtgcwii.h includes them): every object that
 # includes rtgcwii.h depends on these too, or a field moved in one of them
 # leaves an object reading the old layout (Super Mario Galaxy 2's Nunchuk
@@ -197,7 +197,7 @@ $(OUT)/riftwii_$(1).bin: $(OUT)/$(1)/riftwii_$(1).elf $(OUT)/$(1)/riftwii_$(1)_a
 	@echo "$(1) pad blob (with the stand-ins): $$$$(stat -c %s $$@) bytes"
 endef
 PADSTANDIN := $(OUT)/riftwii_padc.bin $(OUT)/riftwii_padac.bin $(OUT)/riftwii_padw.bin $(OUT)/riftwii_padaw.bin \
-              $(OUT)/riftwii_padsw.bin $(OUT)/riftwii_padasw.bin
+              $(OUT)/riftwii_padsw.bin $(OUT)/riftwii_padasw.bin               $(OUT)/riftwii_padpt.bin $(OUT)/riftwii_padapt.bin
 
 
 # The GameCube disc blob (runtime/gc): a GameCube game's DVDLow*
@@ -529,6 +529,8 @@ $(eval $(call PAD_STANDIN_BLOB,padw,,rthid.o,-DRT_PAD_FORM_NUNCHUK))
 $(eval $(call PAD_STANDIN_BLOB,padaw,-DGCAD_ADAPTER_ONLY,,-DRT_PAD_FORM_NUNCHUK))
 $(eval $(call PAD_STANDIN_BLOB,padsw,,rthid.o,-DRT_PAD_FORM_SIDEWAYS))
 $(eval $(call PAD_STANDIN_BLOB,padasw,-DGCAD_ADAPTER_ONLY,,-DRT_PAD_FORM_SIDEWAYS))
+$(eval $(call PAD_STANDIN_BLOB,padpt,,rthid.o,-DRT_PAD_FORM_POINTING))
+$(eval $(call PAD_STANDIN_BLOB,padapt,-DGCAD_ADAPTER_ONLY,,-DRT_PAD_FORM_POINTING))
 
 
 

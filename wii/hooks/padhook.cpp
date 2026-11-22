@@ -187,8 +187,10 @@ bool own_list(std::int32_t fd, s32& count) {
 // (PadHook::standin): every other game keeps the first six, unchanged.
 // The same two again with the Wii Remote + Nunchuk form (kBlobNunchuk,
 // RT_PAD_FORM_NUNCHUK), for a game set to that form
-// (PadHook::standin_nunchuk), and with the sideways Wii Remote form
-// (kBlobSideways, RT_PAD_FORM_SIDEWAYS; PadHook::standin_sideways).
+// (PadHook::standin_nunchuk), with the sideways Wii Remote form
+// (kBlobSideways, RT_PAD_FORM_SIDEWAYS; PadHook::standin_sideways), and with
+// the pointing Wii Remote form (kBlobPointing, RT_PAD_FORM_POINTING;
+// PadHook::standin_pointing).
 enum BlobKind {
     kBlobFull = 0,
     kBlobAdapter = 1,
@@ -197,16 +199,21 @@ enum BlobKind {
     kBlobClassic = 6,
     kBlobNunchuk = 8,
     kBlobSideways = 10,
-    kBlobKinds = 12
+    kBlobPointing = 12,
+    kBlobKinds = 14
 };
-int kind_of(bool adapter_only, bool pads_only, bool home, bool standin, bool nunchuk, bool sideways) {
+int kind_of(bool adapter_only, bool pads_only, bool home, bool standin, bool nunchuk, bool sideways, bool pointing) {
     if (home && standin)
-        return (nunchuk ? kBlobNunchuk : sideways ? kBlobSideways : kBlobClassic) + (adapter_only ? 1 : 0);
+        return (nunchuk     ? kBlobNunchuk
+                : sideways ? kBlobSideways
+                : pointing ? kBlobPointing
+                           : kBlobClassic) +
+               (adapter_only ? 1 : 0);
     return (adapter_only ? kBlobAdapter : pads_only ? kBlobPads : kBlobFull) + (home ? 0 : kBlobNoHome);
 }
 int kind_of(const PadHook& hook) {
     return kind_of(hook.adapter_only, hook.pads_only, hook.home_blob, hook.standin, hook.standin_nunchuk,
-                   hook.standin_sideways);
+                   hook.standin_sideways, hook.standin_pointing);
 }
 // A build without the HOME Menu (its smaller context and header).
 bool no_home(int kind) { return kind >= kBlobNoHome && kind < kBlobClassic; }
@@ -224,7 +231,9 @@ const char* build_name(int kind) {
                                                   "full build with the stand-ins as a Wii Remote + Nunchuk",
                                                   "adapter's build with the stand-ins as a Wii Remote + Nunchuk",
                                                   "full build with the stand-ins as a sideways Wii Remote",
-                                                  "adapter's build with the stand-ins as a sideways Wii Remote"};
+                                                  "adapter's build with the stand-ins as a sideways Wii Remote",
+                                                  "full build with the stand-ins as a pointing Wii Remote",
+                                                  "adapter's build with the stand-ins as a pointing Wii Remote"};
     return names[kind];
 }
 // The builds are the pads plugin's (plugins/pads, docs/PLUGINS.md "The
@@ -782,7 +791,7 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, co
     // Classic Controller stand-in: that KPAD knows no Classic Controller,
     // so only the Wii Remote forms take it.
     const bool old_kpad = kpad.status_bytes == 136;
-    const bool takes_old_kpad = out.standin_nunchuk || out.standin_sideways;
+    const bool takes_old_kpad = out.standin_nunchuk || out.standin_sideways || out.standin_pointing;
     const char* missing_read = kpad.address == 0                ? "the KPAD read"
                                : old_kpad && !out.standin       ? "a KPAD read for the HOME Menu (the 2006 KPAD's)"
                                : old_kpad && !takes_old_kpad    ? "a KPAD read for Classic Controllers (the 2006 KPAD's)"
@@ -856,8 +865,7 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, co
     if (have_view) out.kpad_dpd = find_kpad_enable_dpd(dpd_view);
     if (out.kpad_dpd.enable != 0) {
         logf("GameCube adapter: KPADEnableDPD at 0x%08x (its switch at 0x%08x + channel * %u + 0x%x: with GameCube "
-             "controllers as Wii Remotes + Nunchuks, the pointer shows while the game has it on)
-",
+             "controllers as Wii Remotes + Nunchuks, the pointer shows while the game has it on)\n",
              out.kpad_dpd.enable, out.kpad_dpd.base, out.kpad_dpd.stride, out.kpad_dpd.offset);
     } else if (have_view) {
         // A game that never links KPADEnableDPD keeps the camera as KPAD
@@ -866,8 +874,7 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, co
         out.kpad_dpd = find_kpad_dpd_switch(dpd_view);
         if (out.kpad_dpd.enable != 0)
             logf("GameCube adapter: KPAD's camera switch at 0x%08x + channel * %u + 0x%x (read at 0x%08x; the game "
-                 "has no KPADEnableDPD): the pointer shows while it's on
-",
+                 "has no KPADEnableDPD): the pointer shows while it's on\n",
                  out.kpad_dpd.base, out.kpad_dpd.stride, out.kpad_dpd.offset, out.kpad_dpd.enable);
     }
     // Optional: where the game has it (Mario Kart Wii), it reads a Classic
@@ -965,12 +972,13 @@ void read_patched_code(const std::vector<MemoryPatch>& patches, PatchedCode& out
 }
 
 bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches, bool standin,
-                        bool nunchuk, bool sideways, bool usb, PadHook& out, std::string& why) {
+                        bool nunchuk, bool sideways, bool pointing, bool usb, PadHook& out, std::string& why) {
     out = PadHook{};
     out.demo = demo;
     out.standin = standin;
     out.standin_nunchuk = standin && nunchuk;
     out.standin_sideways = standin && sideways;
+    out.standin_pointing = standin && pointing;
     std::vector<CodeRange> text;
     for (std::size_t i = 0; i < kDolTextSections; ++i) {
         const DolSection& s = dol.sections[i];
@@ -1332,7 +1340,7 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
     decide_pad_inputs(hook, code_build, true);
     const int kind =
         kind_of(hook.adapter_only, hook.pads_only, wants_home_build(hook, code_build), hook.standin, hook.standin_nunchuk,
-                hook.standin_sideways);
+                hook.standin_sideways, hook.standin_pointing);
     const std::uint32_t bytes = kBuildBytes[kind];
     g_build = static_cast<std::uint8_t*>(memalign(32, (bytes + 31u) & ~31u));
     if (g_build == nullptr) {
@@ -1996,6 +2004,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
              "state at 0x%08x)%s\n",
              hook.standin_nunchuk    ? "Wii Remotes + Nunchuks"
              : hook.standin_sideways ? "sideways Wii Remotes"
+             : hook.standin_pointing ? "pointing Wii Remotes"
                                      : "Classic Controllers",
              ctx->gcwii,
              hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");

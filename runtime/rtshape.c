@@ -47,6 +47,22 @@ uint32_t rtshape_nunchuk_buttons(const struct rtsrc_sample* p) {
     return h;
 }
 
+uint32_t rtshape_pointing_buttons(const struct rtsrc_sample* p) {
+    const uint32_t b = p->buttons;
+    uint32_t h = 0;
+    if (b & RTSRC_A) h |= RTSHAPE_WR_A;
+    if (b & RTSRC_B) h |= RTSHAPE_WR_B;
+    if (b & RTSRC_X) h |= RTSHAPE_WR_1;
+    if (b & RTSRC_Y) h |= RTSHAPE_WR_2;
+    if (b & RTSRC_Z) h |= RTSHAPE_WR_MINUS;
+    if (b & RTSRC_START) h |= RTSHAPE_WR_PLUS;
+    if (b & RTSRC_LEFT) h |= RTSHAPE_WR_LEFT;
+    if (b & RTSRC_RIGHT) h |= RTSHAPE_WR_RIGHT;
+    if (b & RTSRC_UP) h |= RTSHAPE_WR_UP;
+    if (b & RTSRC_DOWN) h |= RTSHAPE_WR_DOWN;
+    return h;
+}
+
 uint32_t rtshape_sideways_buttons(const struct rtsrc_sample* p) {
     uint32_t b = p->buttons, h = 0;
     if (p->axes[0] <= -RTSHAPE_STICK_PRESS) b |= RTSRC_LEFT;
@@ -67,7 +83,7 @@ uint32_t rtshape_sideways_buttons(const struct rtsrc_sample* p) {
     return h;
 }
 
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 /* The shake's count at a sample: by time (every shake_flip ticks a step),
  * else by samples; shake_jump notes a step until a read (rtshape_nunchuk,
  * rtshape_sideways) takes it, so samples between two reads can't lose it
@@ -98,8 +114,60 @@ static void rtshape_count_shake(struct rtshape* sh, uint32_t i, uint32_t shaking
 }
 #endif
 
+#ifdef RT_PAD_FORM_POINTING
+/* The pointing form's motion, once a sample: R (or its analog trigger)
+ * shakes it; while the game has the camera on, the control stick moves the
+ * pointer by time, not by sample (a game's reads take one to three samples
+ * a frame: Battle Revolution about one, Wii Sports two or more),
+ * RTSHAPE_POINTER_STEP a frame at full push, counted from when the camera
+ * came on, a gap counting for at most RTSHAPE_POINTER_GAP_FRAMES frames;
+ * with the camera off the stick does nothing. */
+static void rtshape_pointing_step(struct rtshape* sh, uint32_t i, const struct rtsrc_sample* s, uint32_t now) {
+    const uint32_t gap = RTSHAPE_POINTER_GAP_FRAMES * RTSHAPE_TICKS_PER_FRAME;
+    const int32_t whole_step = RTHOME_AXIS_FULL * 16;  /* a full push for a frame, in the sums below */
+    uint32_t dt, at;
+    int32_t k, sixteenths;
+    rtshape_count_shake(sh, i, (s->buttons & RTSRC_R) || s->trigger[1] >= RTSHAPE_TRIGGER_ON, now);
+    if (!((sh->camera >> i) & 1u)) {
+        /* Camera off: nothing counts until it's on again. */
+        sh->pointer_at[i] = 0;
+        sh->pointer_rest[i][0] = sh->pointer_rest[i][1] = 0;
+        return;
+    }
+    at = sh->pointer_at[i];
+    if (at == 0) {
+        /* The first sample since the camera came on (or since plugged in):
+         * a frame's worth, never the time before. */
+        dt = RTSHAPE_TICKS_PER_FRAME;
+        at = now - dt;
+    } else {
+        dt = rtshape_elapsed(now, at);
+        if (dt > gap) {
+            dt = gap;
+            at = now - gap;
+        }
+    }
+    sixteenths = (int32_t)(dt * 16u / RTSHAPE_TICKS_PER_FRAME);  /* in whole sixteenths of a frame */
+    /* What wasn't a whole sixteenth stays to be counted at the next sample. */
+    sh->pointer_at[i] = (at + (uint32_t)sixteenths * RTSHAPE_TICKS_PER_FRAME / 16u) | 1u;
+    for (k = 0; k < 2; ++k) {
+        /* Up on the stick is up on the screen (KPAD's y grows downward). */
+        const int32_t push = (k == 0 ? s->axes[0] : -s->axes[1]) * RTSHAPE_POINTER_STEP * sixteenths +
+                             sh->pointer_rest[i][k];
+        const int32_t step = push / whole_step;
+        int32_t p = sh->pointer[i][k] + step;
+        sh->pointer_rest[i][k] = push - step * whole_step;
+        if (p > RTSHAPE_POINTER_EDGE) p = RTSHAPE_POINTER_EDGE;
+        if (p < -RTSHAPE_POINTER_EDGE) p = -RTSHAPE_POINTER_EDGE;
+        sh->pointer[i][k] = p;
+    }
+}
+#endif
+
 void rtshape_step(struct rtshape* sh, uint32_t i, const struct rtsrc_sample* s, uint32_t now) {
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_POINTING)
+    if (i < RTSHAPE_PORTS) rtshape_pointing_step(sh, i, s, now);
+#elif defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
     const int32_t* axes = s->axes;  /* the C-stick is axes 2 and 3 */
     int32_t k;
     uint32_t shaking;
@@ -139,8 +207,10 @@ void rtshape_step(struct rtshape* sh, uint32_t i, const struct rtsrc_sample* s, 
 }
 
 void rtshape_reset(struct rtshape* sh, uint32_t i) {
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
     if (i >= RTSHAPE_PORTS) return;
+    sh->pointer_at[i] = 0;
+    sh->pointer_rest[i][0] = sh->pointer_rest[i][1] = 0;
     sh->shake[i] = 0;
     sh->shake_from[i] = 0;
     sh->shake_jump &= ~(1u << i);
@@ -154,6 +224,12 @@ void rtshape_reset(struct rtshape* sh, uint32_t i) {
 void rtshape_camera(struct rtshape* sh, uint32_t port, uint32_t mode) {
     if (port >= RTSHAPE_PORTS) return;
     if (mode != 0) {
+        /* Turned on: the pointing form's pointer counts its motion from
+         * here, not over the time the camera was off. */
+        if (!((sh->camera >> port) & 1u)) {
+            sh->pointer_at[port] = 0;
+            sh->pointer_rest[port][0] = sh->pointer_rest[port][1] = 0;
+        }
         sh->camera |= 1u << port;
     } else {
         sh->camera &= ~(1u << port);
@@ -259,6 +335,43 @@ void rtshape_sideways(const struct rtshape* sh, uint32_t port, const struct rtsr
                       &out->acc_speed);
     }
 }
+
+#ifdef RT_PAD_FORM_POINTING
+void rtshape_pointing(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out) {
+    int32_t x, z, r2, r;
+    rtshape_rest(out);
+    out->horizon[0] = RTHOME_AXIS_FULL;
+    out->horizon[1] = 0;
+    if (port >= RTSHAPE_PORTS) return;
+    if ((sh->camera >> port) & 1u) {
+        out->pointer[0] = sh->pointer[port][0];
+        out->pointer[1] = sh->pointer[port][1];
+        out->pointer_shown = 1;
+    }
+    /* Tilt, any way: the C-stick right rolls it right (gravity towards +X),
+     * up dips its nose (towards +Z); a diagonal goes no further than a full
+     * push one way, and the length stays 1 g. */
+    x = p->axes[2] * RTSHAPE_TILT_SIN / RTHOME_AXIS_FULL;
+    z = p->axes[3] * RTSHAPE_TILT_SIN / RTHOME_AXIS_FULL;
+    r2 = x * x + z * z;
+    if (r2 > RTSHAPE_TILT_SIN * RTSHAPE_TILT_SIN) {
+        r = rtshape_isqrt(r2);
+        x = x * RTSHAPE_TILT_SIN / r;
+        z = z * RTSHAPE_TILT_SIN / r;
+        r2 = x * x + z * z;
+    }
+    out->acc[0] = x;
+    out->acc[2] = z;
+    out->acc[1] = -rtshape_isqrt(RTHOME_AXIS_FULL * RTHOME_AXIS_FULL - r2);
+    /* The roll alone (the nose's dip doesn't turn the lights' line): rolled
+     * right, the line turns the same way. */
+    r = rtshape_isqrt(x * x + out->acc[1] * out->acc[1]);
+    out->horizon[0] = -out->acc[1] * RTHOME_AXIS_FULL / r;
+    out->horizon[1] = x * RTHOME_AXIS_FULL / r;
+    if (sh->shake[port] != 0)
+        rtshape_shake(sh->shake[port], (int)((sh->shake_jump >> port) & 1u), out->acc, &out->acc_value, &out->acc_speed);
+}
+#endif
 
 int rtshape_shake_at(const struct rtshape* sh, uint32_t port, uint32_t now, uint32_t ago, int32_t acc[3]) {
     uint32_t since;
