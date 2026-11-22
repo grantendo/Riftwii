@@ -71,6 +71,21 @@ void put_ring_walker(Section& t, std::int32_t size, bool stores, bool keeps_erro
     t.put(kBlr);
 }
 
+// The 2006 KPAD's read: the ring walk over 136-byte statuses, the device
+// type copied as a word (`lwz`/`stw` at 0x5C) and the pointer flag stored
+// (`stb` at 0x85), as in Excite Truck's.
+void put_2006_read(Section& t) {
+    t.put(stwu_r1(0x40));
+    t.put(kMflrR0);
+    t.put(mr(27, 3));
+    t.put(mulli(0, 27, 136));
+    for (int i = 0; i < 4; ++i) t.put(addi(31, 31, -136));
+    t.put(lwz(0, 29, 0x5C));
+    t.put(stw(0, 3, 0x5C));
+    t.put(stb(0, 29, 0x85));
+    t.put(kBlr);
+}
+
 void TestKpadRead() {
     {
         // The newer read, with a decoy walker (Brawl's 144-byte one) next to it.
@@ -99,9 +114,38 @@ void TestKpadRead() {
         EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
     }
     {
-        // A 2006 read: a ring walker without the stores at 0x5C/0x5D.
+        // A ring walker over 136-byte statuses without the 2006 read's own
+        // stores either: not a read.
         Section t{0x80010000, {}};
         put_ring_walker(t, 136, false, true);
+        EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
+    }
+    {
+        // The 2006 read (Excite Truck): 136-byte statuses, the device type
+        // copied as a word at 0x5C and the pointer flag stored at 0x85.
+        Section t{0x80010000, {}};
+        put_ring_walker(t, 144, false, false);  // a decoy
+        const std::uint32_t read = t.here();
+        put_2006_read(t);
+        const riftwii::KpadRead found = riftwii::find_kpad_read({t.range()});
+        EXPECT_EQ(found.address, read);
+        EXPECT_EQ(found.status_bytes, 136u);
+        EXPECT_TRUE(!found.takes_error);
+    }
+    {
+        // A later read beside it wins (the 2006 shape is looked for only
+        // when there's none).
+        Section t{0x80010000, {}};
+        put_2006_read(t);
+        const std::uint32_t read = t.here();
+        put_ring_walker(t, 132, true, false);
+        EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, read);
+    }
+    {
+        // Two 2006 candidates: unsure, none.
+        Section t{0x80010000, {}};
+        put_2006_read(t);
+        put_2006_read(t);
         EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
     }
 }

@@ -744,7 +744,14 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     const KpadRead kpad = find_kpad_read(text);
     const std::uint32_t probe = find_wpad_probe(text);
     const HbmFunctions hbm = find_hbm_functions(text, all, find_small_data_base(all, dol.entry));
-    const char* missing_read = kpad.address == 0 ? "the KPAD read" : probe == 0 ? "WPADProbe" : nullptr;
+    // The 2006 KPAD's 136-byte status lays its last fields out apart from
+    // the later ones', and only the stand-in builds write it that way: the
+    // pad builds without a stand-in never get its read.
+    const bool old_kpad = kpad.status_bytes == 136;
+    const char* missing_read = kpad.address == 0                ? "the KPAD read"
+                               : old_kpad && !out.standin       ? "a KPAD read for the HOME Menu (the 2006 KPAD's)"
+                               : probe == 0                     ? "WPADProbe"
+                                                                : nullptr;
     const char* missing_menu = hbm.calc == 0 ? "HBMCalc" : hbm.select == 0 ? "HBMGetSelectBtnNum" : nullptr;
     // GameCube controllers as Classic Controllers need only the KPAD read
     // and WPADProbe: without the HOME Menu's functions (Donkey Kong Country
