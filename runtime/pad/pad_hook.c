@@ -1072,6 +1072,22 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     interrupts_restore(msr);
 }
 #else
+#ifdef RT_PAD_FORM_NUNCHUK
+/* A Wii Remote with a Nunchuk as KPADGetUnifiedWpadStatus gives one
+ * (WPADFSStatus, in rthome_wpad_status's layout): the Wii Remote's buttons
+ * at 0 (the Nunchuk's Z and C among them), the device type at 40, the data
+ * format at 54; accelerometers and the stick at rest, as the Classic form's
+ * raw status carries buttons only. */
+static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold) {
+    uint32_t i;
+    for (i = 0; i < RTHOME_WPAD_STATUS_BYTES; ++i) entry[i] = 0;
+    entry[0] = (uint8_t)(hold >> 8);
+    entry[1] = (uint8_t)hold;
+    entry[40] = PAD_DEV_FREESTYLE;
+    entry[54] = PAD_FORMAT_FREESTYLE_ACC;
+}
+#endif
+
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count) {
     uint32_t msr, t, stand_in, hold, trig, release, remote_hold, remote_trig, remote_release;
     int32_t axes[6], pointer[2], i;
@@ -1083,20 +1099,29 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     t = now();
     stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
-#ifndef RT_PAD_FORM_NUNCHUK
-        /* The Classic form's raw status; the Wii Remote + Nunchuk form
-         * leaves it as the game's read had it (none of the games it was
-         * tried with reads it: Mario Kart Wii, which does, takes a Classic). */
+        /* The permanent stand-in's raw status, in its form's shape. */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
+#ifdef RT_PAD_FORM_NUNCHUK
+            for (i = 0; i < count; ++i) pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, hold);
+#else
             for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
-        }
 #endif
+        }
         interrupts_restore(msr);
         return;
     }
     rthome_classic(&c->home, t, &hold, &trig, &release, axes);
     rthome_remote(&c->home, &remote_hold, &remote_trig, &remote_release, pointer);
+#ifdef RT_PAD_FORM_NUNCHUK
+    /* The HOME Menu's stand-in on a channel the game knows as this one's
+     * keeps its shape (pad_home_status). */
+    if ((pad_gcwii_shaped(c) >> (uint32_t)chan) & 1u) {
+        for (i = 0; i < count; ++i) pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold);
+        interrupts_restore(msr);
+        return;
+    }
+#endif
     for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, hold);
     interrupts_restore(msr);
 }
