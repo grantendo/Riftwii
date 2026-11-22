@@ -79,7 +79,24 @@ struct rtgcwii {
      * one): the table of the channels' control blocks and the callback's
      * place in one, 0: none. Loader-filled. */
     uint32_t wpad_connect_table, wpad_connect_offset;
+    /* The stand-in below KPAD (the Wii Remote forms), for a game that reads
+     * WPAD itself (Punch-Out!!: WPADRead into its own pad manager): the data
+     * format the game last asked for on each channel (WPADSetDataFormat,
+     * answered for the stand-in), 0 until it asks. */
+    uint32_t format[RTGCWII_CHANNELS];
+    /* Telling such a game again: it may hear "connected" before its own
+     * callback is set (Punch-Out!!'s WPAD callback passes it on to one the
+     * game sets later), so a channel told and not read since (no KPAD read
+     * or WPADRead given the stand-in there) is told again every
+     * retell_ticks, at most RTGCWII_RETELLS times. retell_ticks 0: never
+     * (loader-filled, only where WPADRead is hooked). */
+    uint32_t retell_ticks;
+    uint32_t heard;                         /* channels read since they were told, one bit each */
+    uint32_t told_at[RTGCWII_CHANNELS];     /* when each was told (low bit set), 0: not noted yet */
+    uint32_t retells[RTGCWII_CHANNELS];     /* times told again since its controller came */
 };
+
+#define RTGCWII_RETELLS 30u
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
  * will see them (the adapter's already in): a port with a controller keeps
@@ -254,5 +271,45 @@ int rtgcwii_should_read(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
 /* PADRead ran at `now`; `own`: the blob's own call (rtgcwii_should_read),
  * else the game's. */
 void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own);
+
+/* The game read the stand-in on `channel` (a KPAD read or WPADRead gave it):
+ * it has heard of it, and isn't told again. */
+void rtgcwii_heard(struct rtgcwii* w, uint32_t channel);
+
+/* At each PADRead: a channel the game was told of and hasn't read since,
+ * retell_ticks after the telling, counts as not told, so the connect
+ * callback hears "connected" again (rtgcwii_next_change), at most
+ * RTGCWII_RETELLS times while its controller stays. */
+void rtgcwii_retell(struct rtgcwii* w, uint32_t now);
+
+/* WPADStatus, as WPADRead gives it: the buttons (big-endian) at 0, the
+ * acceleration at 2, 4 and 6 (signed, RTGCWII_ACC_G a g, the Wii Remote's
+ * own axes: lying flat, +z is up), four camera objects at 8 (x and y signed
+ * on 1024 x 768, the size, an id and a pad byte; size 0: none), the device
+ * type at 40 and the error at 41; a Wii Remote + Nunchuk's WPADFSStatus goes
+ * on with the Nunchuk's acceleration at 42, 44 and 46 and its stick at 48
+ * and 49 (signed bytes, RTGCWII_FS_STICK_FULL full). */
+#define RTGCWII_WPAD_CORE_BYTES 42u
+#define RTGCWII_WPAD_FS_BYTES 50u
+#define RTGCWII_ACC_G 104         /* Dolphin's calibration: zero 0x200, one g 0x268 */
+#define RTGCWII_FS_STICK_FULL 100
+/* The camera's two sensor-bar dots: centred on (512, 384) when the pointer
+ * is at the screen's centre, moving against the pointer by up to
+ * RTGCWII_DOT_RANGE_X / Y at its edge, RTGCWII_DOT_APART apart (Dolphin's
+ * emulated Wii Remote at rest: 137 pixels, size 3). */
+#define RTGCWII_DOT_RANGE_X 384
+#define RTGCWII_DOT_RANGE_Y 288
+#define RTGCWII_DOT_APART 137
+#define RTGCWII_DOT_SIZE 3u
+
+/* The stand-in's raw status on `channel` (the Wii Remote forms) into `out`,
+ * for a game that reads WPAD itself: its form's buttons and acceleration
+ * (rtgcwii_sideways, rtgcwii_nunchuk) and, while the camera is on (KPAD's
+ * switch, `kpad_camera`, or a data format with the camera that the game
+ * asked for), the pointer as the two dots; the Nunchuk's part only when the
+ * game asked for a Nunchuk format (WPADRead copies that format's size).
+ * Returns the bytes written, 0 (none) where the stand-in isn't on. In the
+ * Classic Controller form it writes nothing. */
+uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera);
 
 #endif

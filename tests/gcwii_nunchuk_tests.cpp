@@ -242,6 +242,34 @@ void TestFloatBits() {
         EXPECT_EQ(rtgcwii_float_bits(n), rthome_float_bits(n));  // the same up to 1
 }
 
+// The raw status for a game that reads WPAD itself (rtgcwii_wpad_status):
+// a Wii Remote with a Nunchuk (device 1), the Nunchuk's Z and C among the
+// buttons; its stick and acceleration only once the game asked for a
+// Nunchuk format (WPADRead then copies WPADFSStatus's 50 bytes).
+void TestWpadStatus() {
+    rtgcwii w = fresh();
+    Pads p;
+    std::uint8_t* s = p.plug(0, kGcA | kGcL);
+    s[2] = 72;  // the stick full right
+    rtgcwii_pads(&w, p.s, 1);
+    std::uint8_t out[RTGCWII_WPAD_FS_BYTES + 2];
+    std::memset(out, 0xEE, sizeof(out));
+    EXPECT_EQ(rtgcwii_wpad_status(&w, 0, out, 1, 0), RTGCWII_WPAD_CORE_BYTES);
+    EXPECT_EQ((out[0] << 8) | out[1], static_cast<int>(kWrA | kNcZ));
+    EXPECT_EQ(out[40], 1);
+    EXPECT_EQ(out[RTGCWII_WPAD_CORE_BYTES], 0xEE);
+    w.format[0] = 4;  // Nunchuk with acceleration
+    EXPECT_EQ(rtgcwii_wpad_status(&w, 0, out, 1, 0), RTGCWII_WPAD_FS_BYTES);
+    EXPECT_EQ(static_cast<std::int16_t>((out[46] << 8) | out[47]), RTGCWII_ACC_G);  // the Nunchuk lying still
+    EXPECT_EQ(static_cast<std::int8_t>(out[48]), RTGCWII_FS_STICK_FULL);
+    EXPECT_EQ(static_cast<std::int8_t>(out[49]), 0);
+    EXPECT_EQ(out[RTGCWII_WPAD_FS_BYTES], 0xEE);
+    for (int i = 8; i < 40; ++i) EXPECT_EQ(out[i], 0);  // camera off
+    w.format[0] = 5;  // ...and the camera
+    rtgcwii_wpad_status(&w, 0, out, 1, 0);
+    EXPECT_EQ(static_cast<std::int16_t>((out[12] << 8) | out[13]), static_cast<int>(RTGCWII_DOT_SIZE));
+}
+
 }  // namespace
 
 int main() {
@@ -252,6 +280,7 @@ int main() {
     TestShake();
     TestCamera();
     TestFloatBits();
+    TestWpadStatus();
     if (g_failures == 0) std::cout << "gcwii_nunchuk: all passed" << std::endl;
     return g_failures == 0 ? 0 : 1;
 }
