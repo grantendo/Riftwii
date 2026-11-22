@@ -514,6 +514,16 @@ static void pad_put32(uint8_t* p, uint32_t v) { *(volatile uint32_t*)(void*)p = 
 #define PAD_KPAD_CL_AXES 0x6Cu  /* left stick x/y, right stick x/y, L, R: six floats */
 #define PAD_KPAD_END 0x84u
 #define PAD_DEV_CLASSIC 2u
+/* The permanent stand-in's device as WPADProbe reports it: a Classic
+ * Controller, or with RT_PAD_FORM_NUNCHUK a Wii Remote with a Nunchuk
+ * (WPAD_DEV_FREESTYLE). The HOME Menu's stand-in is a Classic Controller in
+ * every build. */
+#define PAD_DEV_FREESTYLE 1u
+#ifdef RT_PAD_FORM_NUNCHUK
+#define PAD_DEV_STANDIN PAD_DEV_FREESTYLE
+#else
+#define PAD_DEV_STANDIN PAD_DEV_CLASSIC
+#endif
 /* The format KPAD reports for a Classic Controller: with the pointer (8)
  * while the HOME Menu is open, without (7) otherwise (seen in Naruto, Mario
  * Kart Wii and Brawl, 23 Oct). A game may check it: Ranger Cross waited
@@ -650,6 +660,51 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
     w->reading = 0;
 }
 
+#ifdef RT_PAD_FORM_NUNCHUK
+/* KPADStatus beyond the Classic form's offsets: the Wii Remote's whole
+ * acceleration and its speed, the distance, and the Nunchuk's stick and
+ * acceleration (WPAD's FS fields, in the union the Classic's use). */
+#define PAD_KPAD_ACC_X 0x0Cu
+#define PAD_KPAD_ACC_SPEED 0x1Cu
+#define PAD_KPAD_DIST 0x48u
+#define PAD_KPAD_FS_STICK 0x60u
+#define PAD_KPAD_FS_ACC 0x68u
+#define PAD_KPAD_FS_ACC_VALUE 0x74u
+#define PAD_KPAD_FS_ACC_SPEED 0x78u
+#define PAD_FORMAT_FREESTYLE_ACC 4u
+#define PAD_DIST_AT_REST 498  /* 1.947 over RTHOME_AXIS_FULL, as Dolphin's emulated Remote gives it */
+
+/* The permanent stand-in's status on `chan` (rtgcwii_nunchuk): a Wii Remote
+ * with a Nunchuk, its stick, both accelerometers (still, or the Wii Remote
+ * shaking while X is held) and the pointer, shown while the C-stick moves
+ * it and for a while after. Every other field 0, as pad_classic_status. */
+static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
+    struct rtgcwii_fs f;
+    uint32_t i;
+    rtgcwii_nunchuk((struct rtgcwii*)(uintptr_t)c->gcwii, chan, now(), &f);
+    for (i = 0; i + 4 <= c->kpad_status_bytes; i += 4) pad_put32(status + i, 0);
+    pad_put32(status + PAD_KPAD_HOLD, f.hold);
+    pad_put32(status + PAD_KPAD_TRIG, f.trig);
+    pad_put32(status + PAD_KPAD_RELEASE, f.release);
+    for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_ACC_X + 4 * i, rthome_float_bits(f.acc[i]));
+    pad_put32(status + PAD_KPAD_ACC_VALUE, rthome_float_bits(f.acc_value));
+    pad_put32(status + PAD_KPAD_ACC_SPEED, rthome_float_bits(f.acc_speed));
+    pad_put32(status + PAD_KPAD_POS_X, rthome_float_bits(f.pointer[0] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
+    pad_put32(status + PAD_KPAD_POS_Y, rthome_float_bits(f.pointer[1] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
+    pad_put32(status + PAD_KPAD_HORIZON_X, PAD_FLOAT_ONE);
+    pad_put32(status + PAD_KPAD_DIST, rthome_float_bits(PAD_DIST_AT_REST));
+    pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
+    status[PAD_KPAD_DEV_TYPE] = PAD_DEV_FREESTYLE;
+    status[PAD_KPAD_WPAD_ERR] = 0;
+    status[PAD_KPAD_DPD_VALID] = (uint8_t)(f.pointer_shown ? PAD_DPD_SEEN : 0u);
+    status[PAD_KPAD_DATA_FORMAT] = PAD_FORMAT_FREESTYLE_ACC;
+    pad_put32(status + PAD_KPAD_FS_STICK, rthome_float_bits(f.stick[0]));
+    pad_put32(status + PAD_KPAD_FS_STICK + 4, rthome_float_bits(f.stick[1]));
+    for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_FS_ACC + 4 * i, rthome_float_bits(f.fs_acc[i]));
+    pad_put32(status + PAD_KPAD_FS_ACC_VALUE, rthome_float_bits(f.fs_acc_value));
+    pad_put32(status + PAD_KPAD_FS_ACC_SPEED, rthome_float_bits(f.fs_acc_speed));
+}
+#else
 /* The permanent stand-in's status on `chan` (rtgcwii.h): the Classic
  * Controller alone, the Wii Remote's own buttons and pointer at rest. */
 static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
@@ -661,6 +716,7 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     p.menu_open = 0;
     pad_classic_status(c, status, &p);
 }
+#endif
 
 static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p) {
     uint32_t i;
@@ -863,7 +919,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
     }
     if (!c->home_on) {
         if (c->gcwii && chan >= 0 && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
-            if (pad_in_ram(type)) *type = PAD_DEV_CLASSIC;
+            if (pad_in_ram(type)) *type = PAD_DEV_STANDIN;
             return 0;
         }
         return result;
@@ -901,7 +957,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
         if (chan >= 0) rthome_probed(&c->home, (uint32_t)chan, result);
         if (c->gcwii && chan >= 0 && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
-            if (pad_in_ram(type)) *type = PAD_DEV_CLASSIC;
+            if (pad_in_ram(type)) *type = PAD_DEV_STANDIN;
             interrupts_restore(msr);
             return 0;
         }
@@ -975,10 +1031,15 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     t = now();
     stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
+#ifndef RT_PAD_FORM_NUNCHUK
+        /* The Classic form's raw status; the Wii Remote + Nunchuk form
+         * leaves it as the game's read had it (none of the games it was
+         * tried with reads it: Mario Kart Wii, which does, takes a Classic). */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
             for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
         }
+#endif
         interrupts_restore(msr);
         return;
     }

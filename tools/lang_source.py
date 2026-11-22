@@ -1581,6 +1581,13 @@ T = {
         "ゲームキューブコントローラーは対応するゲームでのみ使えます。ほかの選択肢では、Wiiのコントローラーとして動きます。",
         "Os controles de GameCube só funcionam nos jogos feitos para eles. As outras opções fazem com que joguem como um controle de Wii.",
         "I controller GameCube funzionano solo nei giochi pensati per loro. Le altre scelte li fanno giocare come un controller Wii."),
+    "Wii Remote + Nunchuk": ("Mando de Wii + Nunchuk", "Wiiリモコン＋ヌンチャク", "Wii Remote + Nunchuk",
+        "Telecomando Wii + Nunchuk"),
+    "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.": (
+        "Cada mando de GameCube juega como un mando de Wii con Nunchuk (el puerto 1 como el mando de Wii 1, y así sucesivamente): X lo agita, la palanca C mueve el puntero.",
+        "各ゲームキューブコントローラーがヌンチャク付きのWiiリモコンとして動きます（ポート1はWiiリモコン1、以下同様）。Xで振る、Cスティックでポインターを動かします。",
+        "Cada controle de GameCube joga como um Wii Remote com Nunchuk (a porta 1 como o Wii Remote 1 e assim por diante): X o sacode, o C-stick move o ponteiro.",
+        "Ogni controller GameCube gioca come un telecomando Wii con Nunchuk (la porta 1 come il telecomando Wii 1 e così via): X lo scuote, la levetta C muove il puntatore."),
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.": (
         "Para un juego de otra región (importado): el juego ve los nombres de país de su región donde busca los de la consola.",
         "ほかの地域のゲーム（輸入版）用: 本体の国名を探す場所で、ゲームは自分の地域の国名を見ます。",
@@ -3437,6 +3444,10 @@ KO = {
         "각 게임큐브 컨트롤러가 클래식 컨트롤러로 작동합니다(포트 1은 Wii 리모컨 1 등). 지원하는 게임용입니다.",
     "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.":
         "게임큐브 컨트롤러는 전용 게임에서만 작동합니다. 다른 선택지에서는 Wii 컨트롤러로 작동합니다.",
+    "Wii Remote + Nunchuk":
+        "Wii 리모컨 + 눈차크",
+    "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.":
+        "각 게임큐브 컨트롤러가 눈차크를 연결한 Wii 리모컨으로 작동합니다(포트 1은 Wii 리모컨 1 등). X로 흔들기, C스틱으로 포인터 이동.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "타 지역 게임(수입판)의 경우: 해당 게임은 콘솔의 지역 정보를 확인해야 할 위치에서 자사 지역의 국가명을 인식합니다.",
     "Don't show again":
@@ -5325,6 +5336,10 @@ FR = {
         "Chaque manette GameCube joue comme une manette Classic (le port 1 comme la Télécommande Wii 1, et ainsi de suite), dans les jeux qui l'acceptent.",
     "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.":
         "Les manettes GameCube ne fonctionnent que dans les jeux faits pour elles. Les autres choix les font jouer comme une manette Wii.",
+    "Wii Remote + Nunchuk":
+        "Télécommande Wii + Nunchuk",
+    "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.":
+        "Chaque manette GameCube joue comme une Télécommande Wii avec un Nunchuk (le port 1 comme la Télécommande Wii 1, et ainsi de suite) : X la secoue, le stick C déplace le pointeur.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine.",
     "Don't show again":

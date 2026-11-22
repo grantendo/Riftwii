@@ -339,6 +339,15 @@ if(BUILD_TESTING)
         target_compile_options(memorybudget_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME memorybudget COMMAND memorybudget_tests)
+    # The Wii Remote + Nunchuk form (#587): rtgcwii.c and rthome.c built
+    # again with its define, as the pad builds that carry it are.
+    add_executable(gcwii_nunchuk_tests tests/gcwii_nunchuk_tests.cpp runtime/rtgcwii.c runtime/rthome.c)
+    target_include_directories(gcwii_nunchuk_tests PRIVATE runtime)
+    target_compile_definitions(gcwii_nunchuk_tests PRIVATE RT_PAD_STANDIN RT_PAD_FORM_NUNCHUK)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(gcwii_nunchuk_tests PRIVATE -Wall -Wextra -Werror)
+    endif()
+    add_test(NAME gcwii_nunchuk COMMAND gcwii_nunchuk_tests)
     # The adapter-only pad blob's driver (runtime/pad, wiiu#45): the
     # adapter's tests again, against rtgcad.c built without the other USB
     # pads' code. Its own copy of rtgcad.c takes the library's place.

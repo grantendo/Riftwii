@@ -53,6 +53,13 @@ struct rtgcwii {
     /* When a real controller's channels were last checked with the game's
      * own WPADProbe (low bit set), 0: never (rtgcwii_real_check_due). */
     uint32_t real_checked;
+    /* The Wii Remote + Nunchuk form (RT_PAD_FORM_NUNCHUK; unused by the
+     * Classic one, but every build has the same layout, which the loader
+     * fills). */
+    uint32_t pointer_show;                     /* ticks the pointer stays shown after the C-stick (loader-filled) */
+    int32_t pointer[RTGCWII_CHANNELS][2];      /* each channel's pointer, x and y over RTHOME_POINTER_FULL */
+    uint32_t pointer_moved[RTGCWII_CHANNELS];  /* when the C-stick last moved it (low bit set), 0: never */
+    uint32_t shake[RTGCWII_CHANNELS];          /* samples the shake button has been held, 0: not held */
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -83,6 +90,47 @@ int rtgcwii_on(const struct rtgcwii* w, uint32_t channel);
  * connected (*join), one bit each, since it was last told. A channel a real
  * controller took is neither: the game's own library tells it about that. */
 void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join);
+
+/* The Wii Remote + Nunchuk form's buttons (KPADStatus' hold word) for a
+ * PADStatus, in #587's default Nunchuk layout: A and B as A and B, Y as 2,
+ * Z as -, Start as +, the D-pad as the D-pad, L as the Nunchuk's Z and R as
+ * its C (each also from its analog trigger, pushed past a third of the
+ * way, as a Nunchuk's buttons need no hard press). X is the shake
+ * (rtgcwii_nunchuk). In every build; RT_PAD_FORM_NUNCHUK builds take it. */
+uint32_t rtgcwii_map_nunchuk(const uint8_t* pad);
+
+/* A Wii Remote + Nunchuk as the game's KPAD read takes it: the words, the
+ * Nunchuk's stick, both accelerometers (still, or shaking while X is held),
+ * and the pointer, all numerators over RTHOME_AXIS_FULL but the pointer's
+ * (over RTHOME_POINTER_FULL). */
+struct rtgcwii_fs {
+    uint32_t hold, trig, release;
+    int32_t stick[2];
+    int32_t acc[3], acc_value, acc_speed;           /* the Wii Remote's */
+    int32_t fs_acc[3], fs_acc_value, fs_acc_speed;  /* the Nunchuk's */
+    int32_t pointer[2];
+    int pointer_shown;  /* the C-stick moved it within pointer_show ticks */
+};
+
+/* The shake: all three axes swing between +RTGCWII_SHAKE_G and -SHAKE_G,
+ * flipping every RTGCWII_SHAKE_FLIP samples while X is held, as Dolphin's
+ * emulated shake does; 3.4 g is past the threshold Batman: The Brave and
+ * the Bold checks for its heavy attacks (3.2 g for the Wii Remote, 2.0 g
+ * for the Nunchuk). Numerators over RTHOME_AXIS_FULL (256: 1 g). */
+#define RTGCWII_SHAKE_G 870
+#define RTGCWII_SHAKE_VALUE 1508  /* |(3.4, 3.4, 3.4)| g */
+#define RTGCWII_SHAKE_FLIP 4u
+/* Full C-stick moves the pointer this much a sample (the screen is two
+ * RTHOME_POINTER_FULL wide, so about a second across), and it stays inside
+ * +-RTGCWII_POINTER_EDGE, so the cursor never leaves the screen. */
+#define RTGCWII_POINTER_STEP 143
+#define RTGCWII_POINTER_EDGE 3891
+
+/* The stand-in's Wii Remote + Nunchuk on `channel` (RT_PAD_FORM_NUNCHUK),
+ * for the game's KPAD read at `now`: the same words for every read until
+ * the next sample, as rtgcwii_classic gives. All 0 (a still controller,
+ * pointer hidden) where the stand-in isn't on. */
+void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out);
 
 /* The stand-in's Classic Controller on `channel`, for the game's KPAD read:
  * its hold, trig (newly pressed since the game last got it) and release

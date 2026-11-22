@@ -1551,6 +1551,12 @@ msgstr "Chaque manette GameCube joue comme une manette Classic (le port 1 comme 
 msgid "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."
 msgstr "Les manettes GameCube ne fonctionnent que dans les jeux faits pour elles. Les autres choix les font jouer comme une manette Wii."
 
+msgid "Wii Remote + Nunchuk"
+msgstr "Télécommande Wii + Nunchuk"
+
+msgid "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer."
+msgstr "Chaque manette GameCube joue comme une Télécommande Wii avec un Nunchuk (le port 1 comme la Télécommande Wii 1, et ainsi de suite) : X la secoue, le stick C déplace le pointeur."
+
 msgid "For a game from another region (an import): the game sees its own region's country names where it looks for the console's."
 msgstr "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine."
 
