@@ -1443,9 +1443,9 @@ void plan_game_extras(const DolHeader& dol, const ExtrasContext& ctx, GameExtras
         const std::uint32_t resident_stage = resident != nullptr && resident->data_base != resident->stage_base
                                                  ? resident->stage_base : 0;
         out.pad.calibration = g_extras.pad_calibrated ? &g_extras.pad_calibration : nullptr;
-        out.pad.standin = g_extras.gc_standin;
-        out.pad.standin_nunchuk = g_extras.gc_standin_nunchuk;
-        out.pad.standin_sideways = g_extras.gc_standin_sideways;
+        // The stand-in and its form stay as prepare_gc_pads set them: its
+        // pad build (fetch_pad_build) was picked from those, so the plan
+        // must describe the same build.
         if (!plan_pad_hook(dol, ctx.arena1_hi, ctx.mem1_floor, ctx.arena2_lo,
                            resident != nullptr ? resident->ioctl_async_original : 0,
                            resident != nullptr ? resident->ioctlv_async_original : 0, patches, out.pad, why,

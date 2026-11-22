@@ -15486,6 +15486,7 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 	GuiText noteTxt("", 15, skin::kInkSoft);
 	Place(noteTxt, NoteCard::kTextX, NoteCard::kTextY);
 	noteTxt.SetWrap(true, NoteCard::kTextW, NoteCard::kLines);
+	noteTxt.SetScroll(SCROLL::VERTICAL);  // a long note (the GameCube controllers' choices) rolls up, not cut
 	SkinButton backBtn(skin::pill, skin::pillOver, 4, 198, 406, "Back",
 		WPAD_BUTTON_B | WPAD_CLASSIC_BUTTON_B, PAD_BUTTON_B, WIIDRC_BUTTON_B);
 	HideButton(backBtn);
