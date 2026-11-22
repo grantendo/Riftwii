@@ -659,6 +659,7 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
 #define PAD_KPAD_FS_ACC_VALUE 0x74u
 #define PAD_KPAD_FS_ACC_SPEED 0x78u
 #define PAD_FORMAT_FREESTYLE_ACC 4u
+#define PAD_FORMAT_FREESTYLE_ACC_DPD 5u  /* the same with the camera on (KPADEnableDPD sets it) */
 #define PAD_DIST_AT_REST 498  /* 1.947 over RTHOME_AXIS_FULL, as Dolphin's emulated Remote gives it */
 
 /* The permanent stand-in's status on `chan` (rtgcwii_nunchuk): a Wii Remote
@@ -690,7 +691,8 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     status[PAD_KPAD_DEV_TYPE] = PAD_DEV_FREESTYLE;
     status[PAD_KPAD_WPAD_ERR] = 0;
     status[PAD_KPAD_DPD_VALID] = (uint8_t)(f.pointer_shown ? PAD_DPD_SEEN : 0u);
-    status[PAD_KPAD_DATA_FORMAT] = PAD_FORMAT_FREESTYLE_ACC;
+    status[PAD_KPAD_DATA_FORMAT] =
+        (uint8_t)((w->camera >> chan) & 1u ? PAD_FORMAT_FREESTYLE_ACC_DPD : PAD_FORMAT_FREESTYLE_ACC);
     pad_put32(status + PAD_KPAD_FS_STICK, rthome_float_bits(f.stick[0]));
     pad_put32(status + PAD_KPAD_FS_STICK + 4, rthome_float_bits(f.stick[1]));
     for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_FS_ACC + 4 * i, rtgcwii_float_bits(f.fs_acc[i]));
@@ -712,7 +714,18 @@ static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c) {
  * HOME press, then the menu's buttons) and, while the menu is open, its
  * pointer; the Nunchuk's stick rests. Interrupts off, at its callers. */
 static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p) {
-    pad_gcwii_status(c, c->home.channel, status);
+    /* The shape only: the controller's own buttons aren't the game's while
+     * the HOME stand-in is, so a press under it (L held as the menu
+     * closes) is still new at the game's next read. */
+    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+    const uint32_t chan = c->home.channel;
+    const uint32_t worked = w->worked[chan], delivered = w->delivered[chan];
+    const uint32_t trig = w->trig[chan], release = w->release[chan];
+    pad_gcwii_status(c, chan, status);
+    w->worked[chan] = worked;
+    w->delivered[chan] = delivered;
+    w->trig[chan] = trig;
+    w->release[chan] = release;
     pad_put32(status + PAD_KPAD_HOLD, p->remote_hold);
     pad_put32(status + PAD_KPAD_TRIG, p->remote_trig);
     pad_put32(status + PAD_KPAD_RELEASE, p->remote_release);
