@@ -1588,6 +1588,13 @@ T = {
         "各ゲームキューブコントローラーがヌンチャク付きのWiiリモコンとして動きます（ポート1はWiiリモコン1、以下同様）。Xで振る、Cスティックでポインターを動かします。",
         "Cada controle de GameCube joga como um Wii Remote com Nunchuk (a porta 1 como o Wii Remote 1 e assim por diante): X o sacode, o C-stick move o ponteiro.",
         "Ogni controller GameCube gioca come un telecomando Wii con Nunchuk (la porta 1 come il telecomando Wii 1 e così via): X lo scuote, la levetta C muove il puntatore."),
+    "Sideways Wii Remote": ("Mando de Wii de lado", "横持ちWiiリモコン", "Wii Remote na horizontal",
+        "Telecomando Wii in orizzontale"),
+    "Each GameCube controller plays as a Wii Remote held sideways (port 1 as Wii Remote 1 and so on): A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it.": (
+        "Cada mando de GameCube juega como un mando de Wii en horizontal (el puerto 1 como el mando de Wii 1, y así sucesivamente): A es 2, B es 1, la palanca de control es su cruceta, la palanca C lo inclina, R lo agita.",
+        "各ゲームキューブコントローラーが横に持ったWiiリモコンとして動きます（ポート1はWiiリモコン1、以下同様）。Aが2、Bが1、コントロールスティックが十字ボタン、Cスティックで傾け、Rで振ります。",
+        "Cada controle de GameCube joga como um Wii Remote segurado na horizontal (a porta 1 como o Wii Remote 1 e assim por diante): A é o 2, B é o 1, o control stick é o seu direcional, o C-stick o inclina, R o sacode.",
+        "Ogni controller GameCube gioca come un telecomando Wii tenuto in orizzontale (la porta 1 come il telecomando Wii 1 e così via): A è il 2, B è l'1, la levetta di controllo è la sua croce direzionale, la levetta C lo inclina, R lo scuote."),
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.": (
         "Para un juego de otra región (importado): el juego ve los nombres de país de su región donde busca los de la consola.",
         "ほかの地域のゲーム（輸入版）用: 本体の国名を探す場所で、ゲームは自分の地域の国名を見ます。",
@@ -3448,6 +3455,10 @@ KO = {
         "Wii 리모컨 + 눈차크",
     "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.":
         "각 게임큐브 컨트롤러가 눈차크를 연결한 Wii 리모컨으로 작동합니다(포트 1은 Wii 리모컨 1 등). X로 흔들기, C스틱으로 포인터 이동.",
+    "Sideways Wii Remote":
+        "가로로 든 Wii 리모컨",
+    "Each GameCube controller plays as a Wii Remote held sideways (port 1 as Wii Remote 1 and so on): A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it.":
+        "각 게임큐브 컨트롤러가 가로로 든 Wii 리모컨으로 작동합니다(포트 1은 Wii 리모컨 1 등). A는 2, B는 1, 컨트롤 스틱은 십자 버튼, C 스틱으로 기울이고 R로 흔듭니다.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "타 지역 게임(수입판)의 경우: 해당 게임은 콘솔의 지역 정보를 확인해야 할 위치에서 자사 지역의 국가명을 인식합니다.",
     "Don't show again":
@@ -5340,6 +5351,10 @@ FR = {
         "Télécommande Wii + Nunchuk",
     "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.":
         "Chaque manette GameCube joue comme une Télécommande Wii avec un Nunchuk (le port 1 comme la Télécommande Wii 1, et ainsi de suite) : X la secoue, le stick C déplace le pointeur.",
+    "Sideways Wii Remote":
+        "Télécommande Wii à l'horizontale",
+    "Each GameCube controller plays as a Wii Remote held sideways (port 1 as Wii Remote 1 and so on): A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it.":
+        "Chaque manette GameCube joue comme une Télécommande Wii tenue à l'horizontale (le port 1 comme la Télécommande Wii 1, et ainsi de suite) : A est le 2, B est le 1, le stick de contrôle est sa croix directionnelle, le stick C l'incline, R la secoue.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine.",
     "Don't show again":

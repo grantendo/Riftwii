@@ -1325,6 +1325,7 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
         }
         // The stand-in's form, which picks its pad build (fetch_pad_build).
         pad.standin_nunchuk = pad.standin && g_extras.gc_standin_nunchuk;
+        pad.standin_sideways = pad.standin && g_extras.gc_standin_sideways;
     }
     // No USB for the game (the Wii's own ports only, or the adapter off):
     // the menu's adapter session is let go.
@@ -1444,6 +1445,7 @@ void plan_game_extras(const DolHeader& dol, const ExtrasContext& ctx, GameExtras
         out.pad.calibration = g_extras.pad_calibrated ? &g_extras.pad_calibration : nullptr;
         out.pad.standin = g_extras.gc_standin;
         out.pad.standin_nunchuk = g_extras.gc_standin_nunchuk;
+        out.pad.standin_sideways = g_extras.gc_standin_sideways;
         if (!plan_pad_hook(dol, ctx.arena1_hi, ctx.mem1_floor, ctx.arena2_lo,
                            resident != nullptr ? resident->ioctl_async_original : 0,
                            resident != nullptr ? resident->ioctlv_async_original : 0, patches, out.pad, why,
