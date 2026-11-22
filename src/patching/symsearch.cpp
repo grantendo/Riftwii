@@ -671,7 +671,8 @@ bool kpad_dpd_setter(const CodeRange& r, std::size_t i, std::uint32_t value, Kpa
     out.enable = r.address + static_cast<std::uint32_t>(i * 4);
     out.base = ((w(1) & 0xFFFFu) << 16) + static_cast<std::uint32_t>(static_cast<std::int16_t>(w(3) & 0xFFFFu));
     out.stride = static_cast<std::uint32_t>(stride);
-    out.offset = w(5) & 0xFFFFu;
+    // Signed, as stb takes it (every KPAD dumped has it positive).
+    out.offset = static_cast<std::uint32_t>(static_cast<std::int16_t>(w(5) & 0xFFFFu));
     return true;
 }
 

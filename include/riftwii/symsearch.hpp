@@ -143,7 +143,7 @@ struct KpadDpd {
     std::uint32_t enable = 0;  // KPADEnableDPD
     std::uint32_t base = 0;    // KPAD's per-channel blocks
     std::uint32_t stride = 0;  // one channel's
-    std::uint32_t offset = 0;  // the switch's, in one
+    std::uint32_t offset = 0;  // the switch's, in one (signed, as stb takes it: added with wrap-around)
 };
 KpadDpd find_kpad_enable_dpd(const std::vector<CodeRange>& text);
 

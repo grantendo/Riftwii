@@ -1709,6 +1709,24 @@ static void TestKpadEnableDpd() {
     EXPECT_EQ(k.base, 0x805F71C8u);
     EXPECT_EQ(k.stride, 1672u);
     EXPECT_EQ(k.offset, 0x642u);
+    // A negative displacement (stb's is signed) is kept signed.
+    Asm neg{0x80458FB0u, {}};
+    const auto setter_at = [](Asm& a, std::uint32_t value, std::uint32_t stb) {
+        a.op(0x1C030688u);
+        a.op(0x3C60805Fu);
+        a.op(0x38800000u | value);
+        a.op(0x386371C8u);
+        a.op(0x7C630214u);
+        a.op(stb);
+        a.blr();
+    };
+    setter_at(neg, 0, 0x9883FFFCu);  // stb r4,-4(r3)
+    setter_at(neg, 1, 0x9883FFFCu);
+    code = neg.bytes();
+    text = {{neg.base, code.data(), code.size()}};
+    k = riftwii::find_kpad_enable_dpd(text);
+    EXPECT_EQ(k.offset, 0xFFFFFFFCu);
+    EXPECT_EQ(k.base + k.offset, 0x805F71C4u);
     // Without its Disable twin just before: not taken.
     Asm lone{0x80458FD0u, {}};
     setter(lone, 1);
