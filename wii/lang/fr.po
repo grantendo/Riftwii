@@ -1551,6 +1551,12 @@ msgstr "Comme manettes Classic"
 msgid "As Wii Remote + Nunchuk"
 msgstr "Comme Télécommande Wii + Nunchuk"
 
+msgid "As a sideways Wii Remote"
+msgstr "Comme Télécommande Wii à l'horizontale"
+
+msgid "As a sideways Wii Remote: as a Wii Remote held sideways (A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it)."
+msgstr "Comme Télécommande Wii à l'horizontale : comme une Télécommande Wii tenue à l'horizontale (A est le 2, B est le 1, le stick de contrôle est sa croix directionnelle, le stick C l'incline, R la secoue)."
+
 msgid "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before."
 msgstr "Comme manettes Classic : chaque manette GameCube joue comme une manette Classic, le port 1 comme la Télécommande Wii 1, et ainsi de suite, dans les jeux qui l'acceptent. Comme Télécommande Wii + Nunchuk : comme une Télécommande Wii avec un Nunchuk (X la secoue, le stick C déplace le pointeur). Désactivé : comme avant."
 

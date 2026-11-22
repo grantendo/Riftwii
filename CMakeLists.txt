@@ -348,6 +348,13 @@ if(BUILD_TESTING)
         target_compile_options(gcwii_nunchuk_tests PRIVATE -Wall -Wextra -Werror)
     endif()
     add_test(NAME gcwii_nunchuk COMMAND gcwii_nunchuk_tests)
+    add_executable(gcwii_sideways_tests tests/gcwii_sideways_tests.cpp runtime/rtgcwii.c runtime/rthome.c)
+    target_include_directories(gcwii_sideways_tests PRIVATE runtime)
+    target_compile_definitions(gcwii_sideways_tests PRIVATE RT_PAD_STANDIN RT_PAD_FORM_SIDEWAYS)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(gcwii_sideways_tests PRIVATE -Wall -Wextra -Werror)
+    endif()
+    add_test(NAME gcwii_sideways COMMAND gcwii_sideways_tests)
     # The adapter-only pad blob's driver (runtime/pad, wiiu#45): the
     # adapter's tests again, against rtgcad.c built without the other USB
     # pads' code. Its own copy of rtgcad.c takes the library's place.

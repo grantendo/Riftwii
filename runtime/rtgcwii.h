@@ -99,6 +99,15 @@ void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join);
  * (rtgcwii_nunchuk). In every build; RT_PAD_FORM_NUNCHUK builds take it. */
 uint32_t rtgcwii_map_nunchuk(const uint8_t* pad);
 
+/* The sideways Wii Remote form's buttons (KPADStatus' hold word) for a
+ * PADStatus, in #587's default sideways layout: A as 2, B as 1, X as A, Y as
+ * B, Z as -, Start as +, and the D-pad and the control stick (past half way)
+ * as the Wii Remote's D-pad turned as the screen shows it held sideways
+ * (D-pad on the left: screen left is the remote's Up, right its Down, up its
+ * Right, down its Left). R is the shake, L nothing (rtgcwii_sideways). In
+ * every build; RT_PAD_FORM_SIDEWAYS builds take it. */
+uint32_t rtgcwii_map_sideways(const uint8_t* pad);
+
 /* A Wii Remote + Nunchuk as the game's KPAD read takes it: the words, the
  * Nunchuk's stick, both accelerometers (still, or shaking while X is held),
  * and the pointer, all numerators over RTHOME_AXIS_FULL but the pointer's
@@ -125,6 +134,11 @@ struct rtgcwii_fs {
  * +-RTGCWII_POINTER_EDGE, so the cursor never leaves the screen. */
 #define RTGCWII_POINTER_STEP 143
 #define RTGCWII_POINTER_EDGE 3891
+/* The sideways form's tilt: the C-stick held right turns the Wii Remote as
+ * a wheel steering right, gravity from -Y towards -Z (Dolphin's emulated
+ * sideways Wii Remote, Excite Truck's tutorial, 22 Nov): full C-stick is
+ * sin 55 degrees of it, over RTHOME_AXIS_FULL. */
+#define RTGCWII_TILT_SIN 210
 
 /* The game wants `channel`'s Wii Remote camera on (`mode` not 0) or off,
  * as KPAD's switch says (KPADEnableDPD, KPADDisableDPD): a game turns it on
@@ -143,6 +157,14 @@ uint32_t rtgcwii_float_bits(int32_t numerator);
  * the next sample, as rtgcwii_classic gives. All 0 (a still controller,
  * pointer hidden) where the stand-in isn't on. */
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out);
+
+/* The stand-in's sideways Wii Remote on `channel` (RT_PAD_FORM_SIDEWAYS),
+ * for the game's KPAD read: the words, the acceleration (tilted by the
+ * C-stick's left and right while the game has the camera off, shaking while
+ * R is held) and, while the game has the camera on, the pointer the C-stick
+ * moves. The Nunchuk's fields stay at rest. All 0 where the stand-in isn't
+ * on. */
+void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out);
 
 /* The stand-in's Classic Controller on `channel`, for the game's KPAD read:
  * its hold, trig (newly pressed since the game last got it) and release

@@ -1551,6 +1551,12 @@ msgstr "クラシックコントローラーとして"
 msgid "As Wii Remote + Nunchuk"
 msgstr "Wiiリモコン＋ヌンチャクとして"
 
+msgid "As a sideways Wii Remote"
+msgstr "横持ちWiiリモコンとして"
+
+msgid "As a sideways Wii Remote: as a Wii Remote held sideways (A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it)."
+msgstr "横持ちWiiリモコンとして: 横に持ったWiiリモコンとして動きます（Aが2、Bが1、コントロールスティックが十字ボタン、Cスティックで傾け、Rで振ります）。"
+
 msgid "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before."
 msgstr "クラシックコントローラーとして: 各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。Wiiリモコン＋ヌンチャクとして: ヌンチャク付きのWiiリモコンとして動きます（Xで振る、Cスティックでポインターを動かす）。オフ: これまでどおり。"
 

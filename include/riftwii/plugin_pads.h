@@ -19,8 +19,9 @@ extern "C" {
  * only, other USB pads only, then the same three without the HOME Menu
  * by the controller, then the full and adapter-only ones with the Wii
  * controller stand-ins (#587), for a game whose setting is on: as Classic
- * Controllers, then as a Wii Remote + Nunchuk. */
-#define RWP_PAD_BUILDS 10u
+ * Controllers, then as a Wii Remote + Nunchuk, then as a sideways Wii
+ * Remote. */
+#define RWP_PAD_BUILDS 12u
 
 #define RWP_PADS_ERROR_BYTES 160u
 

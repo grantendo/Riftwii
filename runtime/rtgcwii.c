@@ -40,12 +40,14 @@ static uint32_t rtgcwii_pad_buttons(const uint8_t* s) { return ((uint32_t)s[0] <
 #define RTGCWII_WR_UP 0x0008u
 #define RTGCWII_WR_PLUS 0x0010u
 #define RTGCWII_WR_2 0x0100u
+#define RTGCWII_WR_1 0x0200u
 #define RTGCWII_WR_B 0x0400u
 #define RTGCWII_WR_A 0x0800u
 #define RTGCWII_WR_MINUS 0x1000u
 #define RTGCWII_NC_Z 0x2000u
 #define RTGCWII_NC_C 0x4000u
 #define RTGCWII_TRIGGER_ON 85u  /* of 255: an analog L or R past a third of the way */
+#define RTGCWII_STICK_PRESS 128  /* of RTHOME_AXIS_FULL: the control stick past half way is the D-pad */
 
 uint32_t rtgcwii_map_nunchuk(const uint8_t* pad) {
     uint32_t b = rtgcwii_pad_buttons(pad), h = 0;
@@ -65,12 +67,44 @@ uint32_t rtgcwii_map_nunchuk(const uint8_t* pad) {
     return h;
 }
 
-#ifdef RT_PAD_FORM_NUNCHUK
-/* Once a sample: the pointer follows the C-stick, and the shake counts
- * while X is held. */
+uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
+    uint32_t b = rtgcwii_pad_buttons(pad), h = 0;
+    int32_t axes[6];
+    rthome_classic_axes(pad, axes);
+    if (axes[0] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_LEFT;
+    if (axes[0] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_RIGHT;
+    if (axes[1] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_UP;
+    if (axes[1] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_DOWN;
+    if (b & RTGCWII_GC_A) h |= RTGCWII_WR_2;
+    if (b & RTGCWII_GC_B) h |= RTGCWII_WR_1;
+    if (b & RTGCWII_GC_X) h |= RTGCWII_WR_A;
+    if (b & RTGCWII_GC_Y) h |= RTGCWII_WR_B;
+    if (b & RTGCWII_GC_Z) h |= RTGCWII_WR_MINUS;
+    if (b & RTGCWII_GC_START) h |= RTGCWII_WR_PLUS;
+    /* Held sideways, D-pad on the left: the remote's Up points left. */
+    if (b & RTGCWII_GC_LEFT) h |= RTGCWII_WR_UP;
+    if (b & RTGCWII_GC_RIGHT) h |= RTGCWII_WR_DOWN;
+    if (b & RTGCWII_GC_UP) h |= RTGCWII_WR_RIGHT;
+    if (b & RTGCWII_GC_DOWN) h |= RTGCWII_WR_LEFT;
+    return h;
+}
+
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+/* Once a sample: the pointer follows the C-stick (in the sideways form
+ * only while the game has the camera on: else the C-stick tilts), and the
+ * shake counts while its button is held (X; R in the sideways form, also
+ * from the analog trigger). */
 static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint32_t now) {
     int32_t axes[6], k;
+    uint32_t shaking;
     rthome_classic_axes(s, axes);  /* the C-stick is axes 2 and 3 */
+#ifdef RT_PAD_FORM_SIDEWAYS
+    shaking = (rtgcwii_pad_buttons(s) & RTGCWII_GC_R) || s[7] >= RTGCWII_TRIGGER_ON;
+    w->shake[i] = shaking ? w->shake[i] + 1u : 0u;
+    if (!((w->camera >> i) & 1u)) return;
+#else
+    shaking = rtgcwii_pad_buttons(s) & RTGCWII_GC_X;
+#endif
     for (k = 0; k < 2; ++k) {
         /* Up on the C-stick is up on the screen (KPAD's y grows downward). */
         const int32_t step = (k == 0 ? axes[2] : -axes[3]) * RTGCWII_POINTER_STEP / RTHOME_AXIS_FULL;
@@ -86,7 +120,9 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
          * wraps (about every 70 s), and an old mark would read as recent. */
         w->pointer_moved[i] = 0;
     }
-    w->shake[i] = (rtgcwii_pad_buttons(s) & RTGCWII_GC_X) ? w->shake[i] + 1u : 0u;
+#ifndef RT_PAD_FORM_SIDEWAYS
+    w->shake[i] = shaking ? w->shake[i] + 1u : 0u;
+#endif
 }
 #endif
 
@@ -98,8 +134,11 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
         if ((int8_t)s[RTGCWII_PAD_ERR] == 0) {
             for (k = 0; k < RTGCWII_PAD_BYTES; ++k) w->pad[i][k] = s[k];
             w->seen[i] = now | 1u;
-#ifdef RT_PAD_FORM_NUNCHUK
+#if defined(RT_PAD_FORM_NUNCHUK)
             w->hold[i] = rtgcwii_map_nunchuk(s);
+            rtgcwii_motion(w, i, s, now);
+#elif defined(RT_PAD_FORM_SIDEWAYS)
+            w->hold[i] = rtgcwii_map_sideways(s);
             rtgcwii_motion(w, i, s, now);
 #else
             w->hold[i] = rthome_map_classic(rtgcwii_pad_buttons(s), RTHOME_CL_PLUS);
@@ -112,7 +151,7 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             w->present &= ~bit;
             w->seen[i] = 0;
             w->hold[i] = w->delivered[i] = 0;
-#ifdef RT_PAD_FORM_NUNCHUK
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
             w->shake[i] = 0;
             /* Unplugged: the pointer's last move is forgotten too, so an
              * old mark never reads as recent after the time base wraps. */
@@ -210,6 +249,34 @@ static void rtgcwii_still(int32_t acc[3], int32_t* value, int32_t* speed) {
     *speed = 0;
 }
 
+/* The shake (rtgcwii_nunchuk's): all three axes swing together, and a
+ * flip is a jump in speed. */
+static void rtgcwii_shake(uint32_t shake, int32_t acc[3], int32_t* value, int32_t* speed) {
+    const int32_t swing = ((shake / RTGCWII_SHAKE_FLIP) & 1u) ? RTGCWII_SHAKE_G : -RTGCWII_SHAKE_G;
+    acc[0] = swing;
+    acc[1] = swing;
+    acc[2] = -swing;
+    *value = RTGCWII_SHAKE_VALUE;
+    *speed = shake > 1u && (shake % RTGCWII_SHAKE_FLIP) == 0 ? RTGCWII_SHAKE_VALUE : 0;
+}
+
+/* The integer square root of `v` (rounded down). */
+static int32_t rtgcwii_isqrt(int32_t v) {
+    int32_t r = 0, bit = 1 << 30;
+    if (v <= 0) return 0;
+    while (bit > v) bit >>= 2;
+    while (bit != 0) {
+        if (v >= r + bit) {
+            v -= r + bit;
+            r = (r >> 1) + bit;
+        } else {
+            r >>= 1;
+        }
+        bit >>= 2;
+    }
+    return r;
+}
+
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out) {
     int32_t axes[6];
     uint32_t shake;
@@ -231,16 +298,34 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
     out->pointer_shown = ((w->camera >> channel) & 1u) ||
                          (w->pointer_moved[channel] != 0 && rtgcwii_elapsed(now, w->pointer_moved[channel]) < w->pointer_show);
     shake = w->shake[channel];
-    if (shake != 0) {
-        /* The Wii Remote shakes: all three axes swing together, and a flip
-         * is a jump in speed. */
-        const int32_t swing = ((shake / RTGCWII_SHAKE_FLIP) & 1u) ? RTGCWII_SHAKE_G : -RTGCWII_SHAKE_G;
-        out->acc[0] = swing;
-        out->acc[1] = swing;
-        out->acc[2] = -swing;
-        out->acc_value = RTGCWII_SHAKE_VALUE;
-        out->acc_speed = shake > 1u && (shake % RTGCWII_SHAKE_FLIP) == 0 ? RTGCWII_SHAKE_VALUE : 0;
+    if (shake != 0) rtgcwii_shake(shake, out->acc, &out->acc_value, &out->acc_speed);
+}
+
+void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out) {
+    int32_t axes[6], s;
+    rtgcwii_still(out->acc, &out->acc_value, &out->acc_speed);
+    rtgcwii_still(out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
+    out->stick[0] = out->stick[1] = 0;
+    out->pointer[0] = out->pointer[1] = 0;
+    out->pointer_shown = 0;
+    if (!rtgcwii_on(w, channel)) {
+        out->hold = out->trig = out->release = 0;
+        return;
     }
+    rtgcwii_words(w, channel, &out->hold, &out->trig, &out->release);
+    if ((w->camera >> channel) & 1u) {
+        out->pointer[0] = w->pointer[channel][0];
+        out->pointer[1] = w->pointer[channel][1];
+        out->pointer_shown = 1;
+    } else {
+        /* Tilt: the C-stick held right steers right, gravity turning from
+         * -Y towards -Z, its length staying 1 g. */
+        rthome_classic_axes(w->pad[channel], axes);
+        s = -axes[2] * RTGCWII_TILT_SIN / RTHOME_AXIS_FULL;
+        out->acc[2] = s;
+        out->acc[1] = -rtgcwii_isqrt(RTHOME_AXIS_FULL * RTHOME_AXIS_FULL - s * s);
+    }
+    if (w->shake[channel] != 0) rtgcwii_shake(w->shake[channel], out->acc, &out->acc_value, &out->acc_speed);
 }
 
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) {
