@@ -20,8 +20,8 @@ extern "C" {
  * by the controller, then the full and adapter-only ones with the Wii
  * controller stand-ins (#587), for a game whose setting is on: as Classic
  * Controllers, then as a Wii Remote + Nunchuk, then as a sideways Wii
- * Remote. */
-#define RWP_PAD_BUILDS 12u
+ * Remote, then as a pointing Wii Remote. */
+#define RWP_PAD_BUILDS 14u
 
 #define RWP_PADS_ERROR_BYTES 160u
 

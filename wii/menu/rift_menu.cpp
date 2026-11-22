@@ -9147,9 +9147,9 @@ static const char* const kBorderModes[] = {"global", "keep", "remove", "remove_a
 static const char* const kVideoModes[] = {"global", "game", "system", "ntsc", "pal60", "pal50", "480p", "240p"};
 static const char* const kAspects[] = {"global", "game", "4:3", "16:9"};
 // GameCube controllers in a Wii game (GameSettings::gc_controllers, #587):
-// as they are, as Classic Controllers, as Wii Remotes with a Nunchuk, or
-// as Wii Remotes held sideways.
-static const char* const kGcControllers[] = {"off", "classic", "nunchuk", "sideways"};
+// as they are, as Classic Controllers, as Wii Remotes with a Nunchuk, as
+// Wii Remotes held sideways, or as Wii Remotes pointed at the screen.
+static const char* const kGcControllers[] = {"off", "classic", "nunchuk", "sideways", "pointing"};
 static std::string AspectName(const std::string& v)
 {
 	return v == "4:3" || v == "16:9" ? v : std::string(tr("Game's own"));
@@ -9509,9 +9509,10 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 	gcControllers.kind = FlowRow::Kind::Option;
 	gcControllers.label = tr("GameCube controllers");
 	gcControllers.on = game.gc_controllers == "classic" || game.gc_controllers == "nunchuk" ||
-	                   game.gc_controllers == "sideways";
+	                   game.gc_controllers == "sideways" || game.gc_controllers == "pointing";
 	gcControllers.value = game.gc_controllers == "nunchuk"    ? tr("As Wii Remote + Nunchuk")
 	                      : game.gc_controllers == "sideways" ? tr("As a sideways Wii Remote")
+	                      : game.gc_controllers == "pointing" ? tr("As a pointing Wii Remote")
 	                      : game.gc_controllers == "classic"  ? tr("As Classic Controllers")
 	                                                          : tr("Off");
 	add(gcControllers, {RowRef::What::GcControllers});
@@ -15335,7 +15336,9 @@ static int ChangedGameSettings(const riftwii::GameSettings& g, const std::string
 	if (riftwii::gc_volume_boost_db(g) != 0) ++changed;
 	if (g.rumble == "off") ++changed;
 	if (g.speaker == "off") ++changed;
-	if (g.gc_controllers == "classic" || g.gc_controllers == "nunchuk" || g.gc_controllers == "sideways") ++changed;
+	if (g.gc_controllers == "classic" || g.gc_controllers == "nunchuk" || g.gc_controllers == "sideways" ||
+	    g.gc_controllers == "pointing")
+		++changed;
 	return changed;
 }
 
@@ -15570,7 +15573,8 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 				say(tr("Off: no sound from the Wii Remotes' speakers in this game."));
 			else if (ref.what == RowRef::What::GcControllers)
 				say(std::string(tr("As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before.")) + " " +
-				    tr("As a sideways Wii Remote: as a Wii Remote held sideways (A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it)."));
+				    tr("As a sideways Wii Remote: as a Wii Remote held sideways (A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it).") + " " +
+				    tr("As a pointing Wii Remote: as a Wii Remote pointed at the screen (the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it)."));
 			else if (ref.what == RowRef::What::RegionStrings)
 				say(tr("For a game from another region (an import): the game sees its own region's country names where it looks for the console's."));
 			else if (ref.what == RowRef::What::Language)

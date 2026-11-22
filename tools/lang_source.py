@@ -1581,6 +1581,12 @@ T = {
         "横持ちWiiリモコンとして: 横に持ったWiiリモコンとして動きます（Aが2、Bが1、コントロールスティックが十字ボタン、Cスティックで傾け、Rで振ります）。",
         "Como Wii Remote na horizontal: como um Wii Remote segurado na horizontal (A é o 2, B é o 1, o control stick é o seu direcional, o C-stick o inclina, R o sacode).",
         "Come telecomando Wii in orizzontale: come un telecomando Wii tenuto in orizzontale (A è il 2, B è l'1, la levetta di controllo è la sua croce direzionale, la levetta C lo inclina, R lo scuote)."),
+    "As a pointing Wii Remote": ("Como mando de Wii apuntando", "画面に向けたWiiリモコンとして", "Como Wii Remote apontado", "Come telecomando Wii puntato"),
+    "As a pointing Wii Remote: as a Wii Remote pointed at the screen (the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it).": (
+        "Como mando de Wii apuntando: como un mando de Wii apuntando a la pantalla (la palanca de control mueve el puntero, X es 1, Y es 2, la palanca C lo inclina, R lo agita).",
+        "画面に向けたWiiリモコンとして: 画面に向けて持ったWiiリモコンとして動きます（コントロールスティックでポインターを動かし、Xが1、Yが2、Cスティックで傾け、Rで振ります）。",
+        "Como Wii Remote apontado: como um Wii Remote apontado para a tela (o control stick move o ponteiro, X é o 1, Y é o 2, o C-stick o inclina, R o sacode).",
+        "Come telecomando Wii puntato: come un telecomando Wii puntato verso lo schermo (la levetta di controllo muove il puntatore, X è l'1, Y è il 2, la levetta C lo inclina, R lo scuote)."),
     "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before.": (
         "Como mandos clásicos: cada mando de GameCube juega como un mando clásico, el puerto 1 como el mando de Wii 1, y así sucesivamente, en los juegos que lo admiten. Como mando de Wii + Nunchuk: como un mando de Wii con Nunchuk (X lo agita, la palanca C mueve el puntero). Desactivado: como antes.",
         "クラシックコントローラーとして: 各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。Wiiリモコン＋ヌンチャクとして: ヌンチャク付きのWiiリモコンとして動きます（Xで振る、Cスティックでポインターを動かす）。オフ: これまでどおり。",
@@ -3446,6 +3452,10 @@ KO = {
         "가로로 든 Wii 리모컨으로",
     "As a sideways Wii Remote: as a Wii Remote held sideways (A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it).":
         "가로로 든 Wii 리모컨으로: 가로로 든 Wii 리모컨으로 작동합니다(A는 2, B는 1, 컨트롤 스틱은 십자 버튼, C 스틱으로 기울이고 R로 흔듭니다).",
+    "As a pointing Wii Remote":
+        "화면을 가리키는 Wii 리모컨으로",
+    "As a pointing Wii Remote: as a Wii Remote pointed at the screen (the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it).":
+        "화면을 가리키는 Wii 리모컨으로: 화면을 가리키는 Wii 리모컨으로 작동합니다(컨트롤 스틱으로 포인터를 움직이고, X는 1, Y는 2, C 스틱으로 기울이고 R로 흔듭니다).",
     "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before.":
         "클래식 컨트롤러로: 각 게임큐브 컨트롤러가 클래식 컨트롤러로 작동합니다(포트 1은 Wii 리모컨 1 등). 지원하는 게임용입니다. Wii 리모컨 + 눈차크로: 눈차크를 연결한 Wii 리모컨으로 작동합니다(X로 흔들기, C스틱으로 포인터 이동). 끔: 이전과 같습니다.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
@@ -5340,6 +5350,10 @@ FR = {
         "Comme Télécommande Wii à l'horizontale",
     "As a sideways Wii Remote: as a Wii Remote held sideways (A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it).":
         "Comme Télécommande Wii à l'horizontale : comme une Télécommande Wii tenue à l'horizontale (A est le 2, B est le 1, le stick de contrôle est sa croix directionnelle, le stick C l'incline, R la secoue).",
+    "As a pointing Wii Remote":
+        "Comme Télécommande Wii pointée",
+    "As a pointing Wii Remote: as a Wii Remote pointed at the screen (the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it).":
+        "Comme Télécommande Wii pointée : comme une Télécommande Wii pointée vers l'écran (le stick de contrôle déplace le pointeur, X est le 1, Y est le 2, le stick C l'incline, R la secoue).",
     "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before.":
         "Comme manettes Classic : chaque manette GameCube joue comme une manette Classic, le port 1 comme la Télécommande Wii 1, et ainsi de suite, dans les jeux qui l'acceptent. Comme Télécommande Wii + Nunchuk : comme une Télécommande Wii avec un Nunchuk (X la secoue, le stick C déplace le pointeur). Désactivé : comme avant.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
