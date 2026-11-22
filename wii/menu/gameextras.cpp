@@ -382,7 +382,8 @@ void PrepareLaunchExtras(const FrontendState& state, const HeadlessLaunch* headl
     // The game's own Rumble, or Settings > Wii Remote rumble for every game.
     extras.rumble_off = state.model.game.rumble == "off" || Settings().wiimote_rumble == "off";
     extras.speaker_off = state.model.game.speaker == "off";
-    extras.gc_as_classic = state.model.game.gc_controllers == "classic";
+    extras.gc_standin = state.model.game.gc_controllers == "classic" || state.model.game.gc_controllers == "nunchuk";
+    extras.gc_standin_nunchuk = state.model.game.gc_controllers == "nunchuk";
     extras.region_strings = state.model.game.region_strings == "on";
     extras.wfc_domain = wfc_domain(extras.server, Settings().wfc_domain);
     const std::string& adapter = Settings().gc_adapter;

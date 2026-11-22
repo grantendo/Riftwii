@@ -1120,7 +1120,7 @@ namespace {
 // other way.
 bool pads_may_be_wanted() {
     HidPadsPreload();
-    return g_extras.gc_adapter != GcAdapterMode::Off || g_extras.gc_as_classic || HidPadsWanted() ||
+    return g_extras.gc_adapter != GcAdapterMode::Off || g_extras.gc_standin || HidPadsWanted() ||
            HidPadsConnected();
 }
 
@@ -1318,11 +1318,13 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
     if (!gc_adapter && classic_without_usb && !gx_protected) gc_adapter = true;
     if (gc_adapter) {
         std::string why;
-        if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, g_extras.gc_as_classic, usb,
+        if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, g_extras.gc_standin, usb,
                                 pad, why)) {
             logf("GameCube adapter: off: %s\n", why.c_str());
             gc_adapter = false;
         }
+        // The stand-in's form, which picks its pad build (fetch_pad_build).
+        pad.standin_nunchuk = pad.standin && g_extras.gc_standin_nunchuk;
     }
     // No USB for the game (the Wii's own ports only, or the adapter off):
     // the menu's adapter session is let go.
@@ -1440,7 +1442,8 @@ void plan_game_extras(const DolHeader& dol, const ExtrasContext& ctx, GameExtras
         const std::uint32_t resident_stage = resident != nullptr && resident->data_base != resident->stage_base
                                                  ? resident->stage_base : 0;
         out.pad.calibration = g_extras.pad_calibrated ? &g_extras.pad_calibration : nullptr;
-        out.pad.as_classic = g_extras.gc_as_classic;
+        out.pad.standin = g_extras.gc_standin;
+        out.pad.standin_nunchuk = g_extras.gc_standin_nunchuk;
         if (!plan_pad_hook(dol, ctx.arena1_hi, ctx.mem1_floor, ctx.arena2_lo,
                            resident != nullptr ? resident->ioctl_async_original : 0,
                            resident != nullptr ? resident->ioctlv_async_original : 0, patches, out.pad, why,
@@ -1713,7 +1716,7 @@ void prepare_restart_request(const BootOptions& options) {
         launch.reset_wanted = true;
         // GameCube controllers as Classic Controllers put the hook in even
         // with no adapter (the Wii's own ports).
-        launch.pads_on = g_extras.gc_adapter != GcAdapterMode::Off || g_extras.gc_as_classic;
+        launch.pads_on = g_extras.gc_adapter != GcAdapterMode::Off || g_extras.gc_standin;
         launch.runtime_in = false;
         // The test that puts the pad blob in MEM2 (boot_after_unmount): a small code mod in the code
         // handler's own space leaves it in MEM1, where OSRestart can reach it.
@@ -2694,7 +2697,7 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
     // The adapter's PAD search while boot.log is open; the rest of its
     // setup comes after the runtime's, when the log has ended.
     GameExtras extras;
-    gc_adapter = prepare_gc_pads(dol, gc_adapter, gx_protected, g_extras.gc_as_classic && !clears_mem1_top && !code_build,
+    gc_adapter = prepare_gc_pads(dol, gc_adapter, gx_protected, g_extras.gc_standin && !clears_mem1_top && !code_build,
                                  options.memory_patches, extras.pad);
     // Its code from the pads plugin while the card is still RiftWii's.
     if (gc_adapter && !fetch_pad_build(extras.pad, code_build, error)) return false;
@@ -3931,7 +3934,7 @@ bool boot_game(const DiscProbe& probe, BootOptions options, std::string& error) 
         g_extras.aspect = -1;
         g_extras.rumble_off = false;
         g_extras.speaker_off = false;
-        g_extras.gc_as_classic = false;
+        g_extras.gc_standin = false;
         g_extras.region_strings = false;
         g_extras.language = -1;
         g_extras.gc_rumble_off = false;
@@ -4551,7 +4554,7 @@ bool boot_channel(ChannelBootFiles files, std::string& error) {
     extras_context.arena2_lo = read32(0x80003124);
     extras_context.mem1_floor = channel_extras_floor(dol, loader_end);
     extras_context.gc_adapter =
-        prepare_gc_pads(dol, adapter_wanted, gx_protected, g_extras.gc_as_classic && !clears_mem1_top, {}, extras.pad);
+        prepare_gc_pads(dol, adapter_wanted, gx_protected, g_extras.gc_standin && !clears_mem1_top, {}, extras.pad);
     // Its code from the pads plugin while the card is still RiftWii's
     // (a channel is never a code build).
     if (extras_context.gc_adapter && !fetch_pad_build(extras.pad, false, error)) return false;

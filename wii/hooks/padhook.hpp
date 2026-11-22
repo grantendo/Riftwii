@@ -130,7 +130,10 @@ struct PadHook {
     // setting (off by default). Its state goes after the calibrations in
     // MEM2, only with the HOME Menu's blob, whose KPAD read and WPADProbe
     // hooks it shares (runtime/rtgcwii.h).
-    bool as_classic = false;
+    bool standin = false;
+    // Which form (#587): a Classic Controller, or with this a Wii Remote +
+    // Nunchuk (the pad builds with RT_PAD_FORM_NUNCHUK).
+    bool standin_nunchuk = false;
     std::uint32_t gcwii_base = 0;           // where the state went, 0: none
     // For it with no adapter (a Wii's own ports): the hook goes in, USB
     // untouched (RT_PAD_FLAG_NO_USB).
@@ -197,12 +200,13 @@ AdapterSeen ogc_adapter(std::int32_t& dev_id, std::string& devices);
 // loaded game, into a fresh `out`, then /dev/usb/hid opened for the game
 // (libogc's USB is shut down for it). A PADRead in a pack's plain
 // <memory> patches (`patches`, not applied yet) is found too, and wins
-// over the game's own. `as_classic`: the game's GameCube controllers as
-// Classic Controllers setting (its KPAD hooks are looked for even with
-// Leaving a game on HOME only); `usb` false: no adapter is wanted and
+// over the game's own. `standin`: the game's GameCube controllers
+// setting is on, as Classic Controllers or as a Wii Remote + Nunchuk (its
+// KPAD hooks are looked for even with Leaving a game on HOME only; the
+// caller sets PadHook::standin_nunchuk for the form); `usb` false: no adapter is wanted and
 // /dev/usb/hid is never opened (the Wii's own ports only). False (with a
 // reason) turns the adapter off.
-bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches, bool as_classic,
+bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches, bool standin,
                         bool usb, PadHook& out, std::string& why);
 
 // Before the <memory> patches, on the game as loaded: what their plain

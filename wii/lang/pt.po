@@ -1548,8 +1548,11 @@ msgstr "Controles de GameCube"
 msgid "As Classic Controllers"
 msgstr "Como Classic Controllers"
 
-msgid "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. Off: as before."
-msgstr "Como Classic Controllers: cada controle de GameCube joga como um Classic Controller, a porta 1 como o Wii Remote 1 e assim por diante, nos jogos que aceitam um. Desligado: como antes."
+msgid "As Wii Remote + Nunchuk"
+msgstr "Como Wii Remote + Nunchuk"
+
+msgid "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before."
+msgstr "Como Classic Controllers: cada controle de GameCube joga como um Classic Controller, a porta 1 como o Wii Remote 1 e assim por diante, nos jogos que aceitam um. Como Wii Remote + Nunchuk: como um Wii Remote com Nunchuk (X o sacode, o C-stick move o ponteiro). Desligado: como antes."
 
 msgid "For a game from another region (an import): the game sees its own region's country names where it looks for the console's."
 msgstr "Para um jogo de outra região (importado): o jogo vê os nomes de país da sua região onde procura os do console."

@@ -19,6 +19,71 @@ static uint32_t rtgcwii_elapsed(uint32_t now, uint32_t noted) { return now - (no
 
 static uint32_t rtgcwii_pad_buttons(const uint8_t* s) { return ((uint32_t)s[0] << 8) | s[1]; }
 
+/* PADStatus: buttons (big-endian) at 0, the C-stick at 4 and 5, the
+ * analog L and R at 6 and 7. GameCube buttons as rthome.c has them. */
+#define RTGCWII_GC_LEFT 0x0001u
+#define RTGCWII_GC_RIGHT 0x0002u
+#define RTGCWII_GC_DOWN 0x0004u
+#define RTGCWII_GC_UP 0x0008u
+#define RTGCWII_GC_Z 0x0010u
+#define RTGCWII_GC_R 0x0020u
+#define RTGCWII_GC_L 0x0040u
+#define RTGCWII_GC_A 0x0100u
+#define RTGCWII_GC_B 0x0200u
+#define RTGCWII_GC_X 0x0400u
+#define RTGCWII_GC_Y 0x0800u
+#define RTGCWII_GC_START 0x1000u
+/* A Wii Remote + Nunchuk's buttons in KPADStatus.hold. */
+#define RTGCWII_WR_LEFT 0x0001u
+#define RTGCWII_WR_RIGHT 0x0002u
+#define RTGCWII_WR_DOWN 0x0004u
+#define RTGCWII_WR_UP 0x0008u
+#define RTGCWII_WR_PLUS 0x0010u
+#define RTGCWII_WR_2 0x0100u
+#define RTGCWII_WR_B 0x0400u
+#define RTGCWII_WR_A 0x0800u
+#define RTGCWII_WR_MINUS 0x1000u
+#define RTGCWII_NC_Z 0x2000u
+#define RTGCWII_NC_C 0x4000u
+#define RTGCWII_TRIGGER_ON 85u  /* of 255: an analog L or R past a third of the way */
+
+uint32_t rtgcwii_map_nunchuk(const uint8_t* pad) {
+    uint32_t b = rtgcwii_pad_buttons(pad), h = 0;
+    if (pad[6] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_L;
+    if (pad[7] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_R;
+    if (b & RTGCWII_GC_A) h |= RTGCWII_WR_A;
+    if (b & RTGCWII_GC_B) h |= RTGCWII_WR_B;
+    if (b & RTGCWII_GC_Y) h |= RTGCWII_WR_2;
+    if (b & RTGCWII_GC_Z) h |= RTGCWII_WR_MINUS;
+    if (b & RTGCWII_GC_START) h |= RTGCWII_WR_PLUS;
+    if (b & RTGCWII_GC_L) h |= RTGCWII_NC_Z;
+    if (b & RTGCWII_GC_R) h |= RTGCWII_NC_C;
+    if (b & RTGCWII_GC_LEFT) h |= RTGCWII_WR_LEFT;
+    if (b & RTGCWII_GC_RIGHT) h |= RTGCWII_WR_RIGHT;
+    if (b & RTGCWII_GC_UP) h |= RTGCWII_WR_UP;
+    if (b & RTGCWII_GC_DOWN) h |= RTGCWII_WR_DOWN;
+    return h;
+}
+
+#ifdef RT_PAD_FORM_NUNCHUK
+/* Once a sample: the pointer follows the C-stick, and the shake counts
+ * while X is held. */
+static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint32_t now) {
+    int32_t axes[6], k;
+    rthome_classic_axes(s, axes);  /* the C-stick is axes 2 and 3 */
+    for (k = 0; k < 2; ++k) {
+        /* Up on the C-stick is up on the screen (KPAD's y grows downward). */
+        const int32_t step = (k == 0 ? axes[2] : -axes[3]) * RTGCWII_POINTER_STEP / RTHOME_AXIS_FULL;
+        int32_t p = w->pointer[i][k] + step;
+        if (p > RTGCWII_POINTER_EDGE) p = RTGCWII_POINTER_EDGE;
+        if (p < -RTGCWII_POINTER_EDGE) p = -RTGCWII_POINTER_EDGE;
+        w->pointer[i][k] = p;
+    }
+    if (axes[2] != 0 || axes[3] != 0) w->pointer_moved[i] = now | 1u;
+    w->shake[i] = (rtgcwii_pad_buttons(s) & RTGCWII_GC_X) ? w->shake[i] + 1u : 0u;
+}
+#endif
+
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     uint32_t i, k;
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
@@ -27,7 +92,12 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
         if ((int8_t)s[RTGCWII_PAD_ERR] == 0) {
             for (k = 0; k < RTGCWII_PAD_BYTES; ++k) w->pad[i][k] = s[k];
             w->seen[i] = now | 1u;
+#ifdef RT_PAD_FORM_NUNCHUK
+            w->hold[i] = rtgcwii_map_nunchuk(s);
+            rtgcwii_motion(w, i, s, now);
+#else
             w->hold[i] = rthome_map_classic(rtgcwii_pad_buttons(s), RTHOME_CL_PLUS);
+#endif
             /* Newly plugged in: what it holds already isn't newly pressed. */
             if (!(w->present & bit)) w->delivered[i] = w->hold[i];
             ++w->samples[i];
@@ -36,6 +106,9 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             w->present &= ~bit;
             w->seen[i] = 0;
             w->hold[i] = w->delivered[i] = 0;
+#ifdef RT_PAD_FORM_NUNCHUK
+            w->shake[i] = 0;
+#endif
         } else if (w->present & bit) {
             /* A dropped report, within the grace period: the buttons stay
              * as held, but it is a new sample, so a press already given to
@@ -92,14 +165,9 @@ void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own) {
     if (!own) w->game_read = now | 1u;
 }
 
-void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
-                     int32_t axes[6]) {
-    uint32_t i;
-    if (!rtgcwii_on(w, channel)) {
-        *hold = *trig = *release = 0;
-        for (i = 0; i < 6; ++i) axes[i] = 0;
-        return;
-    }
+/* The words for the game's KPAD read: newly pressed and let go against what
+ * it last got, worked out once a sample. */
+static void rtgcwii_words(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release) {
     if (w->worked[channel] != w->samples[channel]) {
         w->worked[channel] = w->samples[channel];
         w->trig[channel] = w->hold[channel] & ~w->delivered[channel];
@@ -109,7 +177,61 @@ void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32
     *hold = w->hold[channel];
     *trig = w->trig[channel];
     *release = w->release[channel];
+}
+
+void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
+                     int32_t axes[6]) {
+    uint32_t i;
+    if (!rtgcwii_on(w, channel)) {
+        *hold = *trig = *release = 0;
+        for (i = 0; i < 6; ++i) axes[i] = 0;
+        return;
+    }
+    rtgcwii_words(w, channel, hold, trig, release);
     rthome_classic_axes(w->pad[channel], axes);
+}
+
+/* A controller held still: gravity along -Y, as KPAD reports a real one at
+ * rest (both the Wii Remote's and the Nunchuk's accelerometers). */
+static void rtgcwii_still(int32_t acc[3], int32_t* value, int32_t* speed) {
+    acc[0] = 0;
+    acc[1] = -RTHOME_AXIS_FULL;
+    acc[2] = 0;
+    *value = RTHOME_AXIS_FULL;
+    *speed = 0;
+}
+
+void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out) {
+    int32_t axes[6];
+    uint32_t shake;
+    rtgcwii_still(out->acc, &out->acc_value, &out->acc_speed);
+    rtgcwii_still(out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
+    out->stick[0] = out->stick[1] = 0;
+    out->pointer[0] = out->pointer[1] = 0;
+    out->pointer_shown = 0;
+    if (!rtgcwii_on(w, channel)) {
+        out->hold = out->trig = out->release = 0;
+        return;
+    }
+    rtgcwii_words(w, channel, &out->hold, &out->trig, &out->release);
+    rthome_classic_axes(w->pad[channel], axes);
+    out->stick[0] = axes[0];
+    out->stick[1] = axes[1];
+    out->pointer[0] = w->pointer[channel][0];
+    out->pointer[1] = w->pointer[channel][1];
+    out->pointer_shown =
+        w->pointer_moved[channel] != 0 && rtgcwii_elapsed(now, w->pointer_moved[channel]) < w->pointer_show;
+    shake = w->shake[channel];
+    if (shake != 0) {
+        /* The Wii Remote shakes: all three axes swing together, and a flip
+         * is a jump in speed. */
+        const int32_t swing = ((shake / RTGCWII_SHAKE_FLIP) & 1u) ? RTGCWII_SHAKE_G : -RTGCWII_SHAKE_G;
+        out->acc[0] = swing;
+        out->acc[1] = swing;
+        out->acc[2] = -swing;
+        out->acc_value = RTGCWII_SHAKE_VALUE;
+        out->acc_speed = shake > 1u && (shake % RTGCWII_SHAKE_FLIP) == 0 ? RTGCWII_SHAKE_VALUE : 0;
+    }
 }
 
 uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
