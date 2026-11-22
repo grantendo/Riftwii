@@ -150,6 +150,41 @@ void TestKpadRead() {
     }
 }
 
+// WPADGetInfoAsync's marks: the channel index, the busy answer, the status
+// request (report 0x15) in a 48-byte command, and its info (r4) and callback
+// (r5) kept and stored into the command, unless `keeps_callback` is false
+// (another request function with the rest of the marks).
+void put_get_info(Section& t, bool keeps_callback) {
+    t.put(stwu_r1(0x80));
+    t.put(kMflrR0);
+    t.put(kSlwiR0R3By2);
+    t.put(mr(27, 4));
+    if (keeps_callback) t.put(mr(28, 5));
+    t.put(li(30, -2));
+    t.put(li(4, 0x15));
+    t.put(mulli(0, 0, 48));
+    t.put(stw(27, 1, 48));
+    if (keeps_callback) t.put(stw(28, 1, 52));
+    t.put(kBlr);
+}
+
+void TestWpadGetInfo() {
+    {
+        Section t{0x80030000, {}};
+        put_get_info(t, false);  // a decoy
+        const std::uint32_t info = t.here();
+        put_get_info(t, true);
+        EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), info);
+    }
+    {
+        // Two: unsure, none.
+        Section t{0x80030000, {}};
+        put_get_info(t, true);
+        put_get_info(t, true);
+        EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
+    }
+}
+
 void put_probe(Section& t, bool returns_busy) {
     t.put(stwu_r1(0x20));
     t.put(kMflrR0);
@@ -424,6 +459,7 @@ void TestKpadConnect() {
 int main() {
     TestKpadRead();
     TestWpadProbe();
+    TestWpadGetInfo();
     TestSmallDataBase();
     TestHbmFunctions(true, true);
     TestHbmFunctions(false, true);

@@ -204,6 +204,8 @@ int kind_of(const PadHook& hook) {
 }
 // A build without the HOME Menu (its smaller context and header).
 bool no_home(int kind) { return kind >= kBlobNoHome && kind < kBlobClassic; }
+// A build with the stand-ins (its own header after rt_pad_header).
+bool standin_kind(int kind) { return kind >= kBlobClassic; }
 const char* build_name(int kind) {
     static const char* const names[kBlobKinds] = {"full build",
                                                   "adapter's build",
@@ -766,6 +768,15 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     out.kpad_status_bytes = kpad.status_bytes;
     out.kpad_takes_error = kpad.takes_error;
     out.wpad_probe = probe;
+    if (old_kpad) {
+        out.wpad_info = find_wpad_get_info(text);
+        if (out.wpad_info != 0)
+            logf("GameCube adapter: WPADGetInfoAsync at 0x%08x (the 2006 KPAD game waits on its answer; the stand-in "
+                 "gives one)\n",
+                 out.wpad_info);
+        else
+            logf("GameCube adapter: WPADGetInfoAsync not found: a 2006 KPAD game may not take the stand-in\n");
+    }
     if (missing_menu != nullptr) {
         logf("GameCube adapter: no HOME Menu by the controller (the combo is the way back): %s was not found; the "
              "KPAD read at 0x%08x (%u-byte statuses%s) and WPADProbe at 0x%08x go in for the GameCube "
@@ -1540,10 +1551,14 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     // The HOME Menu's hooks, read only from the blob that has them.
     static const rt_pad_header none{};
     const rt_pad_header& hh = hook.home_blob ? h : none;
+    // The stand-in builds' own header, after rt_pad_header (the others have none).
+    const rt_pad_standin_header sh =
+        standin_kind(kind) ? *reinterpret_cast<const rt_pad_standin_header*>(blob(kind) + sizeof(rt_pad_header))
+                           : rt_pad_standin_header{};
     struct Site {
         std::uint32_t function, hook, replay, resume;
         const char* name;
-    } sites[kPadHookSites + 1] = {{hook.read, h.hook_read, h.replay_read, h.continue_read, "PADRead"},
+    } sites[kPadHookSites + 2] = {{hook.read, h.hook_read, h.replay_read, h.continue_read, "PADRead"},
                               {hook.motor, h.hook_motor, h.replay_motor, h.continue_motor, "PADControlMotor"},
                               {hook.ipc_submit, h.hook_submit, h.replay_submit, h.continue_submit, "the IPC submit routine"},
                               {hook.sleep_thread, h.hook_sleep, h.replay_sleep, h.continue_sleep, "OSSleepThread"},
@@ -1558,7 +1573,9 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                                "HBMGetSelectBtnNum"},
                               {hook.kpad_unified, hh.hook_unified, hh.replay_unified, hh.continue_unified,
                                "KPADGetUnifiedWpadStatus"},
-                              {hook.si_probe, h.hook_si_probe, h.replay_si_probe, h.continue_si_probe, "SIProbe"}};
+                              {hook.si_probe, h.hook_si_probe, h.replay_si_probe, h.continue_si_probe, "SIProbe"},
+                              {standin_kind(kind) ? hook.wpad_info : 0u, sh.hook_info, sh.replay_info,
+                               sh.continue_info, "WPADGetInfoAsync"}};
     Site& read_site = sites[0];
     Site& motor_site = sites[1];
     Site& submit_site = sites[2];
@@ -1571,6 +1588,8 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     Site& unified_site = sites[10];
     // In either blob (#510).
     Site& probe_site = sites[11];
+    // The stand-in builds', for a 2006 KPAD game.
+    Site& info_site = sites[12];
     const auto is_home_site = [&](const Site& s) {
         for (const Site* home_site : home_sites)
             if (&s == home_site) return true;
@@ -1635,6 +1654,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                      "cannot be hooked (%s)\n", reason.c_str());
             } else if (&s == &probe_site) {
                 logf("GameCube adapter: SIProbe cannot be hooked (%s); a game that asks it sees no controller there\n",
+                     reason.c_str());
+            } else if (&s == &info_site) {
+                logf("GameCube adapter: WPADGetInfoAsync cannot be hooked (%s); the 2006 KPAD game may not take the "
+                     "stand-in\n",
                      reason.c_str());
             } else {
                 way_back_off(s.name, "cannot be hooked (" + reason + ")");
@@ -1717,6 +1740,9 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                      "out of a branch's reach\n");
             if (&s == &probe_site)
                 logf("GameCube adapter: SIProbe is out of a branch's reach; a game that asks it sees no controller there\n");
+            if (&s == &info_site)
+                logf("GameCube adapter: WPADGetInfoAsync is out of a branch's reach; the 2006 KPAD game may not take "
+                     "the stand-in\n");
             continue;
         }
         store_words(s.function, &branch, 1);

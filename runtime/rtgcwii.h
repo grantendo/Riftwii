@@ -71,6 +71,10 @@ struct rtgcwii {
      * It keeps that shape until the next time it takes a channel, though
      * the controller unplugs under the menu (the Wii Remote forms only). */
     uint32_t home_shaped;
+    /* A 2006 KPAD game's WPADGetInfoAsync callback, answered for the
+     * stand-in and told at the game's next KPAD read on that channel (as a
+     * real Wii Remote's answer comes later), 0: none waiting. */
+    uint32_t info_callback[RTGCWII_CHANNELS];
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game

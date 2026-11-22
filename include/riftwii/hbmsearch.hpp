@@ -77,6 +77,15 @@ struct KpadConnect {
 };
 KpadConnect find_kpad_connect(const std::vector<CodeRange>& text, std::uint32_t kpad_read);
 
+// WPADGetInfoAsync(chan, info, callback), which a 2006 KPAD game (Excite
+// Truck) waits on before it uses a Wii Remote: the one function that
+// indexes the channels as WPADProbe does (`slwi r0,r3,2`), answers busy
+// (`li rX,-2`), queues the status request (report 0x15, `li rX,0x15`) in a
+// 48-byte command (`mulli rX,rY,48`), and keeps its info and callback
+// arguments (`mr` from r4 and from r5) to store them into it. One in each of
+// the 29 Wii games dumped (2006 to 2010). 0 when not exactly one.
+std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text);
+
 // The small-data base the game's start-up code loads into r13 (`lis
 // r13,hi` then `ori` or `addi r13,r13,lo`), within its first 256 words
 // from `entry`; 0 when not found.

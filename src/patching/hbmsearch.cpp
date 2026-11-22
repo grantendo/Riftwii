@@ -253,6 +253,49 @@ KpadRead find_kpad_read(const std::vector<CodeRange>& text) {
     return found;
 }
 
+std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
+    constexpr std::uint32_t kIndexChannel = 0x5460103Au;  // slwi r0,r3,2
+    constexpr std::int32_t kStatusReport = 0x15;
+    constexpr std::int32_t kBusy = -2;
+    constexpr std::int32_t kCommandBytes = 48;
+    std::uint32_t found = 0;
+    unsigned matches = 0;
+    for (const CodeRange& r : text) {
+        if (r.bytes == nullptr) continue;
+        const std::size_t words = r.size / 4;
+        std::size_t i = 0;
+        while (i < words) {
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            if (i >= words) break;
+            const std::size_t start = i++;
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            bool index = false, report = false, busy = false, command = false;
+            int info_reg = -1, callback_reg = -1;
+            std::uint32_t stack_stores = 0;  // registers stored to the stack, one bit each
+            for (std::size_t k = start; k < i; ++k) {
+                const std::uint32_t insn = be32(r.bytes + 4 * k);
+                const std::int32_t value = simm(insn);
+                index = index || insn == kIndexChannel;
+                const bool li = opcode(insn) == 14 && reg_a(insn) == 0;
+                report = report || (li && value == kStatusReport);
+                busy = busy || (li && value == kBusy);
+                command = command || (opcode(insn) == 7 && value == kCommandBytes);  // mulli
+                const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
+                                ((insn >> 21) & 31u) == ((insn >> 11) & 31u);
+                if (mr && ((insn >> 21) & 31u) == 4) info_reg = static_cast<int>(reg_a(insn));
+                if (mr && ((insn >> 21) & 31u) == 5) callback_reg = static_cast<int>(reg_a(insn));
+                if (opcode(insn) == 36 && reg_a(insn) == 1) stack_stores |= 1u << reg_d(insn);  // stw rS,d(r1)
+            }
+            const bool keeps = info_reg >= 0 && callback_reg >= 0 && ((stack_stores >> info_reg) & 1u) &&
+                               ((stack_stores >> callback_reg) & 1u);
+            if (!(index && report && busy && command && keeps)) continue;
+            found = r.address + static_cast<std::uint32_t>(4 * start);
+            ++matches;
+        }
+    }
+    return matches == 1 ? found : 0;
+}
+
 std::uint32_t find_wpad_probe(const std::vector<CodeRange>& text) {
     constexpr std::uint32_t kNoDevice = 253;     // WPAD's "not known yet"
     constexpr std::uint32_t kIndexChannel = 0x5460103Au;  // slwi r0,r3,2
