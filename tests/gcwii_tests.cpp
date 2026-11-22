@@ -166,11 +166,10 @@ void TestHomeOnOwnChannel() {
     h.selected = RTHOME_NO_SELECTION;
     // Every channel probed, 0 and 1 free.
     for (std::uint32_t c = 0; c < 4; ++c) rthome_probed(&h, c, c < 2 ? -1 : 0);
-    h.own = 1u << 1;  // port 2's controller stands in on channel 1
     Pads pads;
     pads.plug(1, kGcCombo);
-    rthome_pads(&h, pads.s, 1000);
-    rthome_pads(&h, pads.s, 1200);
+    rthome_pads_own(&h, pads.s, 1000, 1u << 1);  // port 2's controller stands in on channel 1
+    rthome_pads_own(&h, pads.s, 1200, 1u << 1);
     EXPECT_EQ(rthome_stand_in(&h, 1200), 1u);
 }
 
@@ -293,11 +292,10 @@ void TestOneChangeAtATimeAndKpadRead() {
     h.channel = RTHOME_NO_CHANNEL;
     h.selected = RTHOME_NO_SELECTION;
     rthome_probed(&h, 0, 0);
-    h.own = 1u << 1;
     Pads combo;
     combo.plug(0, kGcCombo);
-    rthome_pads(&h, combo.s, 1000);
-    rthome_pads(&h, combo.s, 1200);
+    rthome_pads_own(&h, combo.s, 1000, 1u << 1);
+    rthome_pads_own(&h, combo.s, 1200, 1u << 1);
     EXPECT_EQ(rthome_stand_in(&h, 1200), 2u);
 }
 

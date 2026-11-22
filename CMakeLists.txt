@@ -56,6 +56,9 @@ add_library(riftwii_runtime STATIC runtime/rtable.c runtime/rtfat.c runtime/rtfs
     runtime/resident/rt_hook.c runtime/resident/rt_zstd.c runtime/vsd/vsd_hook.c runtime/gc/gc_rvz.c)
 target_include_directories(riftwii_runtime PUBLIC runtime runtime/resident runtime/vsd PRIVATE vendor-zstd runtime/gc)
 target_compile_definitions(riftwii_runtime PRIVATE RT_RVZ)
+# The Wii controller stand-ins' code (#587; the pad builds with RT_PAD_CLASSIC),
+# which the tests cover; rthome.h's layout follows it, so it is public.
+target_compile_definitions(riftwii_runtime PUBLIC RT_PAD_CLASSIC)
 target_link_libraries(riftwii_runtime PRIVATE zstddec)
 set_target_properties(riftwii_runtime PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")

@@ -102,11 +102,6 @@ struct rthome {
      * Revolution III saw the stand-in's HOME held but never newly pressed
      * (9 Nov, Dolphin), so its menu never opened. */
     uint32_t announce;
-    /* Channels a GameCube controller already stands in on as a Classic
-     * Controller (rtgcwii.h), one bit each: the combo on that port starts
-     * this stand-in on the port's own channel, not a free one, so the game
-     * sees its HOME on the player who pressed it. */
-    uint32_t own;
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -117,6 +112,17 @@ struct rthome {
  * stand-in is up, that port's status is kept for it. Letting the combo go
  * after the stand-in is gone arms it again. */
 void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now);
+
+#ifdef RT_PAD_CLASSIC
+/* rthome_pads in the builds with the Wii controller stand-ins (#587):
+ * `own` has a bit for each channel a GameCube controller already stands in
+ * on as a Classic Controller (rtgcwii.h). The combo on that port starts
+ * this stand-in on the port's own channel, not a free one, so the game sees
+ * its HOME on the player who pressed it, and no other port's stand-in takes
+ * such a channel. rthome_pads is this with none. (Not a field of struct
+ * rthome: the pad context's layout is the same in every build.) */
+void rthome_pads_own(struct rthome* h, const uint8_t* status, uint32_t now, uint32_t own);
+#endif
 
 /* WPADProbe(`channel`) answered `result` (0 a controller, -1 none, -2
  * busy), not for the stand-in. */
@@ -204,6 +210,7 @@ uint32_t rthome_connect_change(uint32_t told, uint32_t now, uint32_t* leave, uin
  * FULL), made with integers only: the blob has no floating-point unit use
  * and no constant data. */
 uint32_t rthome_float_bits(int32_t numerator);
+#ifdef RT_PAD_CLASSIC
 
 /* A GameCube controller's buttons (the PADStatus word) as a Classic
  * Controller's, in the default layout of #587: A B X Y as a b x y, Z as
@@ -215,5 +222,6 @@ uint32_t rthome_map_classic(uint32_t gc_buttons, uint32_t start);
  * stick and C-stick as the left and right sticks, then L and R, numerators
  * over RTHOME_AXIS_FULL with a dead zone at rest. */
 void rthome_classic_axes(const uint8_t* pad, int32_t axes[6]);
+#endif /* RT_PAD_CLASSIC */
 
 #endif

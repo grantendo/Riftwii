@@ -1,6 +1,13 @@
 /* SPDX-FileCopyrightText: 2026 RiftWii contributors */
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* GameCube controllers as Classic Controllers' decisions (rtgcwii.h). */
+/* The Wii controller stand-ins' own file: linked only into the pad builds
+ * with them (RT_PAD_CLASSIC, Makefile.runtime), and compiled, unused, with
+ * the DOL's and the host library's runtime sources; it takes rthome.h's
+ * stand-in declarations in each. */
+#ifndef RT_PAD_CLASSIC
+#define RT_PAD_CLASSIC
+#endif
 #include "rtgcwii.h"
 
 #include "rthome.h"

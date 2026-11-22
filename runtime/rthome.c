@@ -48,17 +48,29 @@ static uint32_t combo_port(const uint8_t* status) {
     return RTHOME_CHANNELS;
 }
 
+#ifdef RT_PAD_CLASSIC
 /* The lowest empty channel, else the lowest the game never asked about. */
-static uint32_t free_channel(const struct rthome* h, uint32_t port) {
+static uint32_t free_channel(const struct rthome* h, uint32_t port, uint32_t own) {
     uint32_t i;
-    if ((h->own >> port) & 1u) return port;
+    if ((own >> port) & 1u) return port;
     /* Never another player's permanent stand-in's channel. */
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (((h->probed & h->free & ~h->own) >> i) & 1u) return i;
+        if (((h->probed & h->free & ~own) >> i) & 1u) return i;
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (!(((h->probed | h->own) >> i) & 1u)) return i;
+        if (!(((h->probed | own) >> i) & 1u)) return i;
     return RTHOME_NO_CHANNEL;
 }
+#else
+/* The lowest empty channel, else the lowest the game never asked about. */
+static uint32_t free_channel(const struct rthome* h) {
+    uint32_t i;
+    for (i = 0; i < RTHOME_CHANNELS; ++i)
+        if (((h->probed & h->free) >> i) & 1u) return i;
+    for (i = 0; i < RTHOME_CHANNELS; ++i)
+        if (!((h->probed >> i) & 1u)) return i;
+    return RTHOME_NO_CHANNEL;
+}
+#endif
 
 static void keep_pad(struct rthome* h, const uint8_t* status) {
     const uint8_t* s = status + h->port * RTHOME_PAD_STATUS_BYTES;
@@ -68,7 +80,11 @@ static void keep_pad(struct rthome* h, const uint8_t* status) {
     ++h->samples;
 }
 
+#ifdef RT_PAD_CLASSIC
+void rthome_pads_own(struct rthome* h, const uint8_t* status, uint32_t now, uint32_t own) {
+#else
 void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
+#endif
     const uint32_t port = combo_port(status);
     if (h->phase == RTHOME_DONE) {
         if (port == RTHOME_CHANNELS) {
@@ -90,7 +106,11 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
         return;
     }
     if (elapsed(now, h->since) < h->hold) return;
-    h->channel = free_channel(h, port);
+#ifdef RT_PAD_CLASSIC
+    h->channel = free_channel(h, port, own);
+#else
+    h->channel = free_channel(h);
+#endif
     if (h->channel == RTHOME_NO_CHANNEL) {
         h->phase = RTHOME_DONE;  /* every channel has a controller: its own HOME works */
         return;
@@ -109,6 +129,10 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
     h->since = now | 1u;
     keep_pad(h, status);
 }
+
+#ifdef RT_PAD_CLASSIC
+void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) { rthome_pads_own(h, status, now, 0u); }
+#endif
 
 void rthome_probed(struct rthome* h, uint32_t channel, int32_t result) {
     uint32_t bit;
@@ -178,6 +202,7 @@ static int32_t trigger(uint32_t v) {
     return out > RTHOME_AXIS_FULL ? RTHOME_AXIS_FULL : out;
 }
 
+#ifdef RT_PAD_CLASSIC
 uint32_t rthome_map_classic(uint32_t b, uint32_t start) {
     uint32_t c = 0;
     if (b & RTHOME_GC_A) c |= RTHOME_CL_A;
@@ -206,6 +231,24 @@ void rthome_classic_axes(const uint8_t* pad, int32_t axes[6]) {
     axes[4] = trigger(pad[6]);
     axes[5] = trigger(pad[7]);
 }
+#else
+static uint32_t mapped(uint32_t b) {
+    uint32_t c = 0;
+    if (b & RTHOME_GC_A) c |= RTHOME_CL_A;
+    if (b & RTHOME_GC_B) c |= RTHOME_CL_B;
+    if (b & RTHOME_GC_X) c |= RTHOME_CL_X;
+    if (b & RTHOME_GC_Y) c |= RTHOME_CL_Y;
+    if (b & RTHOME_GC_START) c |= RTHOME_CL_HOME;
+    if (b & RTHOME_GC_Z) c |= RTHOME_CL_ZR;
+    if (b & RTHOME_GC_L) c |= RTHOME_CL_L;
+    if (b & RTHOME_GC_R) c |= RTHOME_CL_R;
+    if (b & RTHOME_GC_UP) c |= RTHOME_CL_UP;
+    if (b & RTHOME_GC_DOWN) c |= RTHOME_CL_DOWN;
+    if (b & RTHOME_GC_LEFT) c |= RTHOME_CL_LEFT;
+    if (b & RTHOME_GC_RIGHT) c |= RTHOME_CL_RIGHT;
+    return c;
+}
+#endif
 
 /* The same buttons on the Wii Remote, upright: the ones a HOME Menu run
  * as a plain Remote acts on. */
@@ -244,7 +287,16 @@ void rthome_classic(struct rthome* h, uint32_t now, uint32_t* hold, uint32_t* tr
     } else {
         buttons = mapped(pad_buttons(h->pad) & ~h->stale);
         remote = mapped_remote(pad_buttons(h->pad) & ~h->stale);
+#ifdef RT_PAD_CLASSIC
         rthome_classic_axes(h->pad, axes);
+#else
+        axes[0] = stick((int8_t)h->pad[2], RTHOME_STICK_FULL);
+        axes[1] = stick((int8_t)h->pad[3], RTHOME_STICK_FULL);
+        axes[2] = stick((int8_t)h->pad[4], RTHOME_CSTICK_FULL);
+        axes[3] = stick((int8_t)h->pad[5], RTHOME_CSTICK_FULL);
+        axes[4] = trigger(h->pad[6]);
+        axes[5] = trigger(h->pad[7]);
+#endif
     }
     if (h->worked != h->samples) {
         h->worked = h->samples;

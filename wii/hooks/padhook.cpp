@@ -171,11 +171,29 @@ bool own_list(std::int32_t fd, s32& count) {
 // Each also without the HOME Menu by the controller (#387; kBlobNoHome
 // added): the blob as before it, with the smaller context, for code builds
 // and with Settings > Leaving a game on HOME only (PadHook::home_blob).
-enum BlobKind { kBlobFull = 0, kBlobAdapter = 1, kBlobPads = 2, kBlobNoHome = 3, kBlobKinds = 6 };
-int kind_of(bool adapter_only, bool pads_only, bool home) {
+// And the full and adapter-only HOME Menu builds again with the Wii
+// controller stand-ins (#587, RT_PAD_CLASSIC; kBlobClassic, plus one for
+// adapter only), for a game whose GameCube controllers setting is on
+// (PadHook::as_classic): every other game keeps the first six, unchanged.
+enum BlobKind { kBlobFull = 0, kBlobAdapter = 1, kBlobPads = 2, kBlobNoHome = 3, kBlobClassic = 6, kBlobKinds = 8 };
+int kind_of(bool adapter_only, bool pads_only, bool home, bool classic) {
+    if (home && classic) return kBlobClassic + (adapter_only ? 1 : 0);
     return (adapter_only ? kBlobAdapter : pads_only ? kBlobPads : kBlobFull) + (home ? 0 : kBlobNoHome);
 }
-int kind_of(const PadHook& hook) { return kind_of(hook.adapter_only, hook.pads_only, hook.home_blob); }
+int kind_of(const PadHook& hook) { return kind_of(hook.adapter_only, hook.pads_only, hook.home_blob, hook.as_classic); }
+// A build without the HOME Menu (its smaller context and header).
+bool no_home(int kind) { return kind >= kBlobNoHome && kind < kBlobClassic; }
+const char* build_name(int kind) {
+    static const char* const names[kBlobKinds] = {"full build",
+                                                  "adapter's build",
+                                                  "USB pads' build",
+                                                  "full build without the HOME Menu",
+                                                  "adapter's build without the HOME Menu",
+                                                  "USB pads' build without the HOME Menu",
+                                                  "full build with the stand-ins",
+                                                  "adapter's build with the stand-ins"};
+    return names[kind];
+}
 // The builds are the pads plugin's (plugins/pads, docs/PLUGINS.md "The
 // pads plugin"), not the DOL's: the DOL knows their sizes, and
 // fetch_pad_build copies the one a game takes into g_build while the card
@@ -196,7 +214,7 @@ const std::uint8_t* blob(int kind) { return kind == g_build_kind ? g_build : nul
 std::uint32_t blob_size(int kind) { return kBuildBytes[kind]; }
 const rt_pad_header& header(int kind) { return *reinterpret_cast<const rt_pad_header*>(blob(kind)); }
 // The context's size in that blob.
-std::uint32_t context_bytes(int kind) { return kind >= kBlobNoHome ? RT_PAD_CONTEXT_BASE_BYTES : RT_PAD_CONTEXT_BYTES; }
+std::uint32_t context_bytes(int kind) { return no_home(kind) ? RT_PAD_CONTEXT_BASE_BYTES : RT_PAD_CONTEXT_BYTES; }
 
 bool blob_whole(int kind) {
     const rt_pad_header& h = header(kind);
@@ -205,11 +223,11 @@ bool blob_whole(int kind) {
     // hooks (rt_pad_header's last five, after SIProbe's), which are never
     // read from it.
     const std::uint32_t header_bytes =
-        kind < kBlobNoHome ? sizeof(rt_pad_header) : offsetof(rt_pad_header, hook_kpad);
+        !no_home(kind) ? sizeof(rt_pad_header) : offsetof(rt_pad_header, hook_kpad);
     if (size < header_bytes || h.magic != RT_PAD_MAGIC || h.version != RT_PAD_VERSION || h.size > size ||
         h.context_offset + context_bytes(kind) > h.size)
         return false;
-    return kind >= kBlobNoHome || (h.hook_kpad != 0 && h.hook_probe != 0 && h.hook_menu != 0 && h.hook_select != 0 &&
+    return no_home(kind) || (h.hook_kpad != 0 && h.hook_probe != 0 && h.hook_menu != 0 && h.hook_select != 0 &&
                                    h.hook_unified != 0);
 }
 
@@ -1069,7 +1087,7 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
     forget_build();
     g_pads_refused = false;
     decide_pad_inputs(hook, code_build, true);
-    const int kind = kind_of(hook.adapter_only, hook.pads_only, wants_home_build(hook, code_build));
+    const int kind = kind_of(hook.adapter_only, hook.pads_only, wants_home_build(hook, code_build), hook.as_classic);
     const std::uint32_t bytes = kBuildBytes[kind];
     g_build = static_cast<std::uint8_t*>(memalign(32, (bytes + 31u) & ~31u));
     if (g_build == nullptr) {
@@ -1109,9 +1127,8 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
         return fail("build " + std::to_string(kind) + " is not the one this RiftWii was built with (" +
                         std::to_string(request.written) + " bytes, " + std::to_string(bytes) + " expected)",
                     true);
-    logf("GameCube adapter and USB controllers: the pad code's %s build%s (%u bytes) copied from the %s plugin\n",
-         kind % kBlobNoHome == kBlobAdapter ? "adapter's" : kind % kBlobNoHome == kBlobPads ? "USB pads'" : "full",
-         kind >= kBlobNoHome ? " without the HOME Menu" : "", static_cast<unsigned>(bytes), kPadsPlugin);
+    logf("GameCube adapter and USB controllers: the pad code's %s (%u bytes) copied from the %s plugin\n", build_name(kind),
+         static_cast<unsigned>(bytes), kPadsPlugin);
     return true;
 }
 
