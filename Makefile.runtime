@@ -59,21 +59,21 @@ OBJS    := $(OUT)/rt_entry.o $(OUT)/rt_hook.o $(OUT)/rtable.o $(OUT)/rtfat.o $(O
 PADSRC  := runtime/pad
 PADOUT  := $(OUT)/pad
 PADBLOB := $(OUT)/riftwii_pad.bin
-PADOBJS := $(PADOUT)/pad_entry.o $(PADOUT)/pad_hook.o $(PADOUT)/rtgcad.o $(PADOUT)/rthid.o $(PADOUT)/rtleave.o $(PADOUT)/rthome.o $(PADOUT)/rtrestart.o
+PADOBJS := $(PADOUT)/pad_entry.o $(PADOUT)/pad_hook.o $(PADOUT)/rtgcad.o $(PADOUT)/rthid.o $(PADOUT)/rtleave.o $(PADOUT)/rthome.o $(PADOUT)/rtgcwii.o $(PADOUT)/rtrestart.o
 
 # The same blob for a game where the adapter is the only USB controller
 # that can be used (wiiu#45): built with GCAD_ADAPTER_ONLY, which leaves
 # out the code for other USB pads (HID, Xbox 360, Switch Pro).
 PADAOUT  := $(OUT)/pada
 PADABLOB := $(OUT)/riftwii_pada.bin
-PADAOBJS := $(PADAOUT)/pad_entry.o $(PADAOUT)/pad_hook.o $(PADAOUT)/rtgcad.o $(PADAOUT)/rtleave.o $(PADAOUT)/rthome.o $(PADAOUT)/rtrestart.o
+PADAOBJS := $(PADAOUT)/pad_entry.o $(PADAOUT)/pad_hook.o $(PADAOUT)/rtgcad.o $(PADAOUT)/rtleave.o $(PADAOUT)/rthome.o $(PADAOUT)/rtgcwii.o $(PADAOUT)/rtrestart.o
 
 # And for a code build started with USB pads but no adapter, Switch Pro
 # Controller or DualShock 3 (#496): built with GCAD_PADS_ONLY, which leaves
 # out the adapter's own code and those two pads' start-ups.
 PADPOUT  := $(OUT)/padp
 PADPBLOB := $(OUT)/riftwii_padp.bin
-PADPOBJS := $(PADPOUT)/pad_entry.o $(PADPOUT)/pad_hook.o $(PADPOUT)/rtgcad.o $(PADPOUT)/rthid.o $(PADPOUT)/rtleave.o $(PADPOUT)/rthome.o
+PADPOBJS := $(PADPOUT)/pad_entry.o $(PADPOUT)/pad_hook.o $(PADPOUT)/rtgcad.o $(PADPOUT)/rthid.o $(PADPOUT)/rtleave.o $(PADPOUT)/rthome.o $(PADPOUT)/rtgcwii.o
 
 # Each of the three again without the HOME Menu by the controller (#387),
 # built with RT_PAD_NO_HOME: the blob as it was before it (SIProbe's hook
@@ -88,7 +88,7 @@ $(OUT)/$(1):
 $(OUT)/$(1)/pad_entry.o: $(PADSRC)/pad_entry.S $(PADSRC)/pad_hook.h runtime/rtleave.h runtime/rthome.h runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) $(2) -DRT_PAD_NO_HOME -I$(PADSRC) -c -o $$@ $$<
 
-$(OUT)/$(1)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtsiprobe.h runtime/rtrestart.h | $(OUT)/$(1)
+$(OUT)/$(1)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h runtime/rtsiprobe.h runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) $(2) -DRT_PAD_NO_HOME -I$(PADSRC) -c -o $$@ $$<
 
 $(OUT)/$(1)/rtgcad.o: runtime/rtgcad.c runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h | $(OUT)/$(1)
@@ -336,7 +336,7 @@ $(PADOUT):
 $(PADOUT)/pad_entry.o: $(PADSRC)/pad_entry.S $(PADSRC)/pad_hook.h runtime/rtleave.h runtime/rthome.h runtime/rtrestart.h | $(PADOUT)
 	$(CC) $(CFLAGS) -I$(PADSRC) -c -o $@ $<
 
-$(PADOUT)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtsiprobe.h runtime/rtrestart.h | $(PADOUT)
+$(PADOUT)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h runtime/rtsiprobe.h runtime/rtrestart.h | $(PADOUT)
 	$(CC) $(CFLAGS) -I$(PADSRC) -c -o $@ $<
 
 $(PADOUT)/rthid.o: runtime/rthid.c runtime/rthid.h runtime/rtgcad.h | $(PADOUT)
@@ -349,6 +349,9 @@ $(PADOUT)/rtleave.o: runtime/rtleave.c runtime/rtleave.h | $(PADOUT)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(PADOUT)/rthome.o: runtime/rthome.c runtime/rthome.h | $(PADOUT)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(PADOUT)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h runtime/rthome.h | $(PADOUT)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(PADOUT)/rtrestart.o: runtime/rtrestart.c runtime/rtrestart.h | $(PADOUT)
@@ -375,7 +378,7 @@ $(PADAOUT):
 $(PADAOUT)/pad_entry.o: $(PADSRC)/pad_entry.S $(PADSRC)/pad_hook.h runtime/rtleave.h runtime/rthome.h runtime/rtrestart.h | $(PADAOUT)
 	$(CC) $(CFLAGS) -DGCAD_ADAPTER_ONLY -I$(PADSRC) -c -o $@ $<
 
-$(PADAOUT)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtsiprobe.h runtime/rtrestart.h | $(PADAOUT)
+$(PADAOUT)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h runtime/rtsiprobe.h runtime/rtrestart.h | $(PADAOUT)
 	$(CC) $(CFLAGS) -DGCAD_ADAPTER_ONLY -I$(PADSRC) -c -o $@ $<
 
 $(PADAOUT)/rtgcad.o: runtime/rtgcad.c runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h | $(PADAOUT)
@@ -385,6 +388,9 @@ $(PADAOUT)/rtleave.o: runtime/rtleave.c runtime/rtleave.h | $(PADAOUT)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(PADAOUT)/rthome.o: runtime/rthome.c runtime/rthome.h | $(PADAOUT)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(PADAOUT)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h runtime/rthome.h | $(PADAOUT)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(PADAOUT)/rtrestart.o: runtime/rtrestart.c runtime/rtrestart.h | $(PADAOUT)
@@ -411,7 +417,7 @@ $(PADPOUT):
 $(PADPOUT)/pad_entry.o: $(PADSRC)/pad_entry.S $(PADSRC)/pad_hook.h runtime/rtleave.h runtime/rthome.h runtime/rtrestart.h | $(PADPOUT)
 	$(CC) $(CFLAGS) -DGCAD_PADS_ONLY -I$(PADSRC) -c -o $@ $<
 
-$(PADPOUT)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtsiprobe.h runtime/rtrestart.h | $(PADPOUT)
+$(PADPOUT)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h runtime/rtsiprobe.h runtime/rtrestart.h | $(PADPOUT)
 	$(CC) $(CFLAGS) -DGCAD_PADS_ONLY -I$(PADSRC) -c -o $@ $<
 
 $(PADPOUT)/rtgcad.o: runtime/rtgcad.c runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h | $(PADPOUT)
@@ -421,6 +427,9 @@ $(PADPOUT)/rtleave.o: runtime/rtleave.c runtime/rtleave.h | $(PADPOUT)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(PADPOUT)/rthome.o: runtime/rthome.c runtime/rthome.h | $(PADPOUT)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(PADPOUT)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h runtime/rthome.h | $(PADPOUT)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(PADPOUT)/riftwii_padp.elf: $(PADPOBJS) $(PADSRC)/pad.ld

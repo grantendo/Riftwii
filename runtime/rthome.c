@@ -49,12 +49,14 @@ static uint32_t combo_port(const uint8_t* status) {
 }
 
 /* The lowest empty channel, else the lowest the game never asked about. */
-static uint32_t free_channel(const struct rthome* h) {
+static uint32_t free_channel(const struct rthome* h, uint32_t port) {
     uint32_t i;
+    if ((h->own >> port) & 1u) return port;
+    /* Never another player's permanent stand-in's channel. */
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (((h->probed & h->free) >> i) & 1u) return i;
+        if (((h->probed & h->free & ~h->own) >> i) & 1u) return i;
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (!((h->probed >> i) & 1u)) return i;
+        if (!(((h->probed | h->own) >> i) & 1u)) return i;
     return RTHOME_NO_CHANNEL;
 }
 
@@ -88,7 +90,7 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
         return;
     }
     if (elapsed(now, h->since) < h->hold) return;
-    h->channel = free_channel(h);
+    h->channel = free_channel(h, port);
     if (h->channel == RTHOME_NO_CHANNEL) {
         h->phase = RTHOME_DONE;  /* every channel has a controller: its own HOME works */
         return;
@@ -176,13 +178,13 @@ static int32_t trigger(uint32_t v) {
     return out > RTHOME_AXIS_FULL ? RTHOME_AXIS_FULL : out;
 }
 
-static uint32_t mapped(uint32_t b) {
+uint32_t rthome_map_classic(uint32_t b, uint32_t start) {
     uint32_t c = 0;
     if (b & RTHOME_GC_A) c |= RTHOME_CL_A;
     if (b & RTHOME_GC_B) c |= RTHOME_CL_B;
     if (b & RTHOME_GC_X) c |= RTHOME_CL_X;
     if (b & RTHOME_GC_Y) c |= RTHOME_CL_Y;
-    if (b & RTHOME_GC_START) c |= RTHOME_CL_HOME;
+    if (b & RTHOME_GC_START) c |= start;
     if (b & RTHOME_GC_Z) c |= RTHOME_CL_ZR;
     if (b & RTHOME_GC_L) c |= RTHOME_CL_L;
     if (b & RTHOME_GC_R) c |= RTHOME_CL_R;
@@ -191,6 +193,18 @@ static uint32_t mapped(uint32_t b) {
     if (b & RTHOME_GC_LEFT) c |= RTHOME_CL_LEFT;
     if (b & RTHOME_GC_RIGHT) c |= RTHOME_CL_RIGHT;
     return c;
+}
+
+/* The HOME Menu's stand-in: Start closes the menu, as HOME. */
+static uint32_t mapped(uint32_t b) { return rthome_map_classic(b, RTHOME_CL_HOME); }
+
+void rthome_classic_axes(const uint8_t* pad, int32_t axes[6]) {
+    axes[0] = stick((int8_t)pad[2], RTHOME_STICK_FULL);
+    axes[1] = stick((int8_t)pad[3], RTHOME_STICK_FULL);
+    axes[2] = stick((int8_t)pad[4], RTHOME_CSTICK_FULL);
+    axes[3] = stick((int8_t)pad[5], RTHOME_CSTICK_FULL);
+    axes[4] = trigger(pad[6]);
+    axes[5] = trigger(pad[7]);
 }
 
 /* The same buttons on the Wii Remote, upright: the ones a HOME Menu run
@@ -230,12 +244,7 @@ void rthome_classic(struct rthome* h, uint32_t now, uint32_t* hold, uint32_t* tr
     } else {
         buttons = mapped(pad_buttons(h->pad) & ~h->stale);
         remote = mapped_remote(pad_buttons(h->pad) & ~h->stale);
-        axes[0] = stick((int8_t)h->pad[2], RTHOME_STICK_FULL);
-        axes[1] = stick((int8_t)h->pad[3], RTHOME_STICK_FULL);
-        axes[2] = stick((int8_t)h->pad[4], RTHOME_CSTICK_FULL);
-        axes[3] = stick((int8_t)h->pad[5], RTHOME_CSTICK_FULL);
-        axes[4] = trigger(h->pad[6]);
-        axes[5] = trigger(h->pad[7]);
+        rthome_classic_axes(h->pad, axes);
     }
     if (h->worked != h->samples) {
         h->worked = h->samples;

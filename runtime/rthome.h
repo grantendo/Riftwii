@@ -102,6 +102,11 @@ struct rthome {
      * Revolution III saw the stand-in's HOME held but never newly pressed
      * (9 Nov, Dolphin), so its menu never opened. */
     uint32_t announce;
+    /* Channels a GameCube controller already stands in on as a Classic
+     * Controller (rtgcwii.h), one bit each: the combo on that port starts
+     * this stand-in on the port's own channel, not a free one, so the game
+     * sees its HOME on the player who pressed it. */
+    uint32_t own;
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -199,5 +204,16 @@ uint32_t rthome_connect_change(uint32_t told, uint32_t now, uint32_t* leave, uin
  * FULL), made with integers only: the blob has no floating-point unit use
  * and no constant data. */
 uint32_t rthome_float_bits(int32_t numerator);
+
+/* A GameCube controller's buttons (the PADStatus word) as a Classic
+ * Controller's, in the default layout of #587: A B X Y as a b x y, Z as
+ * ZR, L and R as themselves, the D-pad as the D-pad, and Start as `start`
+ * (HOME for the HOME Menu's stand-in, + for rtgcwii.h's). */
+uint32_t rthome_map_classic(uint32_t gc_buttons, uint32_t start);
+
+/* A PADStatus's sticks and triggers as a Classic Controller's: the control
+ * stick and C-stick as the left and right sticks, then L and R, numerators
+ * over RTHOME_AXIS_FULL with a dead zone at rest. */
+void rthome_classic_axes(const uint8_t* pad, int32_t axes[6]);
 
 #endif
