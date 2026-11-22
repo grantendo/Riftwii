@@ -586,7 +586,7 @@ struct pad_classic {
 
 static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
 #ifdef RT_PAD_FORM_NUNCHUK
-static uint32_t pad_gcwii_own(const struct rt_pad_context* c);
+static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c);
 static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
 #endif
 
@@ -598,7 +598,7 @@ static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t 
 #ifdef RT_PAD_FORM_NUNCHUK
     /* On its own player's channel (rthome_pads_own) the game knows a Wii
      * Remote with a Nunchuk there: the same shape, not a Classic Controller. */
-    if (c->home.channel < RTGCWII_CHANNELS && ((pad_gcwii_own(c) >> c->home.channel) & 1u)) {
+    if (c->home.channel < RTGCWII_CHANNELS && ((pad_gcwii_shaped(c) >> c->home.channel) & 1u)) {
         pad_gcwii_home_status(c, status, &p);
         ++c->home_writes;
         return;
@@ -696,6 +696,14 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_FS_ACC + 4 * i, rtgcwii_float_bits(f.fs_acc[i]));
     pad_put32(status + PAD_KPAD_FS_ACC_VALUE, rtgcwii_float_bits(f.fs_acc_value));
     pad_put32(status + PAD_KPAD_FS_ACC_SPEED, rtgcwii_float_bits(f.fs_acc_speed));
+}
+
+/* The channels the game knows as this stand-in's: held now, or told of and
+ * not yet told it's gone (its controller unplugged under the HOME Menu), so
+ * the HOME Menu's stand-in there keeps the shape until the game hears. */
+static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c) {
+    const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
+    return c->gcwii ? pad_gcwii_own(c) | w->told : 0u;
 }
 
 /* The HOME Menu's stand-in on a channel this stand-in holds: the game knows
@@ -976,7 +984,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
 #ifdef RT_PAD_FORM_NUNCHUK
     /* On a channel the permanent stand-in holds, the HOME Menu's stand-in
      * keeps its shape (pad_home_status). */
-    if (pad_in_ram(type)) *type = ((pad_gcwii_own(c) >> (uint32_t)chan) & 1u) ? PAD_DEV_STANDIN : PAD_DEV_CLASSIC;
+    if (pad_in_ram(type)) *type = ((pad_gcwii_shaped(c) >> (uint32_t)chan) & 1u) ? PAD_DEV_STANDIN : PAD_DEV_CLASSIC;
 #else
     if (pad_in_ram(type)) *type = PAD_DEV_CLASSIC;
 #endif
