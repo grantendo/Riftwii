@@ -392,6 +392,174 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
     return matches == 1 ? found : WpadConnect2006{};
 }
 
+namespace {
+
+// Calls `visit(range, start, end)` (word indexes) for each framed function
+// in `text`: from its `stwu r1` to its first `blr`, or to the next `stwu r1`
+// when none comes before it, if that is at most `max_words` long.
+template <typename Visit>
+void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_words, Visit visit) {
+    for (const CodeRange& r : text) {
+        if (r.bytes == nullptr) continue;
+        const std::size_t words = r.size / 4;
+        std::size_t i = 0;
+        while (i < words) {
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            if (i >= words) break;
+            const std::size_t start = i++;
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            std::size_t end = start;
+            while (end < i && be32(r.bytes + 4 * end) != kBlr) ++end;
+            if (end < i) ++end;
+            if (end - start <= max_words) visit(r, start, end);
+        }
+    }
+}
+
+// `mr rA,rS` (`or rA,rS,rS`) copying `from`: the register it copies to, or -1.
+int mr_copy_of(std::uint32_t insn, std::uint32_t from) {
+    const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
+                    reg_d(insn) == ((insn >> 11) & 31u);
+    return mr && reg_d(insn) == from ? static_cast<int>(reg_a(insn)) : -1;
+}
+
+bool is_li(std::uint32_t insn, std::int32_t value) { return opcode(insn) == 14 && reg_a(insn) == 0 && simm(insn) == value; }
+
+// `cmpwi rA,value` in cr0.
+bool is_cmpwi(std::uint32_t insn, std::int32_t value) {
+    return opcode(insn) == 11 && reg_d(insn) == 0 && simm(insn) == value;
+}
+
+// `slwi rX,rS,2` (`rlwinm rX,rS,2,0,29`) for an rS in `channel` (r3, the
+// channel, and its copies, one bit each): the channel as an index into a
+// table of words.
+bool indexes_channel(std::uint32_t insn, std::uint32_t channel) {
+    return (insn & ~(31u << 16) & ~(31u << 21)) == 0x5400103Au && ((channel >> reg_d(insn)) & 1u);
+}
+
+}  // namespace
+
+WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
+    constexpr std::size_t kMaxSetterWords = 48;
+    constexpr std::int32_t kBlockFields = 0x400;  // the callbacks sit past the control block's buffers
+    constexpr std::uint32_t kBctrl = 0x4E800421u;
+    constexpr unsigned kCallWindow = 8;           // words from the slot's load to its call
+    // The setters' (table, offset) pairs.
+    std::vector<std::pair<std::uint32_t, std::int32_t>> setters;
+    each_framed_function(text, kMaxSetterWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
+        std::uint32_t high[32] = {}, address[32] = {};
+        std::uint32_t table = 0, from_r4 = 1u << 4;  // r4 and its copies, one bit each
+        int block = -1;
+        std::int32_t loaded = -1;
+        for (std::size_t k = start; k < end; ++k) {
+            const std::uint32_t insn = be32(r.bytes + 4 * k);
+            const std::uint32_t d = reg_d(insn), a = reg_a(insn);
+            const int copy = mr_copy_of(insn, 4);
+            if (copy >= 0) from_r4 |= 1u << copy;
+            if (opcode(insn) == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;  // lis
+            if (opcode(insn) == 14 && a != 0 && high[a] != 0)                    // addi rD,rA,lo
+                address[d] = high[a] + static_cast<std::uint32_t>(simm(insn));
+            const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
+            if (lwzx && address[a] != 0) {
+                table = address[a];
+                block = static_cast<int>(d);
+                continue;
+            }
+            if (block < 0 || static_cast<int>(a) != block || simm(insn) < kBlockFields) continue;
+            if (opcode(insn) == 32) loaded = simm(insn);  // lwz: the old callback
+            if (opcode(insn) == 36 && simm(insn) == loaded && ((from_r4 >> d) & 1u))
+                setters.emplace_back(table, loaded);      // stw: the new one, the second argument
+        }
+    });
+    // The slots WPAD calls with "no controller".
+    std::vector<std::pair<std::uint32_t, std::int32_t>> told_gone;
+    for (const CodeRange& r : text) {
+        if (r.bytes == nullptr) continue;
+        const std::size_t words = r.size / 4;
+        for (std::size_t i = 0; i < words; ++i) {
+            const std::uint32_t insn = be32(r.bytes + 4 * i);
+            if (opcode(insn) != 32 || reg_d(insn) != 12) continue;  // lwz r12,O(rB)
+            const auto setter = std::find_if(setters.begin(), setters.end(),
+                                             [&](const auto& s) { return s.second == simm(insn); });
+            if (setter == setters.end()) continue;
+            bool gone = false;
+            for (std::size_t k = i + 1; k < words && k <= i + kCallWindow; ++k) {
+                const std::uint32_t next = be32(r.bytes + 4 * k);
+                if (next == kBctrl) {
+                    if (gone && std::find(told_gone.begin(), told_gone.end(), *setter) == told_gone.end())
+                        told_gone.push_back(*setter);
+                    break;
+                }
+                // A jump or return, or r12 loaded again: not this slot's call
+                // (the `beq` past it when the slot is empty is fine).
+                if (opcode(next) == 18 || next == kBlr ||
+                    ((opcode(next) == 32 || opcode(next) == 14) && reg_d(next) == 12))
+                    break;
+                gone = gone || (is_li(next, -1) && reg_d(next) == 4);
+            }
+        }
+    }
+    if (told_gone.size() != 1) return WpadConnect2006{};
+    WpadConnect2006 found;
+    found.table = told_gone[0].first;
+    found.offset = static_cast<std::uint32_t>(told_gone[0].second);
+    return found;
+}
+
+std::uint32_t find_wpad_read(const std::vector<CodeRange>& text) {
+    constexpr std::size_t kMaxWords = 192;
+    constexpr std::int32_t kCoreStatusBytes = 42;  // sizeof(WPADStatus)
+    constexpr std::int32_t kErrorAt = 41;          // WPADStatus.err
+    std::uint32_t found = 0;
+    unsigned matches = 0;
+    each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
+        bool index = false, copy = false, corrupt = false, busy = false, error = false;
+        std::uint32_t from_r3 = 1u << 3, from_r4 = 1u << 4;
+        for (std::size_t k = start; k < end; ++k) {
+            const std::uint32_t insn = be32(r.bytes + 4 * k);
+            const int c3 = mr_copy_of(insn, 3), c4 = mr_copy_of(insn, 4);
+            if (c3 >= 0) from_r3 |= 1u << c3;
+            if (c4 >= 0) from_r4 |= 1u << c4;
+            index = index || indexes_channel(insn, from_r3);
+            copy = copy || (is_li(insn, kCoreStatusBytes) && reg_d(insn) == 5);
+            corrupt = corrupt || is_cmpwi(insn, -7);
+            busy = busy || is_cmpwi(insn, -2);
+            error = error || (opcode(insn) == 38 && simm(insn) == kErrorAt && ((from_r4 >> reg_a(insn)) & 1u));
+        }
+        if (!(index && copy && corrupt && busy && error)) return;
+        found = r.address + static_cast<std::uint32_t>(4 * start);
+        ++matches;
+    });
+    return matches == 1 ? found : 0;
+}
+
+std::uint32_t find_wpad_set_format(const std::vector<CodeRange>& text) {
+    constexpr std::size_t kMaxWords = 96;
+    constexpr std::int32_t kBlockFields = 0x400;
+    std::uint32_t found = 0;
+    unsigned matches = 0;
+    each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
+        bool none = false, busy = false, compares = false, stores = false;
+        std::uint32_t from_r4 = 0;  // copies of r4 (the format), one bit each
+        for (std::size_t k = start; k < end; ++k) {
+            const std::uint32_t insn = be32(r.bytes + 4 * k);
+            const int c = mr_copy_of(insn, 4);
+            if (c >= 0) from_r4 |= 1u << c;
+            // "No controller": returned as such, or the probe's result kept
+            // and compared with it (The Complete Saga's 2007 WPAD).
+            none = none || is_li(insn, -1) || is_cmpwi(insn, -1);
+            busy = busy || is_li(insn, -2);
+            const bool cmplw = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 32 && ((insn >> 21) & 1u) == 0;
+            compares = compares || (cmplw && (((from_r4 >> reg_a(insn)) & 1u) || ((from_r4 >> ((insn >> 11) & 31u)) & 1u)));
+            stores = stores || (opcode(insn) == 36 && simm(insn) >= kBlockFields && ((from_r4 >> reg_d(insn)) & 1u));
+        }
+        if (!(none && busy && compares && stores)) return;
+        found = r.address + static_cast<std::uint32_t>(4 * start);
+        ++matches;
+    });
+    return matches == 1 ? found : 0;
+}
+
 std::uint32_t find_wpad_probe(const std::vector<CodeRange>& text) {
     constexpr std::uint32_t kNoDevice = 253;     // WPAD's "not known yet"
     constexpr std::uint32_t kIndexChannel = 0x5460103Au;  // slwi r0,r3,2
