@@ -24,6 +24,10 @@ _pad_blob_start:
     .long pad_hook_menu - _pad_blob_start, pad_replay_menu - _pad_blob_start, pad_continue_menu - _pad_blob_start
     .long pad_hook_select - _pad_blob_start, pad_replay_select - _pad_blob_start, pad_continue_select - _pad_blob_start
     .long pad_hook_unified - _pad_blob_start, pad_replay_unified - _pad_blob_start, pad_continue_unified - _pad_blob_start
+#ifdef RT_PAD_STANDIN
+    /* The stand-in builds' own header after it (rt_pad_standin_header). */
+    .long pad_hook_info - _pad_blob_start, pad_replay_info - _pad_blob_start, pad_continue_info - _pad_blob_start
+#endif
 #endif
     /* Without the HOME Menu (RT_PAD_NO_HOME) the header ends before its
      * hooks, and the blob is as it was before it but for SIProbe's hook
@@ -340,6 +344,33 @@ pad_hook_unified:
     addi 1, 1, 0x20
     blr
 
+#ifdef RT_PAD_STANDIN
+/* s32 WPADGetInfoAsync(chan, info, callback), in the 2006 KPAD games: the
+ * original first, then pad_on_info(ctx, chan, info, callback, its result)
+ * answers for the stand-in's channel. Frame: 8 chan, 12 info, 16 callback. */
+    .globl pad_hook_info
+pad_hook_info:
+    stwu 1, -0x20(1)
+    mflr 0
+    stw 0, 0x24(1)
+    stw 3, 0x08(1)
+    stw 4, 0x0C(1)
+    stw 5, 0x10(1)
+    bl pad_replay_info
+    mr 7, 3
+    lwz 4, 0x08(1)
+    lwz 5, 0x0C(1)
+    lwz 6, 0x10(1)
+    bl 12f
+12: mflr 3
+    addi 3, 3, pad_context_data - 12b
+    bl pad_on_info
+    lwz 0, 0x24(1)
+    mtlr 0
+    addi 1, 1, 0x20
+    blr
+#endif
+
 #endif
 
 /* Loader-filled: the hooked function's first word (and nops), then the
@@ -374,6 +405,9 @@ pad_continue_\name:
     PAD_REPLAY menu
     PAD_REPLAY select
     PAD_REPLAY unified
+#ifdef RT_PAD_STANDIN
+    PAD_REPLAY info
+#endif
 #endif
 
     .balign 32

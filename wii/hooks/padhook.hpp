@@ -137,6 +137,9 @@ struct PadHook {
     bool standin_nunchuk = false;
     // ...or a sideways Wii Remote (RT_PAD_FORM_SIDEWAYS).
     bool standin_sideways = false;
+    // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on
+    // the info's answer before it uses a Wii Remote), 0: not hooked.
+    std::uint32_t wpad_info = 0;
     std::uint32_t gcwii_base = 0;           // where the state went, 0: none
     // For it with no adapter (a Wii's own ports): the hook goes in, USB
     // untouched (RT_PAD_FLAG_NO_USB).

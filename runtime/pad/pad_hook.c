@@ -42,6 +42,9 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
 void pad_on_menu(struct rt_pad_context* c);
 int32_t pad_on_select(struct rt_pad_context* c, int32_t result);
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count);
+#ifdef RT_PAD_STANDIN
+int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result);
+#endif
 #endif
 
 /* External interrupts off around the driver: PADRead runs on game
@@ -908,6 +911,18 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     uint32_t msr, t, stand_in;
     if (!c->home_on && !c->gcwii) return result;
     if (chan < 0 || !pad_in_ram(status) || c->kpad_status_bytes < PAD_KPAD_END) return result;
+    if (c->gcwii && (uint32_t)chan < RTGCWII_CHANNELS) {
+        /* A 2006 KPAD game's info request answered for the stand-in
+         * (pad_on_info): its callback is told now, after the game noted it
+         * was waiting. */
+        struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+        uint32_t callback;
+        msr = interrupts_off();
+        callback = w->info_callback[chan];
+        w->info_callback[chan] = 0;
+        interrupts_restore(msr);
+        if (callback != 0) ((void (*)(int32_t, int32_t))(uintptr_t)callback)(chan, 0);
+    }
     if (c->gcwii) {
         /* What the game's own read found says first (a read that brought
          * samples is a real controller; "no controller" gives the channel
@@ -1171,6 +1186,47 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 #endif
     for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, hold);
     interrupts_restore(msr);
+}
+#endif
+
+#ifdef RT_PAD_STANDIN
+/* WPADGetInfoAsync(chan, info, callback): a 2006 KPAD game (Excite Truck)
+ * asks for a Wii Remote's info and uses its samples only once the answer
+ * comes. "No controller" (-1) on the stand-in's channel becomes the
+ * stand-in's info, given at once: WPADInfo's 24 bytes (the camera, speaker
+ * and attachment flags, two battery flags, then the battery level, the LED,
+ * the protocol and the firmware), battery full and the player's LED, as
+ * Dolphin's emulated Wii Remote answers; the callback is told it worked, a
+ * little later, as a real Wii Remote's answer comes. */
+#define PAD_INFO_BYTES 24u
+#define PAD_INFO_ATTACH 8u        /* the attachment flag's word */
+#define PAD_INFO_BATTERY 20u
+#define PAD_INFO_LED 21u
+#define PAD_INFO_BATTERY_FULL 4u
+int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result) {
+    uint32_t msr, i;
+    int on;
+    if (!c->gcwii || result != -1 || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS || !pad_in_ram(info) ||
+        !pad_in_ram(info + PAD_INFO_BYTES - 1))
+        return result;
+    msr = interrupts_off();
+    on = rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
+    interrupts_restore(msr);
+    if (!on) return result;
+    for (i = 0; i < PAD_INFO_BYTES; ++i) info[i] = 0;
+#ifdef RT_PAD_FORM_NUNCHUK
+    pad_put32(info + PAD_INFO_ATTACH, 1);
+#endif
+    info[PAD_INFO_BATTERY] = PAD_INFO_BATTERY_FULL;
+    info[PAD_INFO_LED] = (uint8_t)(1u << (uint32_t)chan);
+    /* Told at the game's next KPAD read (pad_gcwii_info_told): the game
+     * notes it is waiting once this call returns. */
+    if (callback != 0 && pad_in_ram((const void*)(uintptr_t)callback)) {
+        msr = interrupts_off();
+        ((struct rtgcwii*)(uintptr_t)c->gcwii)->info_callback[chan] = callback;
+        interrupts_restore(msr);
+    }
+    return 0;
 }
 #endif
 
