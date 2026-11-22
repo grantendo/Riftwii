@@ -1222,6 +1222,11 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     // The game's own Reset (#458): its block follows the driver's state, in
     // MEM2 (a code build, whose blob is in MEM2 out of OSRestart's reach,
     // never has one).
+    // GameCube controllers as Classic Controllers keep their state after
+    // all of it (below); only with the HOME Menu's blob, whose KPAD read and
+    // WPADProbe hooks it takes.
+    const bool gcwii = out.as_classic && out.home_blob;
+    const std::uint32_t gcwii_bytes = gcwii ? align_up(sizeof(rtgcwii)) : 0;
     std::uint32_t restart_block_at = 0;
     if (out.restart_os != 0 && mem1_veneer == 0 && out.restart_armed.size() == RTRESTART_SECTOR &&
         out.restart_idle.size() == RTRESTART_SECTOR && h.hook_restart != 0) {
@@ -1230,9 +1235,10 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         const std::uint32_t mem2_start = align_up(arena2_lo);
         const std::uint32_t mem2_end = read32(kMem2ArenaEndField);
         // The block is the Reset's alone: where it is the bytes that would
-        // not let the controllers' own state fit, the controllers win and
-        // the game's Reset stays its own.
-        if (mem2_end >= mem2_start && mem2_end - mem2_start >= out.state_bytes + block_bytes + calibration_bytes) {
+        // not let the controllers' own state fit (the stand-in's included),
+        // the controllers win and the game's Reset stays its own.
+        if (mem2_end >= mem2_start &&
+            mem2_end - mem2_start >= out.state_bytes + block_bytes + calibration_bytes + gcwii_bytes) {
             restart_block_at = out.state_bytes;
             out.restart_block_bytes = block_bytes;
             out.state_bytes += out.restart_block_bytes;
@@ -1249,11 +1255,9 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     // code build may have no room to spare.
     const std::uint32_t calibration_at = out.calibration != nullptr ? out.state_bytes : 0;
     if (out.calibration != nullptr) out.state_bytes += align_up(sizeof(rtpadcal_table));
-    // GameCube controllers as Classic Controllers, after them: only with the
-    // HOME Menu's blob, whose KPAD read and WPADProbe hooks it takes.
-    const bool gcwii = out.as_classic && out.home_blob;
+    // GameCube controllers as Classic Controllers, after them.
     const std::uint32_t gcwii_at = gcwii ? out.state_bytes : 0;
-    if (gcwii) out.state_bytes += align_up(sizeof(rtgcwii));
+    out.state_bytes += gcwii_bytes;
     if (gcwii)
         logf("GameCube adapter: GameCube controllers as Classic Controllers (the game's setting): %u bytes of MEM2 "
              "for their state\n",

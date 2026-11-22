@@ -592,9 +592,9 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
     if (c->pad_read == 0) return;
     msr = interrupts_off();
     read = rtgcwii_should_read(w, now(), c->ticks_per_ms);
+    if (read) w->reading = 1;
     interrupts_restore(msr);
     if (!read) return;
-    w->reading = 1;
     ((uint32_t(*)(uint8_t*))(uintptr_t)c->pad_read)(c->pad_scratch);
     w->reading = 0;
 }
