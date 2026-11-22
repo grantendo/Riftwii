@@ -237,6 +237,7 @@ void TestFloatBits() {
     EXPECT_EQ(as_float(rtgcwii_float_bits(498)), 1.9453125f);
     EXPECT_EQ(as_float(rtgcwii_float_bits(1)), 1.0f / 256.0f);
     EXPECT_EQ(as_float(rtgcwii_float_bits(0x40000000)), 4194304.0f);  // past 2^23: shifted right
+    EXPECT_EQ(as_float(rtgcwii_float_bits(INT32_MIN)), -8388608.0f);  // the most negative: -2^31 / 256
     for (std::int32_t n = -RTHOME_AXIS_FULL; n <= RTHOME_AXIS_FULL; ++n)
         EXPECT_EQ(rtgcwii_float_bits(n), rthome_float_bits(n));  // the same up to 1
 }
