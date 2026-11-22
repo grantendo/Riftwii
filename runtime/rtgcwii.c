@@ -259,12 +259,13 @@ void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) {
 uint32_t rtgcwii_float_bits(int32_t numerator) {
     uint32_t sign = 0, magnitude, top = 0;
     if (numerator == 0) return 0;
+    /* The size taken unsigned, so the most negative value has one too. */
+    magnitude = (uint32_t)numerator;
     if (numerator < 0) {
         sign = 0x80000000u;
-        numerator = -numerator;
+        magnitude = 0u - magnitude;
     }
-    magnitude = (uint32_t)numerator;
-    while ((magnitude >> (top + 1)) != 0) ++top;  /* its highest bit */
+    while (top < 31u && (magnitude >> (top + 1)) != 0) ++top;  /* its highest bit */
     /* magnitude / 256 = 1.mantissa * 2^(top - 8) */
     return sign | ((127u + top - 8u) << 23) |
            ((top <= 23u ? magnitude << (23u - top) : magnitude >> (top - 23u)) & 0x007FFFFFu);
