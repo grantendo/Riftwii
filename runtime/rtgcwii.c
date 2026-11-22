@@ -79,7 +79,13 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
         if (p < -RTGCWII_POINTER_EDGE) p = -RTGCWII_POINTER_EDGE;
         w->pointer[i][k] = p;
     }
-    if (axes[2] != 0 || axes[3] != 0) w->pointer_moved[i] = now | 1u;
+    if (axes[2] != 0 || axes[3] != 0) {
+        w->pointer_moved[i] = now | 1u;
+    } else if (w->pointer_moved[i] != 0 && rtgcwii_elapsed(now, w->pointer_moved[i]) >= w->pointer_show) {
+        /* Hidden for good until the C-stick moves again: the time base
+         * wraps (about every 70 s), and an old mark would read as recent. */
+        w->pointer_moved[i] = 0;
+    }
     w->shake[i] = (rtgcwii_pad_buttons(s) & RTGCWII_GC_X) ? w->shake[i] + 1u : 0u;
 }
 #endif

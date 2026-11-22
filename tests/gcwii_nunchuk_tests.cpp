@@ -155,6 +155,17 @@ void TestPointer() {
     EXPECT_EQ(f.pointer[0], RTGCWII_POINTER_EDGE);
     rtgcwii_nunchuk(&w, 0, 200 + kShowFor, &f);
     EXPECT_EQ(f.pointer_shown, 0);
+    // Hidden for good: a sample after its time clears the mark, so the
+    // time base wrapping round (about every 70 s) doesn't show it again.
+    rtgcwii_pads(&w, p.s, 200 + kShowFor);
+    rtgcwii_nunchuk(&w, 0, 200 + kShowFor + 1, &f);
+    EXPECT_EQ(f.pointer_shown, 0);
+    rtgcwii_pads(&w, p.s, 200 + 4u * kShowFor);
+    rtgcwii_nunchuk(&w, 0, 0xFFFFFFFFu, &f);  // past the wrap
+    EXPECT_EQ(f.pointer_shown, 0);
+    rtgcwii_nunchuk(&w, 0, 250, &f);  // an hour of ticks later, wrapped round
+    EXPECT_EQ(f.pointer_shown, 0);
+    EXPECT_EQ(f.pointer[0], RTGCWII_POINTER_EDGE);  // still where it was left
 }
 
 // X held shakes the Wii Remote: the axes swing past 3 g and flip every
