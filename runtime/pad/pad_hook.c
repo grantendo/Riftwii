@@ -1279,16 +1279,21 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 #define PAD_INFO_BATTERY 20u
 #define PAD_INFO_LED 21u
 #define PAD_INFO_BATTERY_FULL 4u
+#define PAD_INFO_BUSY (-2)        /* WPAD_ERR_BUSY */
 int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result) {
     uint32_t msr, i;
-    int on;
+    int on, pending;
     if (!c->gcwii || result != -1 || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS || !pad_in_ram(info) ||
         !pad_in_ram(info + PAD_INFO_BYTES - 1))
         return result;
     msr = interrupts_off();
     on = rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
+    pending = ((const struct rtgcwii*)(uintptr_t)c->gcwii)->info_callback[chan] != 0;
     interrupts_restore(msr);
     if (!on) return result;
+    /* One answer at a time per channel, as WPAD has: a request before the
+     * last one's callback is told is busy (the game asks again). */
+    if (pending) return PAD_INFO_BUSY;
     for (i = 0; i < PAD_INFO_BYTES; ++i) info[i] = 0;
 #ifdef RT_PAD_FORM_NUNCHUK
     pad_put32(info + PAD_INFO_ATTACH, 1);

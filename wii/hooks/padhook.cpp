@@ -1583,8 +1583,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                               {hook.kpad_unified, hh.hook_unified, hh.replay_unified, hh.continue_unified,
                                "KPADGetUnifiedWpadStatus"},
                               {hook.si_probe, h.hook_si_probe, h.replay_si_probe, h.continue_si_probe, "SIProbe"},
-                              {standin_kind(kind) ? hook.wpad_info : 0u, sh.hook_info, sh.replay_info,
-                               sh.continue_info, "WPADGetInfoAsync"}};
+                              // A stand-in build is never in MEM2 (the HOME Menu's builds
+                              // aren't), so this hook never needs a twelfth veneer.
+                              {standin_kind(kind) && hook.veneer == 0 ? hook.wpad_info : 0u, sh.hook_info,
+                               sh.replay_info, sh.continue_info, "WPADGetInfoAsync"}};
     Site& read_site = sites[0];
     Site& motor_site = sites[1];
     Site& submit_site = sites[2];

@@ -299,6 +299,7 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
 WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
     constexpr std::int32_t kConnectCallback = 2020;  // in the Oct 3 2006 WPAD's control block
     constexpr std::size_t kMaxWords = 40;
+    constexpr std::uint32_t kBlrInsn = 0x4E800020u;
     WpadConnect2006 found;
     unsigned matches = 0;
     for (const CodeRange& r : text) {
@@ -310,12 +311,17 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
             if (i >= words) break;
             const std::size_t start = i++;
             while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
-            if (i - start > kMaxWords) continue;
+            // The setter ends at its return: leaf code after it, before the
+            // next framed function, isn't counted.
+            std::size_t end = start;
+            while (end < i && be32(r.bytes + 4 * end) != kBlrInsn) ++end;
+            if (end < i) ++end;
+            if (end - start > kMaxWords) continue;
             std::uint32_t high[32] = {}, address[32] = {};
             std::uint32_t table = 0;
             int block = -1;
             bool loads = false, stores = false;
-            for (std::size_t k = start; k < i; ++k) {
+            for (std::size_t k = start; k < end; ++k) {
                 const std::uint32_t insn = be32(r.bytes + 4 * k);
                 const std::uint32_t d = reg_d(insn), a = reg_a(insn);
                 if (opcode(insn) == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;  // lis
