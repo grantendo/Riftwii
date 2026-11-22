@@ -114,6 +114,9 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             w->hold[i] = w->delivered[i] = 0;
 #ifdef RT_PAD_FORM_NUNCHUK
             w->shake[i] = 0;
+            /* Unplugged: the pointer's last move is forgotten too, so an
+             * old mark never reads as recent after the time base wraps. */
+            w->pointer_moved[i] = 0;
 #endif
         } else if (w->present & bit) {
             /* A dropped report, within the grace period: the buttons stay
