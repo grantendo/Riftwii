@@ -850,6 +850,17 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         find_way_back(dol, text, out);
         find_home_menu(dol, text, out);
     }
+    // The stand-in also starts from the game's sleeps (a game that reads
+    // nothing until its connect callback hears of a controller: Donkey
+    // Kong Country Returns), so OSSleepThread is hooked for it even where
+    // the way back isn't (HOME only, or its other pieces not found).
+    if (as_classic && out.sleep_thread == 0) {
+        out.sleep_thread = find_os_sleep_thread(text);
+        if (out.sleep_thread != 0)
+            logf("GameCube adapter: OSSleepThread at 0x%08x, for GameCube controllers as Classic Controllers (the "
+                 "game's sleeps start them)\n",
+                 out.sleep_thread);
+    }
     // SIProbe is told by PADRead's own calls, so with a pack's PADRead it
     // is searched in the game's code as the patches will leave it.
     out.si_probe = from_patch ? find_gc_si_probe_with_patches(text, patched, out.read) : find_gc_si_probe(text, out.read);
@@ -1510,7 +1521,9 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     };
     if (hook.return_to_menu == 0) {
         submit_site.function = 0;
-        sleep_site.function = 0;
+        // Kept for the stand-in, which its sleeps start (pad_on_sleep);
+        // the way back's part of it does nothing without the way back.
+        if (!hook.as_classic) sleep_site.function = 0;
         suspend_site.function = 0;
     }
     // Checked now, after the packs' patches: an instruction a pack
