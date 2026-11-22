@@ -719,25 +719,35 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     const KpadRead kpad = find_kpad_read(text);
     const std::uint32_t probe = find_wpad_probe(text);
     const HbmFunctions hbm = find_hbm_functions(text, all, find_small_data_base(all, dol.entry));
-    const char* missing = kpad.address == 0 ? "the KPAD read"
-                          : probe == 0      ? "WPADProbe"
-                          : hbm.calc == 0   ? "HBMCalc"
-                          : hbm.select == 0 ? "HBMGetSelectBtnNum"
-                                            : nullptr;
-    if (missing != nullptr) {
-        logf("GameCube adapter: no HOME Menu by the controller (the combo is the way back): %s was not found\n", missing);
+    const char* missing_read = kpad.address == 0 ? "the KPAD read" : probe == 0 ? "WPADProbe" : nullptr;
+    const char* missing_menu = hbm.calc == 0 ? "HBMCalc" : hbm.select == 0 ? "HBMGetSelectBtnNum" : nullptr;
+    // GameCube controllers as Classic Controllers need only the KPAD read
+    // and WPADProbe: without the HOME Menu's functions (Donkey Kong Country
+    // Returns' HBMCalc isn't found) they still go in, and the combo stays
+    // the way back.
+    if (missing_read != nullptr || (missing_menu != nullptr && !out.as_classic)) {
+        logf("GameCube adapter: no HOME Menu by the controller (the combo is the way back): %s was not found\n",
+             missing_read != nullptr ? missing_read : missing_menu);
         return;
     }
     out.kpad_read = kpad.address;
     out.kpad_status_bytes = kpad.status_bytes;
     out.kpad_takes_error = kpad.takes_error;
     out.wpad_probe = probe;
-    out.hbm_calc = hbm.calc;
-    out.hbm_select = hbm.select;
-    logf("GameCube adapter: the HOME Menu by the controller: the KPAD read at 0x%08x (%u-byte statuses%s), "
-         "WPADProbe at 0x%08x, HBMCalc at 0x%08x, HBMGetSelectBtnNum at 0x%08x\n",
-         kpad.address, kpad.status_bytes, kpad.takes_error ? ", with the error's address" : "", probe, hbm.calc,
-         hbm.select);
+    if (missing_menu != nullptr) {
+        logf("GameCube adapter: no HOME Menu by the controller (the combo is the way back): %s was not found; the "
+             "KPAD read at 0x%08x (%u-byte statuses%s) and WPADProbe at 0x%08x go in for GameCube controllers as "
+             "Classic Controllers\n",
+             missing_menu, kpad.address, kpad.status_bytes, kpad.takes_error ? ", with the error's address" : "",
+             probe);
+    } else {
+        out.hbm_calc = hbm.calc;
+        out.hbm_select = hbm.select;
+        logf("GameCube adapter: the HOME Menu by the controller: the KPAD read at 0x%08x (%u-byte statuses%s), "
+             "WPADProbe at 0x%08x, HBMCalc at 0x%08x, HBMGetSelectBtnNum at 0x%08x\n",
+             kpad.address, kpad.status_bytes, kpad.takes_error ? ", with the error's address" : "", probe, hbm.calc,
+             hbm.select);
+    }
     // Optional: where the game has it (Mario Kart Wii), it reads a Classic
     // Controller's buttons from there, and the stand-in fills it too.
     const KpadUnified unified = find_kpad_unified(text);
@@ -1053,8 +1063,12 @@ void decide_pad_inputs(PadHook& out, bool code_build, bool snapshot) {
 // and only where its functions were found: a code build needs every
 // byte, and with Settings > Leaving a game on HOME only none were
 // looked for. Else the build without it, as before it.
+// The build with the HOME Menu's hooks: for the HOME Menu (all four of its
+// functions) or for GameCube controllers as Classic Controllers (the KPAD
+// read and WPADProbe, which are among them).
 bool wants_home_build(const PadHook& out, bool code_build) {
-    return !code_build && out.kpad_read != 0 && out.wpad_probe != 0 && out.hbm_calc != 0 && out.hbm_select != 0;
+    return !code_build && out.kpad_read != 0 && out.wpad_probe != 0 &&
+           ((out.hbm_calc != 0 && out.hbm_select != 0) || out.as_classic);
 }
 
 }  // namespace
@@ -1272,8 +1286,8 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
              "for their state\n",
              static_cast<unsigned>(align_up(sizeof(rtgcwii))));
     if (out.as_classic && !out.home_blob)
-        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the game's KPAD read, WPADProbe "
-             "or HOME Menu wasn't found\n");
+        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the game's KPAD read or "
+             "WPADProbe wasn't found\n");
     logf("USB controllers: %s driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
          kind % kBlobNoHome == kBlobAdapter ? "the adapter's" : kind % kBlobNoHome == kBlobPads ? "the USB pads'" : "the full",
          static_cast<unsigned>(h.size), static_cast<unsigned>(out.link_count), static_cast<unsigned>(out.map_count),
@@ -1477,6 +1491,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     // and the combo stays the way back (find_home_menu says why
     // HBMGetSelectBtnNum is one of them).
     bool home = hook.kpad_read != 0 && hook.wpad_probe != 0 && hook.hbm_calc != 0 && hook.hbm_select != 0;
+    // GameCube controllers as Classic Controllers: the KPAD read's and
+    // WPADProbe's hooks alone, with or without the HOME Menu's.
+    bool standin_reads = hook.as_classic && hook.kpad_read != 0 && hook.wpad_probe != 0;
+    const auto reads_site = [&](const Site& s) { return &s == home_sites[0] || &s == home_sites[1]; };
     const auto home_off = [&](const char* name, const std::string& reason) {
         if (!home) return;
         logf("GameCube adapter: no HOME Menu by the controller (the combo is the way back): %s %s\n", name,
@@ -1513,6 +1531,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                 logf("GameCube adapter: PADControlMotor cannot be hooked (%s); no rumble\n", reason.c_str());
             } else if (is_home_site(s)) {
                 home_off(s.name, "cannot be hooked (" + reason + ")");
+                if (reads_site(s)) standin_reads = false;
             } else if (&s == &unified_site) {
                 logf("GameCube adapter: KPADGetUnifiedWpadStatus cannot be hooked (%s); the stand-in's raw status "
                      "isn't given\n",
@@ -1537,9 +1556,14 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
         const auto resume = encode_absolute_jump(kScratchRegister, s.function + 4);
         store_words(hook.code_base + s.resume, resume.data(), 4);
     }
-    if (!home) {
+    if (!home && !standin_reads) {
         for (Site* s : home_sites) s->function = 0;
         unified_site.function = 0;
+    } else if (!home) {
+        // The stand-in's reads without the HOME Menu: its own two stay out
+        // (each would return at once anyway, home_on being 0).
+        home_sites[2]->function = 0;
+        home_sites[3]->function = 0;
     }
     sync_code(hook.code_base, hook.code_bytes);
     unsigned veneers = 0;
@@ -1568,6 +1592,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
             // Another of the four may already be in: harmless alone, as each
             // returns at once while home_on is 0.
             if (is_home_site(s)) home_off(s.name, "is out of a branch's reach");
+            if (reads_site(s)) standin_reads = false;
             if (&s == &unified_site)
                 logf("GameCube adapter: KPADGetUnifiedWpadStatus is out of a branch's reach; the stand-in's raw "
                      "status isn't given\n");
@@ -1615,7 +1640,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     ctx->kpad_takes_error = hook.kpad_takes_error ? 1u : 0u;
     ctx->pad_read = hook.read;
     ctx->kpad_unified_bytes = unified ? hook.kpad_unified_bytes : 0u;
-    ctx->kpad_connect = home ? hook.kpad_connect : 0u;
+    ctx->kpad_connect = home || standin_reads ? hook.kpad_connect : 0u;
     ctx->kpad_connect_info = hook.kpad_connect_stride & 0xFFFFu;
     ctx->home.hold = kLeaveHoldMs * ctx->ticks_per_ms;
     ctx->home.press = kHomePressMs * ctx->ticks_per_ms;
@@ -1624,8 +1649,8 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     ctx->home.linger = kHomeLingerMs * ctx->ticks_per_ms;
     ctx->home.channel = RTHOME_NO_CHANNEL;
     // The permanent stand-in needs the KPAD read's and WPADProbe's hooks,
-    // which are in when the HOME Menu's are.
-    ctx->gcwii = home ? hook.gcwii_base : 0u;
+    // in with the HOME Menu's or, without its functions, alone.
+    ctx->gcwii = home || standin_reads ? hook.gcwii_base : 0u;
     ctx->home_on = home && !hook.home_combo_off ? 1u : 0u;
     DCFlushRange(ctx, context_bytes(kind));
     logf("GameCube adapter: hooked%s\n", motor_site.function == 0 ? " (PADRead only)" : "");
@@ -1634,7 +1659,8 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
              "Remote 1 and so on; state at 0x%08x)%s\n",
              ctx->gcwii, hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");
     } else if (hook.as_classic && hook.gcwii_base != 0) {
-        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: a HOME Menu hook didn't go in\n");
+        logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the KPAD read's or WPADProbe's "
+             "hook didn't go in\n");
     }
     if (home) {
         logf("GameCube adapter: the HOME Menu by the controller is on: the combo held %u ms opens the game's own "
