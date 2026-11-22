@@ -215,6 +215,17 @@ void TestWpadConnect2006() {
         put_connect_setter(t, 2024);
         EXPECT_EQ(riftwii::find_wpad_connect_2006({t.range()}).table, 0u);
     }
+    {
+        // Leaf code (no frame of its own) right after the setter, longer
+        // than a setter may be: the setter still ends at its return.
+        Section t{0x80040000, {}};
+        put_connect_setter(t, 2020);
+        for (int i = 0; i < 48; ++i) t.put(li(3, i));
+        t.put(kBlr);
+        const riftwii::WpadConnect2006 found = riftwii::find_wpad_connect_2006({t.range()});
+        EXPECT_EQ(found.table, 0x8038F4F0u);
+        EXPECT_EQ(found.offset, 2020u);
+    }
 }
 
 void put_probe(Section& t, bool returns_busy) {
