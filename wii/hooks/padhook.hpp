@@ -143,6 +143,8 @@ struct PadHook {
     // itself, once RiftWii routes the adapter into it (not yet: until then
     // the stand-in keeps the controls, find_pad_functions).
     bool standin_inputless = false;
+    // ...or a pointing Wii Remote (RT_PAD_FORM_POINTING).
+    bool standin_pointing = false;
     // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on
     // the info's answer before it uses a Wii Remote), 0: not hooked.
     std::uint32_t wpad_info = 0;
@@ -229,15 +231,15 @@ AdapterSeen ogc_adapter(std::int32_t& dev_id, std::string& devices);
 // `standin`: the game's GameCube controllers
 // setting is on, as Classic Controllers or as a Wii Remote + Nunchuk (its
 // KPAD hooks are looked for even with Leaving a game on HOME only);
-// `nunchuk` and `sideways` its form, as a Wii Remote + Nunchuk or a
-// sideways Wii Remote (PadHook::standin_nunchuk, standin_sideways; only a
-// Wii Remote form takes a 2006 KPAD game, whose KPAD knows no Classic
-// Controller); `usb` false: no adapter is wanted and /dev/usb/hid is never
+// `nunchuk`, `sideways` and `pointing` its form, as a Wii Remote +
+// Nunchuk, a sideways or a pointing Wii Remote (PadHook::standin_nunchuk,
+// standin_sideways, standin_pointing; only a Wii Remote form takes a 2006
+// KPAD game, whose KPAD knows no Classic Controller); `usb` false: no adapter is wanted and /dev/usb/hid is never
 // opened (the Wii's own ports only). False (with a reason) turns the
 // adapter off.
 bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches,
-                        bool program_from_pack, bool standin, bool nunchuk, bool sideways, bool usb, PadHook& out,
-                        std::string& why);
+                        bool program_from_pack, bool standin, bool nunchuk, bool sideways, bool pointing, bool usb,
+                        PadHook& out, std::string& why);
 
 // Before the <memory> patches, on the game as loaded: what their plain
 // writes will leave (PatchedCode), for a PADRead search. Without memory

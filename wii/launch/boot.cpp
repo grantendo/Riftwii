@@ -1321,8 +1321,8 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
         std::string why;
         // With the stand-in's form, which picks its pad build (fetch_pad_build).
         if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, program_from_pack,
-                                g_extras.gc_standin, g_extras.gc_standin_nunchuk, g_extras.gc_standin_sideways, usb,
-                                pad, why)) {
+                                g_extras.gc_standin, g_extras.gc_standin_nunchuk, g_extras.gc_standin_sideways,
+                                g_extras.gc_standin_pointing, usb, pad, why)) {
             logf("GameCube adapter: off: %s\n", why.c_str());
             gc_adapter = false;
         }
