@@ -1755,9 +1755,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     DCFlushRange(ctx, context_bytes(kind));
     logf("GameCube adapter: hooked%s\n", motor_site.function == 0 ? " (PADRead only)" : "");
     if (ctx->gcwii != 0) {
-        logf("GameCube adapter: GameCube controllers are Classic Controllers in this game (port 1 plays as Wii "
-             "Remote 1 and so on; state at 0x%08x)%s\n",
-             ctx->gcwii, hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");
+        logf("GameCube adapter: GameCube controllers are %s in this game (port 1 plays as Wii Remote 1 and so on; "
+             "state at 0x%08x)%s\n",
+             hook.standin_nunchuk ? "Wii Remotes + Nunchuks" : "Classic Controllers", ctx->gcwii,
+             hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");
     } else if (hook.standin && hook.gcwii_base != 0) {
         logf("GameCube adapter: GameCube controllers aren't Classic Controllers here: the KPAD read's or WPADProbe's "
              "hook didn't go in\n");
