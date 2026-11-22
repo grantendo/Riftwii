@@ -1611,21 +1611,24 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
         home_sites[3]->function = 0;
     }
     // A game with no PADRead (GameCube controllers as Classic Controllers):
-    // the HOME Menu's hooks are its only way in, so one that can't go in
-    // turns the adapter off here, before anything is hooked. Their reach
-    // is checked now too (the HOME Menu's build is never in MEM2, so there
-    // are no veneers to go through).
+    // the KPAD read's and WPADProbe's hooks are its only way in (the HOME
+    // Menu's own two are optional, as for any game), so one of those that
+    // can't go in turns the adapter off here, before anything is hooked.
+    // Their reach is checked now too (the HOME Menu's build is never in
+    // MEM2, so there are no veneers to go through).
     if (hook.read == 0) {
-        bool reachable = home;
+        bool reachable = standin_reads;
         for (Site* s : home_sites) {
             std::uint32_t branch = 0;
-            if (reachable && s->function != 0 && !encode_branch(s->function, hook.code_base + s->hook, branch)) {
+            if (reachable && reads_site(*s) && s->function != 0 &&
+                !encode_branch(s->function, hook.code_base + s->hook, branch)) {
                 why = std::string(s->name) + " is out of a branch's reach";
                 reachable = false;
             }
         }
         if (!reachable) {
-            if (why.empty()) why = "the HOME Menu's hooks, the only way in for a game with no PADRead, can't go in";
+            if (why.empty())
+                why = "the KPAD read's and WPADProbe's hooks, the only way in for a game with no PADRead, can't go in";
             hook.active = false;
             return false;
         }
