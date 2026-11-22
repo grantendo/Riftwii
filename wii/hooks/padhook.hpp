@@ -150,6 +150,7 @@ struct PadHook {
     std::uint32_t hbm_calc = 0;           // HBMCalc
     std::uint32_t hbm_select = 0;         // HBMGetSelectBtnNum, which tells the Operations Guide from Close (required)
     std::uint32_t kpad_unified = 0;       // KPADGetUnifiedWpadStatus (optional: Mario Kart Wii reads a Classic there)
+    std::uint32_t wpad_dpd = 0;           // WPADControlDpd (optional: the Wii Remote + Nunchuk form's pointer shows with the camera on)
     std::uint32_t kpad_unified_bytes = 0; // its statuses' size
     std::uint32_t kpad_connect = 0;       // the game's connect callbacks in KPAD's block (optional, GoldenEye 007): channel 0's
     std::uint32_t kpad_connect_stride = 0;  // and the block's size per channel

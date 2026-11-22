@@ -225,8 +225,8 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
     out->stick[1] = axes[1];
     out->pointer[0] = w->pointer[channel][0];
     out->pointer[1] = w->pointer[channel][1];
-    out->pointer_shown =
-        w->pointer_moved[channel] != 0 && rtgcwii_elapsed(now, w->pointer_moved[channel]) < w->pointer_show;
+    out->pointer_shown = ((w->camera >> channel) & 1u) ||
+                         (w->pointer_moved[channel] != 0 && rtgcwii_elapsed(now, w->pointer_moved[channel]) < w->pointer_show);
     shake = w->shake[channel];
     if (shake != 0) {
         /* The Wii Remote shakes: all three axes swing together, and a flip
@@ -237,6 +237,15 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
         out->acc[2] = -swing;
         out->acc_value = RTGCWII_SHAKE_VALUE;
         out->acc_speed = shake > 1u && (shake % RTGCWII_SHAKE_FLIP) == 0 ? RTGCWII_SHAKE_VALUE : 0;
+    }
+}
+
+void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) {
+    if (channel >= RTGCWII_CHANNELS) return;
+    if (mode != 0) {
+        w->camera |= 1u << channel;
+    } else {
+        w->camera &= ~(1u << channel);
     }
 }
 
