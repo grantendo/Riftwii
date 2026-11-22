@@ -849,6 +849,7 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
             const WpadConnect2006 later = find_wpad_connect_later(text);
             out.wpad_connect_table = later.table;
             out.wpad_connect_offset = later.offset;
+            out.wpad_connect_later = later.table != 0;
             if (later.table != 0)
                 logf("GameCube adapter: WPAD's connect callbacks (blocks from the table at 0x%08x, the callback at "
                      "+%u): the stand-in is reported connected to the game's callback\n",
@@ -1522,6 +1523,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->kpad_dpd_offset = out.kpad_dpd.offset;
         state->wpad_connect_table = out.wpad_connect_table;
         state->wpad_connect_offset = out.wpad_connect_offset;
+        state->wpad_connect_later = out.wpad_connect_later ? 1u : 0u;
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;
