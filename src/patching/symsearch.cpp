@@ -655,23 +655,46 @@ std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std
     return found;
 }
 
-std::uint32_t find_wpad_control_dpd(const std::vector<CodeRange>& text, std::uint32_t wpad_probe) {
-    if (wpad_probe == 0) return 0;
-    // Its opening (riftwii/symsearch.hpp), in the library's own reach of
-    // WPADProbe, as find_wii_remote_idle_reset looks.
-    static const std::uint32_t kOpening[4] = {0x9421FB90u, 0x7C0802A6u, 0x90010474u, 0x39610470u};
-    constexpr std::uint32_t kWpadReach = 0x10000;
-    std::uint32_t found = 0;
+namespace {
+
+// KPAD's camera setter at word `i` of `r` (riftwii/symsearch.hpp), storing
+// `value`: its block's base, stride and the switch's offset, or false.
+bool kpad_dpd_setter(const CodeRange& r, std::size_t i, std::uint32_t value, KpadDpd& out) {
+    if (i + 7 > r.size / 4) return false;
+    const auto w = [&](std::size_t k) { return be32(r.bytes + (i + k) * 4); };
+    if ((w(0) & 0xFFFF0000u) != 0x1C030000u || (w(1) & 0xFFFF0000u) != 0x3C600000u || w(2) != (0x38800000u | value) ||
+        (w(3) & 0xFFFF0000u) != 0x38630000u || w(4) != 0x7C630214u || (w(5) & 0xFFFF0000u) != 0x98830000u ||
+        w(6) != kBlr)
+        return false;
+    const std::int32_t stride = static_cast<std::int16_t>(w(0) & 0xFFFFu);
+    if (stride <= 0) return false;
+    out.enable = r.address + static_cast<std::uint32_t>(i * 4);
+    out.base = ((w(1) & 0xFFFFu) << 16) + static_cast<std::uint32_t>(static_cast<std::int16_t>(w(3) & 0xFFFFu));
+    out.stride = static_cast<std::uint32_t>(stride);
+    out.offset = w(5) & 0xFFFFu;
+    return true;
+}
+
+}  // namespace
+
+KpadDpd find_kpad_enable_dpd(const std::vector<CodeRange>& text) {
+    KpadDpd found;
     for (const CodeRange& r : text) {
         const std::size_t words = r.size / 4;
-        for (std::size_t i = 0; i + 4 <= words; ++i) {
-            const std::uint32_t at = r.address + static_cast<std::uint32_t>(i * 4);
-            if (at + kWpadReach < wpad_probe || at > wpad_probe + kWpadReach) continue;
-            bool same = true;
-            for (std::size_t k = 0; k < 4 && same; ++k) same = be32(r.bytes + (i + k) * 4) == kOpening[k];
-            if (!same) continue;
-            if (found != 0) return 0;  // two: not guessed
-            found = at;
+        for (std::size_t i = 0; i < words; ++i) {
+            KpadDpd on;
+            if (!kpad_dpd_setter(r, i, 1u, on)) continue;
+            // KPADDisableDPD just before it, on the same switch (padding
+            // between them allowed: two to eight words back).
+            bool twin = false;
+            for (std::size_t back = 7; back <= 9 && back <= i && !twin; ++back) {
+                KpadDpd off;
+                twin = kpad_dpd_setter(r, i - back, 0u, off) && off.base == on.base && off.stride == on.stride &&
+                       off.offset == on.offset;
+            }
+            if (!twin) continue;
+            if (found.enable != 0) return KpadDpd{};  // two: not guessed
+            found = on;
         }
     }
     return found;

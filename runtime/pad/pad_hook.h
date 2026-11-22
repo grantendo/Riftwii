@@ -112,12 +112,6 @@ struct rt_pad_header {
     uint32_t hook_unified;     /* KPADGetUnifiedWpadStatus's (the stand-in's raw status, where the game has it) */
     uint32_t replay_unified;
     uint32_t continue_unified;
-    /* The Wii Remote + Nunchuk form's (RT_PAD_FORM_NUNCHUK), last: other
-     * builds' headers end before it, and it is read only from the builds
-     * with that form. */
-    uint32_t hook_dpd;         /* WPADControlDpd's (the camera on: the stand-in's pointer shows) */
-    uint32_t replay_dpd;
-    uint32_t continue_dpd;
 };
 
 struct rt_pad_context {

@@ -133,13 +133,19 @@ bool code_with_patches(const std::vector<CodeRange>& text, const std::vector<Cod
 // or two different ones, are called there.
 std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std::uint32_t wpad_probe);
 
-// WPADControlDpd(chan, mode, callback), which turns a Wii Remote's camera
-// on or off: the function that opens with its 1,136-byte frame
-// (stwu r1,-0x470(r1); mflr r0; stw r0,0x474(r1); addi r11,r1,0x470), the
-// same in every Wii Remote library from 2006 to 2010 dumped (21 games),
-// within 64 KiB of `wpad_probe` (games have their own functions with that
-// frame, far from the library). 0 when none, or more than one, is there.
-std::uint32_t find_wpad_control_dpd(const std::vector<CodeRange>& text, std::uint32_t wpad_probe);
+// KPADEnableDPD(chan), which sets KPAD's camera switch for a channel, and
+// where that switch is: it is `mulli r0,r3,stride; lis r3,hi; li r4,1;
+// addi r3,r3,lo; add r3,r3,r0; stb r4,offset(r3); blr`, right after
+// KPADDisableDPD (the same with li r4,0), in every KPAD from 2008 to 2010
+// dumped (19 of 21 games; 2006's have neither). The switch is the byte at
+// base + chan * stride + offset. All 0 when there's no such pair, or two.
+struct KpadDpd {
+    std::uint32_t enable = 0;  // KPADEnableDPD
+    std::uint32_t base = 0;    // KPAD's per-channel blocks
+    std::uint32_t stride = 0;  // one channel's
+    std::uint32_t offset = 0;  // the switch's, in one
+};
+KpadDpd find_kpad_enable_dpd(const std::vector<CodeRange>& text);
 
 // PADControlMotor(chan, command) in a GameCube game's own SDK (the one the
 // game was linked with, not the Wii's): after its checks it keeps the

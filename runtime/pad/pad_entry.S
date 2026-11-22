@@ -24,9 +24,6 @@ _pad_blob_start:
     .long pad_hook_menu - _pad_blob_start, pad_replay_menu - _pad_blob_start, pad_continue_menu - _pad_blob_start
     .long pad_hook_select - _pad_blob_start, pad_replay_select - _pad_blob_start, pad_continue_select - _pad_blob_start
     .long pad_hook_unified - _pad_blob_start, pad_replay_unified - _pad_blob_start, pad_continue_unified - _pad_blob_start
-#ifdef RT_PAD_FORM_NUNCHUK
-    .long pad_hook_dpd - _pad_blob_start, pad_replay_dpd - _pad_blob_start, pad_continue_dpd - _pad_blob_start
-#endif
 #endif
     /* Without the HOME Menu (RT_PAD_NO_HOME) the header ends before its
      * hooks, and the blob is as it was before it but for SIProbe's hook
@@ -279,34 +276,6 @@ pad_hook_probe:
     addi 1, 1, 0x20
     blr
 
-#if !defined(RT_PAD_NO_HOME) && defined(RT_PAD_FORM_NUNCHUK)
-/* s32 WPADControlDpd(chan, mode, callback): pad_on_dpd(ctx, chan, mode)
- * notes whether the game wants the camera, then the original runs with the
- * game's own arguments, as if called directly. Frame: 8 chan, 12 mode, 16
- * callback. */
-    .globl pad_hook_dpd
-pad_hook_dpd:
-    stwu 1, -0x20(1)
-    mflr 0
-    stw 0, 0x24(1)
-    stw 3, 0x08(1)
-    stw 4, 0x0C(1)
-    stw 5, 0x10(1)
-    mr 5, 4
-    mr 4, 3
-    bl 7f
-7:  mflr 3
-    addi 3, 3, pad_context_data - 7b
-    bl pad_on_dpd
-    lwz 3, 0x08(1)
-    lwz 4, 0x0C(1)
-    lwz 5, 0x10(1)
-    lwz 0, 0x24(1)
-    mtlr 0
-    addi 1, 1, 0x20
-    b pad_replay_dpd
-#endif
-
 /* HBMCalc(controller data), once a frame while the HOME Menu is open:
  * pad_on_menu(ctx) notes it, then HBMCalc runs from its first word, as if
  * called directly. Frame: 8 r3, 12 r4. */
@@ -405,9 +374,6 @@ pad_continue_\name:
     PAD_REPLAY menu
     PAD_REPLAY select
     PAD_REPLAY unified
-#ifdef RT_PAD_FORM_NUNCHUK
-    PAD_REPLAY dpd
-#endif
 #endif
 
     .balign 32

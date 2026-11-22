@@ -36,9 +36,6 @@ uint32_t pad_on_suspend(struct rt_pad_context* c, uint32_t thread);
 uint32_t pad_on_restart(struct rt_pad_context* c);
 #endif
 uint32_t pad_on_si_probe(struct rt_pad_context* c, uint32_t chan, uint32_t type);
-#if defined(RT_PAD_FORM_NUNCHUK) && !defined(RT_PAD_NO_HOME)
-void pad_on_dpd(struct rt_pad_context* c, int32_t chan, uint32_t mode);
-#endif
 #ifndef RT_PAD_NO_HOME
 int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error);
 int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int32_t result);
@@ -638,17 +635,6 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
 }
 
 #ifdef RT_PAD_FORM_NUNCHUK
-/* WPADControlDpd(chan, mode, ...) on its way in (pad_hook_dpd): the game
- * wants `chan`'s camera on or off, which shows or hides the stand-in's
- * pointer there (rtgcwii_camera). Interrupts as the game had them. */
-void pad_on_dpd(struct rt_pad_context* c, int32_t chan, uint32_t mode) {
-    uint32_t msr;
-    if (!c->gcwii || chan < 0) return;
-    msr = interrupts_off();
-    rtgcwii_camera((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan, mode);
-    interrupts_restore(msr);
-}
-
 /* KPADStatus beyond the Classic form's offsets: the Wii Remote's whole
  * acceleration and its speed, the distance, and the Nunchuk's stick and
  * acceleration (WPAD's FS fields, in the union the Classic's use). */
@@ -667,9 +653,15 @@ void pad_on_dpd(struct rt_pad_context* c, int32_t chan, uint32_t mode) {
  * shaking while X is held) and the pointer, shown while the C-stick moves
  * it and for a while after. Every other field 0, as pad_classic_status. */
 static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
+    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     struct rtgcwii_fs f;
     uint32_t i;
-    rtgcwii_nunchuk((struct rtgcwii*)(uintptr_t)c->gcwii, chan, now(), &f);
+    if (w->kpad_dpd != 0) {
+        /* KPAD's camera switch for this channel, as the game set it. */
+        const uint8_t* wants = (const uint8_t*)(uintptr_t)(w->kpad_dpd + chan * w->kpad_dpd_stride + w->kpad_dpd_offset);
+        if (pad_in_ram(wants)) rtgcwii_camera(w, chan, *(const volatile uint8_t*)wants);
+    }
+    rtgcwii_nunchuk(w, chan, now(), &f);
     for (i = 0; i + 4 <= c->kpad_status_bytes; i += 4) pad_put32(status + i, 0);
     pad_put32(status + PAD_KPAD_HOLD, f.hold);
     pad_put32(status + PAD_KPAD_TRIG, f.trig);

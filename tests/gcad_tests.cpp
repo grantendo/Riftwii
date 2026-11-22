@@ -1684,43 +1684,44 @@ static void TestPatchedCodeRanges() {
 
 // The Wii Remotes' screen-dimming reset found with no PADRead to start
 // from: the one-store reset the Wii Remote library (near WPADProbe) calls.
-// WPADControlDpd found by its opening, only within the Wii Remote library's
-// reach of WPADProbe, and never guessed between two.
-static void TestWpadControlDpd() {
-    const auto opening = [](Asm& a) {
+// KPAD's camera switch, read from KPADEnableDPD's code just after
+// KPADDisableDPD's (Batman: The Brave and the Bold's pair).
+static void TestKpadEnableDpd() {
+    const auto setter = [](Asm& a, std::uint32_t value) {
         const std::uint32_t at = a.here();
-        a.op(0x9421FB90u);
-        a.op(0x7C0802A6u);
-        a.op(0x90010474u);
-        a.op(0x39610470u);
+        a.op(0x1C030688u);           // mulli r0,r3,1672
+        a.op(0x3C60805Fu);           // lis r3,0x805F
+        a.op(0x38800000u | value);   // li r4,value
+        a.op(0x386371C8u);           // addi r3,r3,0x71C8
+        a.op(0x7C630214u);           // add r3,r3,r0
+        a.op(0x98830642u);           // stb r4,0x642(r3)
         a.blr();
         return at;
     };
-    Asm a{0x80400000u, {}};
-    a.blr();
-    const std::uint32_t dpd = opening(a);
-    const std::uint32_t probe = a.here() + 0x100;
+    Asm a{0x80458FB0u, {}};
+    setter(a, 0);
+    a.op(0);  // the padding between them
+    const std::uint32_t on = setter(a, 1);
     std::vector<std::uint8_t> code = a.bytes();
     std::vector<riftwii::CodeRange> text = {{a.base, code.data(), code.size()}};
-    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, probe), dpd);
-    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, 0), 0u);
-    // A game's own function with the same frame, far from the library: not it.
-    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, a.base + 0x20000u), 0u);
-    // Two in reach: not guessed.
+    riftwii::KpadDpd k = riftwii::find_kpad_enable_dpd(text);
+    EXPECT_EQ(k.enable, on);
+    EXPECT_EQ(k.base, 0x805F71C8u);
+    EXPECT_EQ(k.stride, 1672u);
+    EXPECT_EQ(k.offset, 0x642u);
+    // Without its Disable twin just before: not taken.
+    Asm lone{0x80458FD0u, {}};
+    setter(lone, 1);
+    code = lone.bytes();
+    text = {{lone.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_kpad_enable_dpd(text).enable, 0u);
+    // Two pairs: not guessed.
     Asm two = a;
-    opening(two);
+    setter(two, 0);
+    setter(two, 1);
     code = two.bytes();
     text = {{two.base, code.data(), code.size()}};
-    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, probe), 0u);
-    // A near miss (another frame size) isn't taken.
-    Asm other{0x80400000u, {}};
-    other.op(0x9421FBA0u);
-    other.op(0x7C0802A6u);
-    other.op(0x90010474u);
-    other.op(0x39610470u);
-    code = other.bytes();
-    text = {{other.base, code.data(), code.size()}};
-    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, other.base), 0u);
+    EXPECT_EQ(riftwii::find_kpad_enable_dpd(text).enable, 0u);
 }
 
 static void TestRemotesIdleReset() {
@@ -2413,7 +2414,7 @@ int main() {
     TestPackPadRead();
     TestIdleResetSearch();
     TestRemotesIdleReset();
-    TestWpadControlDpd();
+    TestKpadEnableDpd();
     TestGcPadMotorSearch();
     TestGcSiTypeCacheSearch();
     TestGcSiProbeSearch();
