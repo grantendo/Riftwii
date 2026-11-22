@@ -532,7 +532,7 @@ static void pad_put32(uint8_t* p, uint32_t v) { *(volatile uint32_t*)(void*)p = 
 #define PAD_DEV_STANDIN PAD_DEV_FREESTYLE
 #define PAD_FORMAT_STANDIN PAD_FORMAT_FREESTYLE_ACC
 #define PAD_FORMAT_STANDIN_DPD PAD_FORMAT_FREESTYLE_ACC_DPD  /* with the camera on (KPADEnableDPD sets it) */
-#elif defined(RT_PAD_FORM_SIDEWAYS)
+#elif defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 #define RT_PAD_FORM_REMOTE 1
 #define PAD_DEV_STANDIN PAD_DEV_CORE
 #define PAD_FORMAT_STANDIN PAD_FORMAT_CORE_ACC
@@ -732,6 +732,13 @@ static void pad_gcwii_camera_now(struct rt_pad_context* c, uint32_t chan) {
         const uint8_t* wants = (const uint8_t*)(uintptr_t)(w->kpad_dpd + chan * w->kpad_dpd_stride + w->kpad_dpd_offset);
         if (pad_in_ram(wants)) rtgcwii_camera(w, chan, *(const volatile uint8_t*)wants);
     }
+#ifdef RT_PAD_FORM_POINTING
+    else {
+        /* KPAD's camera switch not found: a pointing game wants its
+         * pointer, so the camera counts as on. */
+        rtgcwii_camera(w, chan, 1u);
+    }
+#endif
 }
 
 static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status, uint32_t takes) {
@@ -749,7 +756,13 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     pad_put32(status + PAD_KPAD_ACC_SPEED, rtgcwii_float_bits(f.acc_speed));
     pad_put32(status + PAD_KPAD_POS_X, rthome_float_bits(f.pointer[0] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
     pad_put32(status + PAD_KPAD_POS_Y, rthome_float_bits(f.pointer[1] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
+#ifdef RT_PAD_FORM_POINTING
+    /* The pointing form's horizon turns with its roll (rtshape_pointing). */
+    pad_put32(status + PAD_KPAD_HORIZON_X, rthome_float_bits(f.horizon[0]));
+    pad_put32(status + PAD_KPAD_HORIZON_X + 4, rthome_float_bits(f.horizon[1]));
+#else
     pad_put32(status + PAD_KPAD_HORIZON_X, PAD_FLOAT_ONE);
+#endif
     pad_put32(status + PAD_KPAD_DIST, rtgcwii_float_bits(PAD_DIST_AT_REST));
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
     status[PAD_KPAD_DEV_TYPE] = PAD_DEV_STANDIN;

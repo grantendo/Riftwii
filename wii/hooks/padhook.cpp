@@ -184,8 +184,10 @@ bool own_list(std::int32_t fd, s32& count) {
 // (PadHook::standin): every other game keeps the first six, unchanged.
 // The same two again with the Wii Remote + Nunchuk form (kBlobNunchuk,
 // RT_PAD_FORM_NUNCHUK), for a game set to that form
-// (PadHook::standin_nunchuk), and with the sideways Wii Remote form
-// (kBlobSideways, RT_PAD_FORM_SIDEWAYS; PadHook::standin_sideways).
+// (PadHook::standin_nunchuk), with the sideways Wii Remote form
+// (kBlobSideways, RT_PAD_FORM_SIDEWAYS; PadHook::standin_sideways), and with
+// the pointing Wii Remote form (kBlobPointing, RT_PAD_FORM_POINTING;
+// PadHook::standin_pointing).
 enum BlobKind {
     kBlobFull = 0,
     kBlobAdapter = 1,
@@ -194,16 +196,21 @@ enum BlobKind {
     kBlobClassic = 6,
     kBlobNunchuk = 8,
     kBlobSideways = 10,
-    kBlobKinds = 12
+    kBlobPointing = 12,
+    kBlobKinds = 14
 };
-int kind_of(bool adapter_only, bool pads_only, bool home, bool standin, bool nunchuk, bool sideways) {
+int kind_of(bool adapter_only, bool pads_only, bool home, bool standin, bool nunchuk, bool sideways, bool pointing) {
     if (home && standin)
-        return (nunchuk ? kBlobNunchuk : sideways ? kBlobSideways : kBlobClassic) + (adapter_only ? 1 : 0);
+        return (nunchuk     ? kBlobNunchuk
+                : sideways ? kBlobSideways
+                : pointing ? kBlobPointing
+                           : kBlobClassic) +
+               (adapter_only ? 1 : 0);
     return (adapter_only ? kBlobAdapter : pads_only ? kBlobPads : kBlobFull) + (home ? 0 : kBlobNoHome);
 }
 int kind_of(const PadHook& hook) {
     return kind_of(hook.adapter_only, hook.pads_only, hook.home_blob, hook.standin, hook.standin_nunchuk,
-                   hook.standin_sideways);
+                   hook.standin_sideways, hook.standin_pointing);
 }
 // A build without the HOME Menu (its smaller context and header).
 bool no_home(int kind) { return kind >= kBlobNoHome && kind < kBlobClassic; }
@@ -219,7 +226,9 @@ const char* build_name(int kind) {
                                                   "full build with the stand-ins as a Wii Remote + Nunchuk",
                                                   "adapter's build with the stand-ins as a Wii Remote + Nunchuk",
                                                   "full build with the stand-ins as a sideways Wii Remote",
-                                                  "adapter's build with the stand-ins as a sideways Wii Remote"};
+                                                  "adapter's build with the stand-ins as a sideways Wii Remote",
+                                                  "full build with the stand-ins as a pointing Wii Remote",
+                                                  "adapter's build with the stand-ins as a pointing Wii Remote"};
     return names[kind];
 }
 // The builds are the pads plugin's (plugins/pads, docs/PLUGINS.md "The
@@ -1242,7 +1251,7 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
     decide_pad_inputs(hook, code_build, true);
     const int kind =
         kind_of(hook.adapter_only, hook.pads_only, wants_home_build(hook, code_build), hook.standin, hook.standin_nunchuk,
-                hook.standin_sideways);
+                hook.standin_sideways, hook.standin_pointing);
     const std::uint32_t bytes = kBuildBytes[kind];
     g_build = static_cast<std::uint8_t*>(memalign(32, (bytes + 31u) & ~31u));
     if (g_build == nullptr) {
@@ -1858,6 +1867,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
              "state at 0x%08x)%s\n",
              hook.standin_nunchuk    ? "Wii Remotes + Nunchuks"
              : hook.standin_sideways ? "sideways Wii Remotes"
+             : hook.standin_pointing ? "pointing Wii Remotes"
                                      : "Classic Controllers",
              ctx->gcwii,
              hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");

@@ -58,6 +58,13 @@ struct rtshape {
     uint32_t shake_jump;
     uint32_t shake_flip;
     uint32_t camera;  /* slots whose Wii Remote camera the game wants on (KPAD's switch), one bit each */
+    /* The pointing form moves its pointer by time: when its motion was last
+     * counted up to (low bit set, 0: not since the camera came on or the
+     * controller was plugged in), and the part of a step not moved yet on
+     * each axis, so neither close samples nor a slight push lose movement.
+     * In every build, so the state's layout is the same for all of them. */
+    uint32_t pointer_at[RTSHAPE_PORTS];
+    int32_t pointer_rest[RTSHAPE_PORTS][2];
 };
 
 /* A Wii controller at one moment, in the Wii's own terms: the buttons,
@@ -72,6 +79,12 @@ struct rtshape_out {
     int32_t fs_acc[3], fs_acc_value, fs_acc_speed;  /* the Nunchuk's */
     int32_t pointer[2];
     int pointer_shown;  /* the game has the camera on, or the C-stick moved it within pointer_show ticks */
+#ifdef RT_PAD_FORM_POINTING
+    /* The pointing form's roll as the camera sees it (KPAD's horizon: the
+     * line between the sensor bar's lights), cos and sin over
+     * RTHOME_AXIS_FULL: a game with the pointer may read its twist there. */
+    int32_t horizon[2];
+#endif
 };
 
 /* The buttons in each shape's default layout (#587), as KPADStatus' hold
@@ -89,6 +102,17 @@ struct rtshape_out {
 uint32_t rtshape_classic_buttons(const struct rtsrc_sample* p);
 uint32_t rtshape_nunchuk_buttons(const struct rtsrc_sample* p);
 uint32_t rtshape_sideways_buttons(const struct rtsrc_sample* p);
+/* Pointing (#587, 22 Nov: a Wii Remote held upright, pointed at the
+ * screen, no Nunchuk): A as A, B as B, X as 1, Y as 2, Z as -, Start as +,
+ * the D-pad as the D-pad (not turned); the control stick is the pointer,
+ * the C-stick tilts it, R shakes it, L nothing (rtshape_pointing). */
+uint32_t rtshape_pointing_buttons(const struct rtsrc_sample* p);
+
+/* The pointing form's pointer moves by time: a frame (1/60 s) of the Wii's
+ * time base (60.75 MHz), and the longest gap between two samples that
+ * still counts in full. */
+#define RTSHAPE_TICKS_PER_FRAME 1012500u
+#define RTSHAPE_POINTER_GAP_FRAMES 4u
 
 /* Once a sample, the build's shape's motion on `port`: the pointer follows
  * the C-stick (in the sideways shape only while the game has the camera
@@ -124,6 +148,16 @@ void rtshape_nunchuk(const struct rtshape* sh, uint32_t port, const struct rtsrc
  * camera on, else the tilt the C-stick gives; the shake while its button is
  * held. The Nunchuk's fields stay at rest. */
 void rtshape_sideways(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out);
+
+#ifdef RT_PAD_FORM_POINTING
+/* The pointing Wii Remote on `port`: at rest, tilted any way by the C-stick
+ * (up dips its nose, right rolls it right; a diagonal no further than a
+ * full push one way, the acceleration staying 1 g), the horizon turning
+ * with the roll, shaking while R is held, and with the camera on the
+ * pointer the control stick moves (rtshape_step, by time). Built only with
+ * RT_PAD_FORM_POINTING. */
+void rtshape_pointing(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out);
+#endif
 
 /* The game's KPAD read got `port`'s shake step (its jump in speed): the
  * next read's has none until the shake steps again. A raw report, which has

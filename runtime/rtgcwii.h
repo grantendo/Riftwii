@@ -61,6 +61,7 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
  * the forms' builds take theirs. */
 uint32_t rtgcwii_map_nunchuk(const uint8_t* pad);
 uint32_t rtgcwii_map_sideways(const uint8_t* pad);
+uint32_t rtgcwii_map_pointing(const uint8_t* pad);
 
 /* The game wants `channel`'s Wii Remote camera on (`mode` not 0) or off,
  * as KPAD's switch says (KPADEnableDPD, KPADDisableDPD): a game turns it on
@@ -87,6 +88,12 @@ void rtgcwii_wii_remote(struct rtgcwii* w, uint32_t channel, uint32_t now, struc
  * build's form: the host tests take each. */
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out);
 void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtshape_out* out);
+#ifdef RT_PAD_FORM_POINTING
+/* The pointing Wii Remote on `channel` for the game's KPAD read (the words
+ * taken, the shake's step too): rtshape_pointing's state, all 0 where the
+ * stand-in isn't on. Built only with RT_PAD_FORM_POINTING. */
+void rtgcwii_pointing(struct rtgcwii* w, uint32_t channel, struct rtshape_out* out);
+#endif
 
 /* The stand-in's Classic Controller on `channel`, for the game's KPAD read:
  * its hold, trig (newly pressed since the game last got it) and release
@@ -137,6 +144,8 @@ void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own);
 #define RTGCWII_POINTER_STEP RTSHAPE_POINTER_STEP
 #define RTGCWII_POINTER_EDGE RTSHAPE_POINTER_EDGE
 #define RTGCWII_TILT_SIN RTSHAPE_TILT_SIN
+#define RTGCWII_TICKS_PER_FRAME RTSHAPE_TICKS_PER_FRAME
+#define RTGCWII_POINTER_GAP_FRAMES RTSHAPE_POINTER_GAP_FRAMES
 #define rtgcwii_float_bits rtdeliver_float_bits
 
 #endif
