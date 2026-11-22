@@ -30,7 +30,7 @@ namespace riftwii {
 // walker (S = 144) without those stores.
 struct KpadRead {
     std::uint32_t address = 0;       // the function's `stwu`, 0: not exactly one
-    std::uint32_t status_bytes = 0;  // S: 132 (2007), 176 (2009), 240 (2009-2010)
+    std::uint32_t status_bytes = 0;  // S: 136 (2006), 132 (2007), 176 (2009), 240 (2009-2010)
     // Its fourth argument is the error's address (the newer KPADReadEx,
     // which copies r6 to a register of its own as it starts); the 2007
     // read takes three, and r6 means nothing to it.

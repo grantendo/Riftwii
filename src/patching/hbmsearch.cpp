@@ -64,9 +64,14 @@ void each_word(const std::vector<CodeRange>& text, std::uint32_t start, unsigned
 }
 
 // The KPAD status's fields the ring walker stores: the device type and the
-// controller's error, as every SDK seen lays them out.
+// controller's error, as every SDK seen since 2007 lays them out.
 constexpr std::int32_t kDevTypeOffset = 0x5C;
 constexpr std::int32_t kWpadErrOffset = 0x5D;
+// The 2006 KPAD (Excite Truck, Marvel Ultimate Alliance): a 136-byte
+// status with the device type as a word at 0x5C, and a byte at 0x85 (the
+// pointer's flag) its read stores.
+constexpr std::int32_t kStatus2006Bytes = 136;
+constexpr std::int32_t kDpdValid2006Offset = 0x85;
 constexpr std::int32_t kMinStatusBytes = 0x80;
 constexpr std::int32_t kMaxStatusBytes = 0x200;
 constexpr unsigned kMinBackSteps = 3;
@@ -151,6 +156,43 @@ std::uint32_t calc_answer(const std::vector<CodeRange>& text, std::uint32_t calc
     return looks_like_select(text, leaf) ? leaf : 0;
 }
 
+// The 2006 KPAD's read, where no later one is found: the one function that
+// walks a ring of 136-byte statuses backwards (`mulli rD,rA,136` and at
+// least three `addi rD,rA,-136`), copies the status's device type as a word
+// (`stw` at 0x5C) and stores its pointer flag (`stb` at 0x85). Excite Truck
+// (0x80047c0c) and Marvel Ultimate Alliance (0x8039e3d4). Three arguments,
+// no error's address.
+KpadRead find_kpad_read_2006(const std::vector<CodeRange>& text) {
+    KpadRead found;
+    unsigned matches = 0;
+    for (const CodeRange& r : text) {
+        if (r.bytes == nullptr) continue;
+        const std::size_t words = r.size / 4;
+        std::size_t i = 0;
+        while (i < words) {
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            if (i >= words) break;
+            const std::size_t start = i++;
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            bool multiplied = false, dev_type = false, dpd_valid = false;
+            unsigned back_steps = 0;
+            for (std::size_t k = start; k < i; ++k) {
+                const std::uint32_t insn = be32(r.bytes + 4 * k);
+                const std::int32_t value = simm(insn);
+                if (opcode(insn) == 7 && value == kStatus2006Bytes) multiplied = true;     // mulli
+                if (opcode(insn) == 14 && value == -kStatus2006Bytes) ++back_steps;        // addi
+                if (opcode(insn) == 36 && value == kDevTypeOffset) dev_type = true;        // stw
+                if (opcode(insn) == 38 && value == kDpdValid2006Offset) dpd_valid = true;  // stb
+            }
+            if (!multiplied || back_steps < kMinBackSteps || !dev_type || !dpd_valid) continue;
+            found.address = r.address + static_cast<std::uint32_t>(4 * start);
+            found.status_bytes = static_cast<std::uint32_t>(kStatus2006Bytes);
+            ++matches;
+        }
+    }
+    return matches == 1 ? found : KpadRead{};
+}
+
 }  // namespace
 
 KpadRead find_kpad_read(const std::vector<CodeRange>& text) {
@@ -197,6 +239,7 @@ KpadRead find_kpad_read(const std::vector<CodeRange>& text) {
             ++matches;
         }
     }
+    if (matches == 0) return find_kpad_read_2006(text);
     if (matches != 1) return KpadRead{};
     // The newer read keeps its fourth argument, the error's address, for
     // later: `mr rN,r6` among its first words, next to its copies of r3 to

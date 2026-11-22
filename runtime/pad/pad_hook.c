@@ -608,6 +608,38 @@ struct pad_classic {
 };
 
 static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
+
+/* The KPAD status's device type, error, pointer flag and data format. The
+ * 2007 and later KPAD has them as four bytes at 0x5C; the 2006 one (a
+ * 136-byte status: Excite Truck, Marvel Ultimate Alliance) has the device
+ * type as a whole word at 0x5C, the error at 0x84, the pointer flag at
+ * 0x85 and no data format, with everything else where the later ones have
+ * it (read in Dolphin from what that KPAD writes, 22 Nov). */
+#define PAD_KPAD_2006_BYTES 136u
+#define PAD_KPAD_2006_WPAD_ERR 0x84u
+#define PAD_KPAD_2006_DPD_VALID 0x85u
+static void pad_put_device(const struct rt_pad_context* c, uint8_t* status, uint32_t dev, uint32_t dpd_valid,
+                           uint32_t format) {
+    if (c->kpad_status_bytes == PAD_KPAD_2006_BYTES) {
+        pad_put32(status + PAD_KPAD_DEV_TYPE, dev);
+        status[PAD_KPAD_2006_WPAD_ERR] = 0;
+        status[PAD_KPAD_2006_DPD_VALID] = (uint8_t)dpd_valid;
+        return;
+    }
+    status[PAD_KPAD_DEV_TYPE] = (uint8_t)dev;
+    status[PAD_KPAD_WPAD_ERR] = 0;
+    status[PAD_KPAD_DPD_VALID] = (uint8_t)dpd_valid;
+    status[PAD_KPAD_DATA_FORMAT] = (uint8_t)format;
+}
+
+#ifdef RT_PAD_FORM_REMOTE
+/* The pointer shown: the flag alone, in the status's own layout (the HOME
+ * Menu's stand-in on a Wii Remote form's channel). */
+static void pad_put_dpd_valid(const struct rt_pad_context* c, uint8_t* status, uint32_t dpd_valid) {
+    status[c->kpad_status_bytes == PAD_KPAD_2006_BYTES ? PAD_KPAD_2006_DPD_VALID : PAD_KPAD_DPD_VALID] =
+        (uint8_t)dpd_valid;
+}
+#endif
 #ifdef RT_PAD_FORM_REMOTE
 static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
 /* Whether the HOME Menu's stand-in on `chan` keeps this stand-in's shape:
@@ -741,11 +773,8 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     pad_put32(status + PAD_KPAD_HORIZON_X, PAD_FLOAT_ONE);
     pad_put32(status + PAD_KPAD_DIST, rtgcwii_float_bits(PAD_DIST_AT_REST));
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
-    status[PAD_KPAD_DEV_TYPE] = PAD_DEV_STANDIN;
-    status[PAD_KPAD_WPAD_ERR] = 0;
-    status[PAD_KPAD_DPD_VALID] = (uint8_t)(f.pointer_shown ? PAD_DPD_SEEN : 0u);
-    status[PAD_KPAD_DATA_FORMAT] =
-        (uint8_t)((w->camera >> chan) & 1u ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
+    pad_put_device(c, status, PAD_DEV_STANDIN, f.pointer_shown ? PAD_DPD_SEEN : 0u,
+                   (w->camera >> chan) & 1u ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
 #ifdef RT_PAD_FORM_NUNCHUK
     pad_put32(status + PAD_KPAD_FS_STICK, rthome_float_bits(f.stick[0]));
     pad_put32(status + PAD_KPAD_FS_STICK + 4, rthome_float_bits(f.stick[1]));
@@ -783,7 +812,7 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
     if (p->menu_open) {
         pad_put32(status + PAD_KPAD_POS_X, rthome_float_bits(p->pointer[0] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
         pad_put32(status + PAD_KPAD_POS_Y, rthome_float_bits(p->pointer[1] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
-        status[PAD_KPAD_DPD_VALID] = PAD_DPD_SEEN;
+        pad_put_dpd_valid(c, status, PAD_DPD_SEEN);
     }
 }
 #else
@@ -822,10 +851,8 @@ static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, 
     pad_put32(status + PAD_KPAD_ACC_VALUE, PAD_FLOAT_ONE);
     pad_put32(status + PAD_KPAD_HORIZON_X, PAD_FLOAT_ONE);
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
-    status[PAD_KPAD_DEV_TYPE] = PAD_DEV_CLASSIC;
-    status[PAD_KPAD_WPAD_ERR] = 0;
-    status[PAD_KPAD_DPD_VALID] = (uint8_t)(p->menu_open ? PAD_DPD_SEEN : 0u);
-    status[PAD_KPAD_DATA_FORMAT] = (uint8_t)(p->menu_open ? PAD_FORMAT_CLASSIC_POINTER : PAD_FORMAT_CLASSIC);
+    pad_put_device(c, status, PAD_DEV_CLASSIC, p->menu_open ? PAD_DPD_SEEN : 0u,
+                   p->menu_open ? PAD_FORMAT_CLASSIC_POINTER : PAD_FORMAT_CLASSIC);
     pad_put32(status + PAD_KPAD_CL_HOLD, p->hold);
     pad_put32(status + PAD_KPAD_CL_HOLD + 4, p->trig);
     pad_put32(status + PAD_KPAD_CL_HOLD + 8, p->release);
