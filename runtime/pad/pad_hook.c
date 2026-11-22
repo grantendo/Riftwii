@@ -729,7 +729,7 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
         const int32_t err = c->kpad_takes_error && pad_in_ram(error) ? *error : RTGCWII_NO_ERROR;
         msr = interrupts_off();
-        rtgcwii_kpad_read(w, (uint32_t)chan, result, err);
+        rtgcwii_kpad_read(w, (uint32_t)chan, result, err, now());
         interrupts_restore(msr);
         pad_gcwii_read_pads(c);
     }

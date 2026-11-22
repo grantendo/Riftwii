@@ -131,12 +131,31 @@ int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_
     return 0;
 }
 
-void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error) {
+void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now) {
+    uint32_t bit;
     if (channel >= RTGCWII_CHANNELS) return;
+    bit = 1u << channel;
     if (result > 0) {
+        w->empty_since[channel] = 0;
+        w->empty_reads[channel] = 0;
         rtgcwii_probed(w, channel, 0);
     } else if (error == -1) {
+        w->empty_since[channel] = 0;
+        w->empty_reads[channel] = 0;
         rtgcwii_probed(w, channel, -1);
+    } else if (error == RTGCWII_NO_ERROR && (w->real & bit)) {
+        /* A read with no error output can't say "no controller": a real
+         * controller that brings no samples for a while (and many reads in
+         * a row, so a pause in the game's reading doesn't count) has left. */
+        if (w->empty_since[channel] == 0) {
+            w->empty_since[channel] = now | 1u;
+            w->empty_reads[channel] = 1;
+        } else if (++w->empty_reads[channel] >= RTGCWII_EMPTY_READS &&
+                   rtgcwii_elapsed(now, w->empty_since[channel]) >= w->grace) {
+            w->empty_since[channel] = 0;
+            w->empty_reads[channel] = 0;
+            rtgcwii_probed(w, channel, -1);
+        }
     }
 }
 

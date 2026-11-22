@@ -45,6 +45,11 @@ struct rtgcwii {
     uint32_t own_read;   /* when the blob last called it (low bit set), 0: never */
     uint32_t reading;    /* the blob's own PADRead call is under way */
     uint32_t telling;    /* the game's connect callback is being told (nested PADReads leave it to that) */
+    /* A real controller's KPAD reads with no error output that brought no
+     * samples: since when (low bit set; 0: the last read brought some) and
+     * how many in a row. */
+    uint32_t empty_since[RTGCWII_CHANNELS];
+    uint32_t empty_reads[RTGCWII_CHANNELS];
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -102,9 +107,13 @@ int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_
 /* A KPAD read on `channel` returned `result` samples, `error` its WPAD
  * error where the read gives one (RTGCWII_NO_ERROR otherwise): samples mean
  * a real controller is there (it wins, before any WPADProbe says so); "no
- * controller" (-1) means it left. */
+ * controller" (-1) means it left. A read with no error output can't say
+ * so: there, a real controller whose reads bring no samples for `grace`
+ * ticks and RTGCWII_EMPTY_READS reads in a row has left too (a game that
+ * stops calling WPADProbe would otherwise keep the stand-in away). */
 #define RTGCWII_NO_ERROR 0x7FFFFFFF
-void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error);
+#define RTGCWII_EMPTY_READS 30
+void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now);
 
 /* At a KPAD read or WPADProbe: whether the blob should call the game's
  * PADRead now (and, if so, notes the time it does). Only when the game

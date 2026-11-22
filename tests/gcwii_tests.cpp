@@ -268,13 +268,13 @@ void TestOneChangeAtATimeAndKpadRead() {
     EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 0);
 
     // A real Wii Remote's samples on channel 2: it wins at once.
-    rtgcwii_kpad_read(&w, 2, 1, RTGCWII_NO_ERROR);
+    rtgcwii_kpad_read(&w, 2, 1, RTGCWII_NO_ERROR, 2000);
     EXPECT_EQ(rtgcwii_on(&w, 2), 0);
     EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 0);  // its library tells the game
     // No samples this frame isn't "gone"; the read's "no controller" is.
-    rtgcwii_kpad_read(&w, 2, 0, RTGCWII_NO_ERROR);
+    rtgcwii_kpad_read(&w, 2, 0, RTGCWII_NO_ERROR, 2001);
     EXPECT_EQ(rtgcwii_on(&w, 2), 0);
-    rtgcwii_kpad_read(&w, 2, 0, -1);
+    rtgcwii_kpad_read(&w, 2, 0, -1, 2002);
     EXPECT_EQ(rtgcwii_on(&w, 2), 1);
     EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(chan, 2u);
@@ -297,6 +297,42 @@ void TestOneChangeAtATimeAndKpadRead() {
     rthome_pads_own(&h, combo.s, 1000, 1u << 1);
     rthome_pads_own(&h, combo.s, 1200, 1u << 1);
     EXPECT_EQ(rthome_stand_in(&h, 1200), 2u);
+}
+
+// A KPAD read with no error output: a real controller's reads that bring no
+// samples give the channel back only after `grace` and enough reads in a
+// row (a short gap, or a pause in the game's reading, doesn't count), with
+// no WPADProbe needed.
+void TestEmptyReadsWithoutError() {
+    rtgcwii w = fresh();
+    Pads pads;
+    pads.plug(1);
+    rtgcwii_pads(&w, pads.s, 1000);
+    rtgcwii_kpad_read(&w, 1, 2, RTGCWII_NO_ERROR, 1000);
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
+    // A long pause between two empty reads: still there.
+    rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, 1010);
+    rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, 1010 + 10 * kGrace);
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
+    // Samples again start the count over.
+    rtgcwii_kpad_read(&w, 1, 1, RTGCWII_NO_ERROR, 5000);
+    std::uint32_t t = 5000;
+    for (std::uint32_t i = 0; i + 1 < RTGCWII_EMPTY_READS; ++i) {
+        t += kGrace;  // long enough, but too few reads yet
+        rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, t);
+    }
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
+    rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, t + 1);
+    EXPECT_EQ(rtgcwii_on(&w, 1), 1);
+    // Many reads in a row inside the grace period aren't enough either.
+    rtgcwii_kpad_read(&w, 1, 1, RTGCWII_NO_ERROR, 20000);
+    for (std::uint32_t i = 0; i < 2 * RTGCWII_EMPTY_READS; ++i) {
+        rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, 20000 + i);
+    }
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
+    // A channel with no real controller is untouched by empty reads.
+    rtgcwii_kpad_read(&w, 3, 0, RTGCWII_NO_ERROR, 30000);
+    EXPECT_EQ(w.empty_since[3], 0u);
 }
 
 // A channel whose callback isn't set yet is passed over for this pass; the
@@ -371,6 +407,7 @@ int main() {
     TestShouldRead();
     TestPressBetweenReadsAndLateCallback();
     TestOneChangeAtATimeAndKpadRead();
+    TestEmptyReadsWithoutError();
     TestSkipMissingCallback();
     TestDroppedReportAndHomeKeep();
     if (g_failures != 0) {
