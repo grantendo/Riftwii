@@ -1764,7 +1764,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     if (ctx->gcwii != 0) {
         logf("GameCube adapter: GameCube controllers are %s in this game (port 1 plays as Wii Remote 1 and so on; "
              "state at 0x%08x)%s\n",
-             hook.standin_nunchuk ? "Wii Remotes + Nunchuks" : "Classic Controllers", ctx->gcwii,
+             hook.standin_nunchuk    ? "Wii Remotes + Nunchuks"
+             : hook.standin_sideways ? "sideways Wii Remotes"
+                                     : "Classic Controllers",
+             ctx->gcwii,
              hook.kpad_connect != 0 ? "; the game's connect callback hears of each" : "");
     } else if (hook.standin && hook.gcwii_base != 0) {
         logf("GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the KPAD read's or WPADProbe's "
