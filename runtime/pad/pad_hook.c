@@ -585,12 +585,25 @@ struct pad_classic {
 };
 
 static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
+#ifdef RT_PAD_FORM_NUNCHUK
+static uint32_t pad_gcwii_own(const struct rt_pad_context* c);
+static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
+#endif
 
 static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t t) {
     struct pad_classic p;
     p.menu_open = rthome_menu_open(&c->home);
     rthome_classic(&c->home, t, &p.hold, &p.trig, &p.release, p.axes);
     rthome_remote(&c->home, &p.remote_hold, &p.remote_trig, &p.remote_release, p.pointer);
+#ifdef RT_PAD_FORM_NUNCHUK
+    /* On its own player's channel (rthome_pads_own) the game knows a Wii
+     * Remote with a Nunchuk there: the same shape, not a Classic Controller. */
+    if (c->home.channel < RTGCWII_CHANNELS && ((pad_gcwii_own(c) >> c->home.channel) & 1u)) {
+        pad_gcwii_home_status(c, status, &p);
+        ++c->home_writes;
+        return;
+    }
+#endif
     pad_classic_status(c, status, &p);
     ++c->home_writes;
 }
@@ -683,6 +696,25 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_FS_ACC + 4 * i, rtgcwii_float_bits(f.fs_acc[i]));
     pad_put32(status + PAD_KPAD_FS_ACC_VALUE, rtgcwii_float_bits(f.fs_acc_value));
     pad_put32(status + PAD_KPAD_FS_ACC_SPEED, rtgcwii_float_bits(f.fs_acc_speed));
+}
+
+/* The HOME Menu's stand-in on a channel this stand-in holds: the game knows
+ * a Wii Remote with a Nunchuk there, so the status keeps that shape
+ * (pad_gcwii_status) and carries the HOME stand-in's Wii Remote words (its
+ * HOME press, then the menu's buttons) and, while the menu is open, its
+ * pointer; the Nunchuk's stick rests. Interrupts off, at its callers. */
+static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p) {
+    pad_gcwii_status(c, c->home.channel, status);
+    pad_put32(status + PAD_KPAD_HOLD, p->remote_hold);
+    pad_put32(status + PAD_KPAD_TRIG, p->remote_trig);
+    pad_put32(status + PAD_KPAD_RELEASE, p->remote_release);
+    pad_put32(status + PAD_KPAD_FS_STICK, 0);
+    pad_put32(status + PAD_KPAD_FS_STICK + 4, 0);
+    if (p->menu_open) {
+        pad_put32(status + PAD_KPAD_POS_X, rthome_float_bits(p->pointer[0] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
+        pad_put32(status + PAD_KPAD_POS_Y, rthome_float_bits(p->pointer[1] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
+        status[PAD_KPAD_DPD_VALID] = PAD_DPD_SEEN;
+    }
 }
 #else
 /* The permanent stand-in's status on `chan` (rtgcwii.h): the Classic
@@ -941,7 +973,13 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
         interrupts_restore(msr);
         return result;
     }
+#ifdef RT_PAD_FORM_NUNCHUK
+    /* On a channel the permanent stand-in holds, the HOME Menu's stand-in
+     * keeps its shape (pad_home_status). */
+    if (pad_in_ram(type)) *type = ((pad_gcwii_own(c) >> (uint32_t)chan) & 1u) ? PAD_DEV_STANDIN : PAD_DEV_CLASSIC;
+#else
     if (pad_in_ram(type)) *type = PAD_DEV_CLASSIC;
+#endif
     /* The buffer the KPAD read last filled, when the game keeps it (not
      * on a stack, pad_on_running_stack): else nothing is written, and the
      * stand-in waits for the game's next KPAD read. */
