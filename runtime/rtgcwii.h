@@ -72,6 +72,10 @@ struct rtgcwii {
      * stand-in and told at the game's next KPAD read on that channel (as a
      * real Wii Remote's answer comes later), 0: none waiting. */
     uint32_t info_callback[RTGCWII_CHANNELS];
+    /* The 2006 WPAD's connect callbacks (its games have no KPAD-level
+     * one): the table of the channels' control blocks and the callback's
+     * place in one, 0: none. Loader-filled. */
+    uint32_t wpad_connect_table, wpad_connect_offset;
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game

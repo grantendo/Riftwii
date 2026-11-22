@@ -140,6 +140,8 @@ struct PadHook {
     // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on
     // the info's answer before it uses a Wii Remote), 0: not hooked.
     std::uint32_t wpad_info = 0;
+    // The 2006 WPAD's connect callbacks (find_wpad_connect_2006), 0: none.
+    std::uint32_t wpad_connect_table = 0, wpad_connect_offset = 0;
     std::uint32_t gcwii_base = 0;           // where the state went, 0: none
     // For it with no adapter (a Wii's own ports): the hook goes in, USB
     // untouched (RT_PAD_FLAG_NO_USB).

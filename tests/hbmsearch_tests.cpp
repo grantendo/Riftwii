@@ -185,6 +185,38 @@ void TestWpadGetInfo() {
     }
 }
 
+// The 2006 WPADSetConnectCallback: the channel's control block from a table
+// (`lis`/`addi`, `lwzx`), the callback at +2020 swapped (`lwz`, `stw`), or a
+// decoy setter swapping another slot.
+void put_connect_setter(Section& t, std::int32_t slot) {
+    t.put(stwu_r1(0x10));
+    t.put(kMflrR0);
+    t.put(mr(30, 4));
+    t.put(lis(4, 0x8039));
+    t.put(addi(4, 4, -2832));  // the table at 0x8038F4F0
+    t.put(lwzx(4, 4, 0));
+    t.put(lwz(31, 4, slot));
+    t.put(stw(30, 4, slot));
+    t.put(kBlr);
+}
+
+void TestWpadConnect2006() {
+    {
+        Section t{0x80040000, {}};
+        put_connect_setter(t, 2024);  // another callback's setter
+        put_connect_setter(t, 2020);
+        const riftwii::WpadConnect2006 found = riftwii::find_wpad_connect_2006({t.range()});
+        EXPECT_EQ(found.table, 0x8038F4F0u);
+        EXPECT_EQ(found.offset, 2020u);
+    }
+    {
+        // A later WPAD (no such setter): none.
+        Section t{0x80040000, {}};
+        put_connect_setter(t, 2024);
+        EXPECT_EQ(riftwii::find_wpad_connect_2006({t.range()}).table, 0u);
+    }
+}
+
 void put_probe(Section& t, bool returns_busy) {
     t.put(stwu_r1(0x20));
     t.put(kMflrR0);
@@ -460,6 +492,7 @@ int main() {
     TestKpadRead();
     TestWpadProbe();
     TestWpadGetInfo();
+    TestWpadConnect2006();
     TestSmallDataBase();
     TestHbmFunctions(true, true);
     TestHbmFunctions(false, true);
