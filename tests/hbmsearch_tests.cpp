@@ -72,7 +72,7 @@ void put_ring_walker(Section& t, std::int32_t size, bool stores, bool keeps_erro
 }
 
 // The 2006 KPAD's read: the ring walk over 136-byte statuses, the device
-// type copied as a word (`lwz`/`stw` at 0x5C) and the pointer flag stored
+// type copied as a word (`lwz`/`stw` at 0x5C) and the error stored
 // (`stb` at 0x85), as in Excite Truck's.
 void put_2006_read(Section& t) {
     t.put(stwu_r1(0x40));
@@ -122,7 +122,7 @@ void TestKpadRead() {
     }
     {
         // The 2006 read (Excite Truck): 136-byte statuses, the device type
-        // copied as a word at 0x5C and the pointer flag stored at 0x85.
+        // copied as a word at 0x5C and the error stored at 0x85.
         Section t{0x80010000, {}};
         put_ring_walker(t, 144, false, false);  // a decoy
         const std::uint32_t read = t.here();

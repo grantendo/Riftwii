@@ -621,12 +621,13 @@ static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, 
 /* The KPAD status's device type, error, pointer flag and data format. The
  * 2007 and later KPAD has them as four bytes at 0x5C; the 2006 one (a
  * 136-byte status: Excite Truck, Marvel Ultimate Alliance) has the device
- * type as a whole word at 0x5C, the error at 0x84, the pointer flag at
- * 0x85 and no data format, with everything else where the later ones have
- * it (read in Dolphin from what that KPAD writes, 22 Nov). */
+ * type as a whole word at 0x5C, the pointer flag at 0x84, the error at
+ * 0x85 (copied from the WPAD status's) and no data format, with everything
+ * else where the later ones have it (Twilight Princess's KPAD read stores
+ * them so, and the game drops a sample whose error isn't 0). */
 #define PAD_KPAD_2006_BYTES 136u
-#define PAD_KPAD_2006_WPAD_ERR 0x84u
-#define PAD_KPAD_2006_DPD_VALID 0x85u
+#define PAD_KPAD_2006_DPD_VALID 0x84u
+#define PAD_KPAD_2006_WPAD_ERR 0x85u
 static void pad_put_device(const struct rt_pad_context* c, uint8_t* status, uint32_t dev, uint32_t dpd_valid,
                            uint32_t format) {
     if (c->kpad_status_bytes == PAD_KPAD_2006_BYTES) {
