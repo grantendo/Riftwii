@@ -860,6 +860,9 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
             logf("GameCube adapter: OSSleepThread at 0x%08x, for GameCube controllers as Classic Controllers (the "
                  "game's sleeps start them)\n",
                  out.sleep_thread);
+        else
+            logf("GameCube adapter: OSSleepThread not found: a game that reads nothing until its connect callback "
+                 "hears of a controller won't start GameCube controllers as Classic Controllers\n");
     }
     // SIProbe is told by PADRead's own calls, so with a pack's PADRead it
     // is searched in the game's code as the patches will leave it.
