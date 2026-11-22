@@ -51,11 +51,16 @@ void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result) {
     bit = 1u << channel;
     if (result == 0) {
         w->real |= bit;
+        /* A controller there now: any count of empty reads starts over. */
+        w->empty_since[channel] = 0;
+        w->empty_reads[channel] = 0;
     } else if (w->real & bit) {
         /* The real controller left, and the game's library told the game
          * so: the stand-in is announced again. */
         w->real &= ~bit;
         w->told &= ~bit;
+        w->empty_since[channel] = 0;
+        w->empty_reads[channel] = 0;
     }
 }
 

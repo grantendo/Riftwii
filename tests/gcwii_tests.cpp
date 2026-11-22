@@ -333,6 +333,19 @@ void TestEmptyReadsWithoutError() {
     // A channel with no real controller is untouched by empty reads.
     rtgcwii_kpad_read(&w, 3, 0, RTGCWII_NO_ERROR, 30000);
     EXPECT_EQ(w.empty_since[3], 0u);
+    // A controller that leaves and another that comes in the middle of a
+    // count: the new one's count starts over, so one empty read later,
+    // past the old grace period, it is still there.
+    rtgcwii_kpad_read(&w, 1, 1, RTGCWII_NO_ERROR, 40000);
+    t = 40000;
+    for (std::uint32_t i = 0; i + 1 < RTGCWII_EMPTY_READS; ++i) {
+        t += 1;
+        rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, t);
+    }
+    rtgcwii_probed(&w, 1, -1);
+    rtgcwii_probed(&w, 1, 0);
+    rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, t + 2 * kGrace);
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
 }
 
 // A channel whose callback isn't set yet is passed over for this pass; the
