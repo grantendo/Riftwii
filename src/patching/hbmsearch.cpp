@@ -25,7 +25,8 @@ bool is_stwu_r1(std::uint32_t insn) { return (insn & kStwuR1Mask) == kStwuR1; }
 // Where a framed function that starts at word `start` ends, before word
 // `next` (the next `stwu r1`): after its last `blr` that follows a stack
 // frame's undoing (`addi r1,r1,N` or `lwz r1,...` within the four words
-// before), else after its first `blr`, else at `next`. Leaf code (no frame
+// before, with no other `blr` between), else after its first `blr`, else
+// at `next`. Leaf code (no frame
 // of its own) between it and the next framed function isn't counted, so its
 // instructions can't lend the function marks it doesn't have.
 std::size_t function_end(const std::uint8_t* bytes, std::size_t start, std::size_t next) {
@@ -36,6 +37,7 @@ std::size_t function_end(const std::uint8_t* bytes, std::size_t start, std::size
         if (first == 0) first = k + 1;
         for (std::size_t back = 1; back <= 4 && back <= k - start; ++back) {
             const std::uint32_t insn = be32(bytes + 4 * (k - back));
+            if (insn == kBlr) break;  // another function's return: its restore isn't this one's
             const bool restore = (opcode(insn) == 14 && reg_d(insn) == 1 && reg_a(insn) == 1) ||  // addi r1,r1,N
                                  (opcode(insn) == 32 && reg_d(insn) == 1);                         // lwz r1,...
             if (restore) {
