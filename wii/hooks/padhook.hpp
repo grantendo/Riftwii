@@ -185,6 +185,16 @@ AdapterSeen ogc_adapter(std::int32_t& dev_id, std::string& devices);
 // adapter off.
 bool find_pad_functions(const DolHeader& dol, bool demo, PadHook& out, std::string& why);
 
+// After find_pad_functions, while the card is still RiftWii's: the build
+// of the pad code this game takes (by the USB controllers the menu knows
+// and whether the HOME Menu's functions were found) copied from the pads
+// plugin (docs/PLUGINS.md, "The pads plugin"), and the plugin shut down.
+// `code_build` as plan_pad_hook will be told (a nonzero mem1_veneer).
+// False when the plugin can't give it: `message` is the sentence for the
+// player, and the launch stops (a player whose only controllers are
+// GameCube or USB ones could not play, nor leave, without it).
+bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message);
+
 // The adapter's /dev/usb/hid handle for the game, with its HID version and
 // the adapter's v5 device id from the USB list (-1: none): the one
 // look_for_gc_adapter opened, else a fresh one once libogc's USB has let
