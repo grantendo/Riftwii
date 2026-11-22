@@ -666,13 +666,13 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     pad_put32(status + PAD_KPAD_HOLD, f.hold);
     pad_put32(status + PAD_KPAD_TRIG, f.trig);
     pad_put32(status + PAD_KPAD_RELEASE, f.release);
-    for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_ACC_X + 4 * i, rthome_float_bits(f.acc[i]));
-    pad_put32(status + PAD_KPAD_ACC_VALUE, rthome_float_bits(f.acc_value));
-    pad_put32(status + PAD_KPAD_ACC_SPEED, rthome_float_bits(f.acc_speed));
+    for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_ACC_X + 4 * i, rtgcwii_float_bits(f.acc[i]));
+    pad_put32(status + PAD_KPAD_ACC_VALUE, rtgcwii_float_bits(f.acc_value));
+    pad_put32(status + PAD_KPAD_ACC_SPEED, rtgcwii_float_bits(f.acc_speed));
     pad_put32(status + PAD_KPAD_POS_X, rthome_float_bits(f.pointer[0] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
     pad_put32(status + PAD_KPAD_POS_Y, rthome_float_bits(f.pointer[1] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
     pad_put32(status + PAD_KPAD_HORIZON_X, PAD_FLOAT_ONE);
-    pad_put32(status + PAD_KPAD_DIST, rthome_float_bits(PAD_DIST_AT_REST));
+    pad_put32(status + PAD_KPAD_DIST, rtgcwii_float_bits(PAD_DIST_AT_REST));
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
     status[PAD_KPAD_DEV_TYPE] = PAD_DEV_FREESTYLE;
     status[PAD_KPAD_WPAD_ERR] = 0;
@@ -680,9 +680,9 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     status[PAD_KPAD_DATA_FORMAT] = PAD_FORMAT_FREESTYLE_ACC;
     pad_put32(status + PAD_KPAD_FS_STICK, rthome_float_bits(f.stick[0]));
     pad_put32(status + PAD_KPAD_FS_STICK + 4, rthome_float_bits(f.stick[1]));
-    for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_FS_ACC + 4 * i, rthome_float_bits(f.fs_acc[i]));
-    pad_put32(status + PAD_KPAD_FS_ACC_VALUE, rthome_float_bits(f.fs_acc_value));
-    pad_put32(status + PAD_KPAD_FS_ACC_SPEED, rthome_float_bits(f.fs_acc_speed));
+    for (i = 0; i < 3; ++i) pad_put32(status + PAD_KPAD_FS_ACC + 4 * i, rtgcwii_float_bits(f.fs_acc[i]));
+    pad_put32(status + PAD_KPAD_FS_ACC_VALUE, rtgcwii_float_bits(f.fs_acc_value));
+    pad_put32(status + PAD_KPAD_FS_ACC_SPEED, rtgcwii_float_bits(f.fs_acc_speed));
 }
 #else
 /* The permanent stand-in's status on `chan` (rtgcwii.h): the Classic

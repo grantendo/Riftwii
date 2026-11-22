@@ -223,6 +223,24 @@ void TestCamera() {
     EXPECT_EQ(w.camera, 0u);
 }
 
+// The status's floats with no cap at 1: the shake's 3.4 g and the
+// distance at rest reach the game as themselves (rthome_float_bits stops at
+// 1, which would turn the shake into a still Wii Remote).
+void TestFloatBits() {
+    auto as_float = [](std::uint32_t bits) { float f; std::memcpy(&f, &bits, sizeof f); return f; };
+    EXPECT_EQ(rtgcwii_float_bits(0), 0u);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(RTHOME_AXIS_FULL)), 1.0f);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(-RTHOME_AXIS_FULL / 2)), -0.5f);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(RTGCWII_SHAKE_G)), 3.3984375f);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(-RTGCWII_SHAKE_G)), -3.3984375f);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(RTGCWII_SHAKE_VALUE)), 5.890625f);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(498)), 1.9453125f);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(1)), 1.0f / 256.0f);
+    EXPECT_EQ(as_float(rtgcwii_float_bits(0x40000000)), 4194304.0f);  // past 2^23: shifted right
+    for (std::int32_t n = -RTHOME_AXIS_FULL; n <= RTHOME_AXIS_FULL; ++n)
+        EXPECT_EQ(rtgcwii_float_bits(n), rthome_float_bits(n));  // the same up to 1
+}
+
 }  // namespace
 
 int main() {
@@ -232,6 +250,7 @@ int main() {
     TestPointer();
     TestShake();
     TestCamera();
+    TestFloatBits();
     if (g_failures == 0) std::cout << "gcwii_nunchuk: all passed" << std::endl;
     return g_failures == 0 ? 0 : 1;
 }
