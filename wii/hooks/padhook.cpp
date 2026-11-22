@@ -172,7 +172,7 @@ bool own_list(std::int32_t fd, s32& count) {
 // added): the blob as before it, with the smaller context, for code builds
 // and with Settings > Leaving a game on HOME only (PadHook::home_blob).
 // And the full and adapter-only HOME Menu builds again with the Wii
-// controller stand-ins (#587, RT_PAD_CLASSIC; kBlobClassic, plus one for
+// controller stand-ins (#587, RT_PAD_STANDIN; kBlobClassic, plus one for
 // adapter only), for a game whose GameCube controllers setting is on
 // (PadHook::as_classic): every other game keeps the first six, unchanged.
 enum BlobKind { kBlobFull = 0, kBlobAdapter = 1, kBlobPads = 2, kBlobNoHome = 3, kBlobClassic = 6, kBlobKinds = 8 };

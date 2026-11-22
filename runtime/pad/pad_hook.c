@@ -7,7 +7,7 @@
 
 #include "rtgcad.h"
 #include "rtpadcal.h"
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
 #include "rtgcwii.h"
 #endif
 #include "rthome.h"
@@ -503,7 +503,7 @@ static void pad_put32(uint8_t* p, uint32_t v) { *(volatile uint32_t*)(void*)p = 
 /* KPAD's "both of the pointer's points seen". */
 #define PAD_DPD_SEEN 2u
 
-#ifndef RT_PAD_CLASSIC
+#ifndef RT_PAD_STANDIN
 /* The stand-in's status into the game's buffer: a Classic Controller on a
  * Wii Remote, no error. The Remote's own buttons carry the same presses
  * (rthome_remote), and while the HOME Menu is open its pointer is on the
@@ -666,7 +666,7 @@ static void pad_home_check(struct rt_pad_context* c, const uint8_t* status, uint
             return;
         }
     }
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
     rthome_pads_own(&c->home, status, t, pad_gcwii_own(c));
 #else
     rthome_pads(&c->home, status, t);
@@ -681,7 +681,7 @@ static void pad_home_check(struct rt_pad_context* c, const uint8_t* status, uint
 
 /* The KPAD read: on the stand-in's channel the newest status is the
  * stand-in's, and there is one. */
-#ifndef RT_PAD_CLASSIC
+#ifndef RT_PAD_STANDIN
 int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error) {
     uint32_t msr, t, stand_in;
     if (!c->home_on) return result;
@@ -748,7 +748,7 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
  * hasn't written it since the last probe: a second write in one frame
  * would take its newly pressed buttons away before the menu saw them.
  * Other channels' answers say which channels are free. */
-#ifndef RT_PAD_CLASSIC
+#ifndef RT_PAD_STANDIN
 int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int32_t result) {
     uint32_t msr, t, stand_in;
     if (!c->home_on) return result;
@@ -890,7 +890,7 @@ int32_t pad_on_select(struct rt_pad_context* c, int32_t result) {
  * for a channel no real Remote is on, and Mario Kart Wii reads a Classic
  * Controller's buttons only from there, so its HOME never got through
  * (9 Nov). The SDK copies at most 16. */
-#ifndef RT_PAD_CLASSIC
+#ifndef RT_PAD_STANDIN
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count) {
     uint32_t msr, t, stand_in, hold, trig, release, remote_hold, remote_trig, remote_release;
     int32_t axes[6], pointer[2], i;
@@ -938,7 +938,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 /* The game's connect callback for channel `chan`, told `reason` (0:
  * connected, -1: no controller, as WPAD reports them). Interrupts as the
  * game's PADRead had them: the game's code runs here. */
-#ifndef RT_PAD_CLASSIC
+#ifndef RT_PAD_STANDIN
 static void pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32_t reason) {
     const uint32_t stride = c->kpad_connect_info & 0xFFFFu;
     uint32_t callback;
@@ -961,7 +961,7 @@ static int pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32
 
 #endif
 
-#if defined(RT_PAD_CLASSIC) && !defined(RT_PAD_NO_HOME)
+#if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
 /* The game's connect callback hears of the permanent stand-ins coming and
  * going, one change at a time from what is true now (rtgcwii_next_change),
  * with interrupts on for the game's code. A PADRead nested in this one (an
@@ -1039,7 +1039,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
          * its analog bytes (from 2: stick x, y, C x, y, L, R). */
         if (cal) rtpadcal_apply(&cal->console[i], own + 2);
     }
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
     if (c->flags & RT_PAD_FLAG_NO_USB) {
         usb_present = 0;
     } else {
@@ -1094,7 +1094,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
 #ifndef RT_PAD_NO_HOME
     c->last_pad_read = t | 1u;
 #endif
-#if defined(RT_PAD_CLASSIC) && !defined(RT_PAD_NO_HOME)
+#if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
     if (c->gcwii) {
         /* Before the HOME Menu's stand-in looks at the combo: a port with a
          * permanent stand-in has its HOME on its own channel. */
@@ -1106,7 +1106,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
     pad_leave_check(c, status, t);
 #ifndef RT_PAD_NO_HOME
     if (c->kpad_connect != 0) {
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
         /* The stand-in comes and goes as a Wii Remote would, for a game
          * that reads only the channels its connect callback heard of; on a
          * channel the permanent stand-in holds, the game already has it. */
@@ -1131,7 +1131,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
 #endif
     interrupts_restore(msr);
 #ifndef RT_PAD_NO_HOME
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
     if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
     if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
     if (c->gcwii && c->kpad_connect != 0) pad_gcwii_tell(c);
@@ -1153,7 +1153,7 @@ uint32_t pad_on_si_probe(struct rt_pad_context* c, uint32_t chan, uint32_t type)
     return rt_si_probe(chan, type, c->overlay_mask);
 }
 
-#ifndef RT_PAD_CLASSIC
+#ifndef RT_PAD_STANDIN
 void pad_on_motor(struct rt_pad_context* c, int32_t chan, uint32_t command) {
     uint32_t msr;
     if (chan < 0 || chan >= (int32_t)GCAD_PORTS || !c->inited) return;

@@ -410,10 +410,10 @@ were embedded in the DOL. They are the `pads` plugin's now
 
 The Wii controller stand-ins (#587: GameCube controllers as Classic
 Controllers, `runtime/rtgcwii.c`) are two more builds there: the full and
-adapter-only HOME Menu builds again with `RT_PAD_CLASSIC`. Only a game
+adapter-only HOME Menu builds again with `RT_PAD_STANDIN`. Only a game
 whose GameCube controllers setting is on takes one (`kind_of` in
 `padhook.cpp`); every other game takes one of the six, whose bytes the
-stand-ins don't change (their code is in `#ifdef RT_PAD_CLASSIC` blocks,
+stand-ins don't change (their code is in `#ifdef RT_PAD_STANDIN` blocks,
 and the pad context's layout is the same in all eight). More forms can
 come the same way without the DOL or other games growing.
 

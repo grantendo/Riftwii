@@ -48,7 +48,7 @@ static uint32_t combo_port(const uint8_t* status) {
     return RTHOME_CHANNELS;
 }
 
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
 /* The lowest empty channel, else the lowest the game never asked about. */
 static uint32_t free_channel(const struct rthome* h, uint32_t port, uint32_t own) {
     uint32_t i;
@@ -80,7 +80,7 @@ static void keep_pad(struct rthome* h, const uint8_t* status) {
     ++h->samples;
 }
 
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
 void rthome_pads_own(struct rthome* h, const uint8_t* status, uint32_t now, uint32_t own) {
 #else
 void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
@@ -106,7 +106,7 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
         return;
     }
     if (elapsed(now, h->since) < h->hold) return;
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
     h->channel = free_channel(h, port, own);
 #else
     h->channel = free_channel(h);
@@ -130,7 +130,7 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
     keep_pad(h, status);
 }
 
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
 void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) { rthome_pads_own(h, status, now, 0u); }
 #endif
 
@@ -202,7 +202,7 @@ static int32_t trigger(uint32_t v) {
     return out > RTHOME_AXIS_FULL ? RTHOME_AXIS_FULL : out;
 }
 
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
 uint32_t rthome_map_classic(uint32_t b, uint32_t start) {
     uint32_t c = 0;
     if (b & RTHOME_GC_A) c |= RTHOME_CL_A;
@@ -287,7 +287,7 @@ void rthome_classic(struct rthome* h, uint32_t now, uint32_t* hold, uint32_t* tr
     } else {
         buttons = mapped(pad_buttons(h->pad) & ~h->stale);
         remote = mapped_remote(pad_buttons(h->pad) & ~h->stale);
-#ifdef RT_PAD_CLASSIC
+#ifdef RT_PAD_STANDIN
         rthome_classic_axes(h->pad, axes);
 #else
         axes[0] = stick((int8_t)h->pad[2], RTHOME_STICK_FULL);
