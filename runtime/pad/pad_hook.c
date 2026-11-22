@@ -319,11 +319,25 @@ static void pad_leave_check(struct rt_pad_context* c, const uint8_t* status, uin
  * The time and the save times are read with interrupts off, as at
  * PADRead, so a save noted in between can't look newer than the time
  * (the unsigned difference would wrap and read as long quiet). */
+#if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
+static void pad_gcwii_read_pads(struct rt_pad_context* c);
+#endif
+
 uint32_t pad_on_sleep(struct rt_pad_context* c) {
     const uint32_t running = *(volatile uint32_t*)(uintptr_t)0x800000E4u;
     const uint32_t main_thread = *(volatile uint32_t*)(uintptr_t)0x800000DCu;
     int resident_wrote, quiet;
     uint32_t resident_last_write, msr, t;
+#if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
+    /* A game that reads nothing until its connect callback hears of a
+     * controller (Donkey Kong Country Returns: no PADRead, KPAD read or
+     * WPADProbe at its title) never gives the stand-in the read that
+     * announces it; its sleeps do (the main loop's every frame, waiting
+     * for the retrace), through the same throttle as the reads' (at most
+     * every 8 ms, and only while the game's own PADRead hasn't run in
+     * 50 ms). */
+    if (c->gcwii != 0 && c->kpad_connect != 0) pad_gcwii_read_pads(c);
+#endif
     if (c->leave_asked != RT_PAD_LEAVE_ASKED) return 0;  /* every sleep: the quick way out */
     msr = interrupts_off();
     /* Again with interrupts off: a PADRead in between (another thread's, or
@@ -583,8 +597,10 @@ static uint32_t pad_gcwii_own(const struct rt_pad_context* c) {
  * game's PADRead (through its hook, so the adapter fills it) when the game
  * hasn't called it itself within 50 ms, which a game that reads only KPAD
  * never does (Kamen Rider: Dragon Knight, whose pack did the same; its save
- * screens read no channel 0, so any channel and WPADProbe count).
- * Interrupts on, as a game thread calls it. */
+ * screens read no channel 0, so any channel and WPADProbe count), and at
+ * the game's sleeps (pad_on_sleep). Interrupts as the caller had them: on
+ * at a KPAD read or WPADProbe, off at the sleep VIWaitForRetrace makes
+ * (PADRead turns them off itself anyway). */
 static void pad_gcwii_read_pads(struct rt_pad_context* c) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     uint32_t msr;
