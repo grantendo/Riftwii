@@ -200,6 +200,29 @@ void TestShake() {
     EXPECT_EQ(f.acc[1], -RTHOME_AXIS_FULL);
 }
 
+// The game turning the camera on shows the pointer with no C-stick, and
+// off hides it again (unless the C-stick has just moved it).
+void TestCamera() {
+    rtgcwii w = fresh();
+    Pads p;
+    p.plug(0);
+    rtgcwii_pads(&w, p.s, 10);
+    rtgcwii_fs f;
+    rtgcwii_nunchuk(&w, 0, 10, &f);
+    EXPECT_EQ(f.pointer_shown, 0);
+    rtgcwii_camera(&w, 0, 3);  // WPADControlDpd(0, WPAD_DPD_FULL, ...)
+    rtgcwii_nunchuk(&w, 0, 5000, &f);
+    EXPECT_EQ(f.pointer_shown, 1);
+    EXPECT_EQ(f.pointer[0], 0);  // the middle of the screen, until the C-stick moves it
+    rtgcwii_nunchuk(&w, 1, 5000, &f);
+    EXPECT_EQ(f.pointer_shown, 0);  // another channel's camera is its own
+    rtgcwii_camera(&w, 0, 0);
+    rtgcwii_nunchuk(&w, 0, 5001, &f);
+    EXPECT_EQ(f.pointer_shown, 0);
+    rtgcwii_camera(&w, 9, 3);  // no such channel: nothing
+    EXPECT_EQ(w.camera, 0u);
+}
+
 }  // namespace
 
 int main() {
@@ -208,6 +231,7 @@ int main() {
     TestStickAndRest();
     TestPointer();
     TestShake();
+    TestCamera();
     if (g_failures == 0) std::cout << "gcwii_nunchuk: all passed" << std::endl;
     return g_failures == 0 ? 0 : 1;
 }

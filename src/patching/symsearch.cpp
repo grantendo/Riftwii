@@ -655,6 +655,28 @@ std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std
     return found;
 }
 
+std::uint32_t find_wpad_control_dpd(const std::vector<CodeRange>& text, std::uint32_t wpad_probe) {
+    if (wpad_probe == 0) return 0;
+    // Its opening (riftwii/symsearch.hpp), in the library's own reach of
+    // WPADProbe, as find_wii_remote_idle_reset looks.
+    static const std::uint32_t kOpening[4] = {0x9421FB90u, 0x7C0802A6u, 0x90010474u, 0x39610470u};
+    constexpr std::uint32_t kWpadReach = 0x10000;
+    std::uint32_t found = 0;
+    for (const CodeRange& r : text) {
+        const std::size_t words = r.size / 4;
+        for (std::size_t i = 0; i + 4 <= words; ++i) {
+            const std::uint32_t at = r.address + static_cast<std::uint32_t>(i * 4);
+            if (at + kWpadReach < wpad_probe || at > wpad_probe + kWpadReach) continue;
+            bool same = true;
+            for (std::size_t k = 0; k < 4 && same; ++k) same = be32(r.bytes + (i + k) * 4) == kOpening[k];
+            if (!same) continue;
+            if (found != 0) return 0;  // two: not guessed
+            found = at;
+        }
+    }
+    return found;
+}
+
 bool find_pad_symbols(const std::vector<CodeRange>& text, PadSymbols& out, std::string& error) {
     out = PadSymbols{};
     std::map<std::uint32_t, std::set<std::uint32_t>> read_memsets;  // function -> memset targets

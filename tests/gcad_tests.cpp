@@ -1684,6 +1684,45 @@ static void TestPatchedCodeRanges() {
 
 // The Wii Remotes' screen-dimming reset found with no PADRead to start
 // from: the one-store reset the Wii Remote library (near WPADProbe) calls.
+// WPADControlDpd found by its opening, only within the Wii Remote library's
+// reach of WPADProbe, and never guessed between two.
+static void TestWpadControlDpd() {
+    const auto opening = [](Asm& a) {
+        const std::uint32_t at = a.here();
+        a.op(0x9421FB90u);
+        a.op(0x7C0802A6u);
+        a.op(0x90010474u);
+        a.op(0x39610470u);
+        a.blr();
+        return at;
+    };
+    Asm a{0x80400000u, {}};
+    a.blr();
+    const std::uint32_t dpd = opening(a);
+    const std::uint32_t probe = a.here() + 0x100;
+    std::vector<std::uint8_t> code = a.bytes();
+    std::vector<riftwii::CodeRange> text = {{a.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, probe), dpd);
+    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, 0), 0u);
+    // A game's own function with the same frame, far from the library: not it.
+    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, a.base + 0x20000u), 0u);
+    // Two in reach: not guessed.
+    Asm two = a;
+    opening(two);
+    code = two.bytes();
+    text = {{two.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, probe), 0u);
+    // A near miss (another frame size) isn't taken.
+    Asm other{0x80400000u, {}};
+    other.op(0x9421FBA0u);
+    other.op(0x7C0802A6u);
+    other.op(0x90010474u);
+    other.op(0x39610470u);
+    code = other.bytes();
+    text = {{other.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_wpad_control_dpd(text, other.base), 0u);
+}
+
 static void TestRemotesIdleReset() {
     Asm a{0x80200000u, {}};
     a.blr();
@@ -2374,6 +2413,7 @@ int main() {
     TestPackPadRead();
     TestIdleResetSearch();
     TestRemotesIdleReset();
+    TestWpadControlDpd();
     TestGcPadMotorSearch();
     TestGcSiTypeCacheSearch();
     TestGcSiProbeSearch();
