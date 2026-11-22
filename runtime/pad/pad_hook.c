@@ -331,6 +331,12 @@ static void pad_leave_check(struct rt_pad_context* c, const uint8_t* status, uin
  * (the unsigned difference would wrap and read as long quiet). */
 #if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
 static void pad_gcwii_read_pads(struct rt_pad_context* c);
+/* Whether the game has a connect callback the stand-in tells: KPAD's, or
+ * the 2006 WPAD's (rtgcwii.h). */
+static int pad_can_tell(const struct rt_pad_context* c) {
+    return c->kpad_connect != 0 ||
+           (c->gcwii != 0 && ((const struct rtgcwii*)(uintptr_t)c->gcwii)->wpad_connect_table != 0);
+}
 #endif
 
 uint32_t pad_on_sleep(struct rt_pad_context* c) {
@@ -346,7 +352,7 @@ uint32_t pad_on_sleep(struct rt_pad_context* c) {
      * for the retrace), through the same throttle as the reads' (at most
      * every 8 ms, and only while the game's own PADRead hasn't run in
      * 50 ms). */
-    if (c->gcwii != 0 && c->kpad_connect != 0) pad_gcwii_read_pads(c);
+    if (c->gcwii != 0 && pad_can_tell(c)) pad_gcwii_read_pads(c);
 #endif
     if (c->leave_asked != RT_PAD_LEAVE_ASKED) return 0;  /* every sleep: the quick way out */
     msr = interrupts_off();
@@ -1315,8 +1321,18 @@ static void pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int3
 static int pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32_t reason) {
     const uint32_t stride = c->kpad_connect_info & 0xFFFFu;
     uint32_t callback;
-    if (chan >= RTHOME_CHANNELS || c->kpad_connect == 0) return 0;
-    callback = *(const volatile uint32_t*)(uintptr_t)(c->kpad_connect + chan * stride);
+    if (chan >= RTHOME_CHANNELS) return 0;
+    if (c->kpad_connect != 0) {
+        callback = *(const volatile uint32_t*)(uintptr_t)(c->kpad_connect + chan * stride);
+    } else {
+        /* The 2006 WPAD's callback, in the channel's control block. */
+        const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
+        uint32_t block;
+        if (!c->gcwii || w->wpad_connect_table == 0) return 0;
+        block = *(const volatile uint32_t*)(uintptr_t)(w->wpad_connect_table + chan * 4u);
+        if (!pad_in_ram((const void*)(uintptr_t)block)) return 0;
+        callback = *(const volatile uint32_t*)(uintptr_t)(block + w->wpad_connect_offset);
+    }
     if (callback == 0 || !pad_in_ram((const void*)(uintptr_t)callback)) return 0;
     ((void (*)(int32_t, int32_t))(uintptr_t)callback)((int32_t)chan, reason);
     return 1;
@@ -1521,7 +1537,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
             interrupts_restore(flags);
         }
     }
-    if (c->gcwii && c->kpad_connect != 0) pad_gcwii_tell(c);
+    if (c->gcwii && pad_can_tell(c)) pad_gcwii_tell(c);
 #else
     if (leave != RTHOME_NO_CHANNEL) pad_tell_connect(c, leave, -1);
     if (join != RTHOME_NO_CHANNEL) pad_tell_connect(c, join, 0);

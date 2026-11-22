@@ -776,6 +776,13 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
                  out.wpad_info);
         else
             logf("GameCube adapter: WPADGetInfoAsync not found: a 2006 KPAD game may not take the stand-in\n");
+        const WpadConnect2006 connect06 = find_wpad_connect_2006(text);
+        out.wpad_connect_table = connect06.table;
+        out.wpad_connect_offset = connect06.offset;
+        if (connect06.table != 0)
+            logf("GameCube adapter: the 2006 WPAD's connect callbacks (blocks from the table at 0x%08x, the callback "
+                 "at +%u): the stand-in is reported connected to the game's callback\n",
+                 connect06.table, connect06.offset);
     }
     if (missing_menu != nullptr) {
         logf("GameCube adapter: no HOME Menu by the controller (the combo is the way back): %s was not found; the "
@@ -1481,6 +1488,8 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->kpad_dpd = out.kpad_dpd.base;
         state->kpad_dpd_stride = out.kpad_dpd.stride;
         state->kpad_dpd_offset = out.kpad_dpd.offset;
+        state->wpad_connect_table = out.wpad_connect_table;
+        state->wpad_connect_offset = out.wpad_connect_offset;
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;

@@ -296,6 +296,50 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
     return matches == 1 ? found : 0;
 }
 
+WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
+    constexpr std::int32_t kConnectCallback = 2020;  // in the Oct 3 2006 WPAD's control block
+    constexpr std::size_t kMaxWords = 40;
+    WpadConnect2006 found;
+    unsigned matches = 0;
+    for (const CodeRange& r : text) {
+        if (r.bytes == nullptr) continue;
+        const std::size_t words = r.size / 4;
+        std::size_t i = 0;
+        while (i < words) {
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            if (i >= words) break;
+            const std::size_t start = i++;
+            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
+            if (i - start > kMaxWords) continue;
+            std::uint32_t high[32] = {}, address[32] = {};
+            std::uint32_t table = 0;
+            int block = -1;
+            bool loads = false, stores = false;
+            for (std::size_t k = start; k < i; ++k) {
+                const std::uint32_t insn = be32(r.bytes + 4 * k);
+                const std::uint32_t d = reg_d(insn), a = reg_a(insn);
+                if (opcode(insn) == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;  // lis
+                if (opcode(insn) == 14 && a != 0 && high[a] != 0)                    // addi rD,rA,lo
+                    address[d] = high[a] + static_cast<std::uint32_t>(simm(insn));
+                const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
+                if (lwzx && address[a] != 0) {
+                    table = address[a];
+                    block = static_cast<int>(d);
+                }
+                if (block >= 0 && static_cast<int>(a) == block && simm(insn) == kConnectCallback) {
+                    loads = loads || opcode(insn) == 32;   // lwz
+                    stores = stores || opcode(insn) == 36;  // stw
+                }
+            }
+            if (table == 0 || !loads || !stores) continue;
+            found.table = table;
+            found.offset = static_cast<std::uint32_t>(kConnectCallback);
+            ++matches;
+        }
+    }
+    return matches == 1 ? found : WpadConnect2006{};
+}
+
 std::uint32_t find_wpad_probe(const std::vector<CodeRange>& text) {
     constexpr std::uint32_t kNoDevice = 253;     // WPAD's "not known yet"
     constexpr std::uint32_t kIndexChannel = 0x5460103Au;  // slwi r0,r3,2

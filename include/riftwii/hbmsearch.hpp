@@ -86,6 +86,20 @@ KpadConnect find_kpad_connect(const std::vector<CodeRange>& text, std::uint32_t 
 // the 29 Wii games dumped (2006 to 2010). 0 when not exactly one.
 std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text);
 
+// Where the 2006 WPAD (Excite Truck, Marvel Ultimate Alliance: both its
+// Oct 3 2006 build) keeps each channel's connect callback, which those games
+// wait on before they use a Wii Remote (KPAD has none of its own there):
+// WPADSetConnectCallback is the one function that takes the channel's
+// control block from a table (`lis`/`addi` for the table, `lwzx` by the
+// channel) and swaps the callback at its +2020 (`lwz` and `stw` there).
+// The block's address is the table's word at channel * 4, filled when the
+// game starts WPAD. Both 0 when not exactly one.
+struct WpadConnect2006 {
+    std::uint32_t table = 0;
+    std::uint32_t offset = 0;
+};
+WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text);
+
 // The small-data base the game's start-up code loads into r13 (`lis
 // r13,hi` then `ori` or `addi r13,r13,lo`), within its first 256 words
 // from `entry`; 0 when not found.
