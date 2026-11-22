@@ -1286,14 +1286,17 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
     if (!c->gcwii || result != -1 || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS || !pad_in_ram(info) ||
         !pad_in_ram(info + PAD_INFO_BYTES - 1))
         return result;
+    /* The check, the answer and the callback's place taken in one go, so
+     * two requests on a channel can't both be taken: one answer at a time,
+     * as WPAD has; a request before the last one's callback is told is busy
+     * (the game asks again). */
     msr = interrupts_off();
     on = rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
     pending = ((const struct rtgcwii*)(uintptr_t)c->gcwii)->info_callback[chan] != 0;
-    interrupts_restore(msr);
-    if (!on) return result;
-    /* One answer at a time per channel, as WPAD has: a request before the
-     * last one's callback is told is busy (the game asks again). */
-    if (pending) return PAD_INFO_BUSY;
+    if (!on || pending) {
+        interrupts_restore(msr);
+        return on ? PAD_INFO_BUSY : result;
+    }
     for (i = 0; i < PAD_INFO_BYTES; ++i) info[i] = 0;
 #ifdef RT_PAD_FORM_NUNCHUK
     pad_put32(info + PAD_INFO_ATTACH, 1);
@@ -1302,11 +1305,9 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
     info[PAD_INFO_LED] = (uint8_t)(1u << (uint32_t)chan);
     /* Told at the game's next KPAD read (pad_gcwii_info_told): the game
      * notes it is waiting once this call returns. */
-    if (callback != 0 && pad_in_ram((const void*)(uintptr_t)callback)) {
-        msr = interrupts_off();
+    if (callback != 0 && pad_in_ram((const void*)(uintptr_t)callback))
         ((struct rtgcwii*)(uintptr_t)c->gcwii)->info_callback[chan] = callback;
-        interrupts_restore(msr);
-    }
+    interrupts_restore(msr);
     return 0;
 }
 #endif

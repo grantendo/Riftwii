@@ -74,15 +74,17 @@ void put_ring_walker(Section& t, std::int32_t size, bool stores, bool keeps_erro
 // The 2006 KPAD's read: the ring walk over 136-byte statuses, the device
 // type copied as a word (`lwz`/`stw` at 0x5C) and the error stored
 // (`stb` at 0x85), as in Excite Truck's.
-void put_2006_read(Section& t) {
+void put_2006_read(Section& t, bool stores = true) {
     t.put(stwu_r1(0x40));
     t.put(kMflrR0);
     t.put(mr(27, 3));
     t.put(mulli(0, 27, 136));
     for (int i = 0; i < 4; ++i) t.put(addi(31, 31, -136));
-    t.put(lwz(0, 29, 0x5C));
-    t.put(stw(0, 3, 0x5C));
-    t.put(stb(0, 29, 0x85));
+    if (stores) {
+        t.put(lwz(0, 29, 0x5C));
+        t.put(stw(0, 3, 0x5C));
+        t.put(stb(0, 29, 0x85));
+    }
     t.put(kBlr);
 }
 
@@ -148,20 +150,46 @@ void TestKpadRead() {
         put_2006_read(t);
         EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
     }
+    {
+        // A 136-byte ring walker without the stores, followed by a leaf
+        // function that has them: not the read.
+        Section t{0x80010000, {}};
+        put_2006_read(t, false);
+        t.put(stw(0, 3, 0x5C));
+        t.put(stb(0, 29, 0x85));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
+    }
+    {
+        // A read with an early return and its frame undone at the end:
+        // all of it counts (the stores after the early return too).
+        Section t{0x80010000, {}};
+        const std::uint32_t read = t.here();
+        t.put(stwu_r1(0x40));
+        t.put(kMflrR0);
+        t.put(mulli(0, 27, 136));
+        for (int i = 0; i < 4; ++i) t.put(addi(31, 31, -136));
+        t.put(kBlr);  // an early return
+        t.put(stw(0, 3, 0x5C));
+        t.put(stb(0, 29, 0x85));
+        t.put(addi(1, 1, 0x40));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, read);
+    }
 }
 
 // WPADGetInfoAsync's marks: the channel index, the busy answer, the status
 // request (report 0x15) in a 48-byte command, and its info (r4) and callback
 // (r5) kept and stored into the command, unless `keeps_callback` is false
 // (another request function with the rest of the marks).
-void put_get_info(Section& t, bool keeps_callback) {
+void put_get_info(Section& t, bool keeps_callback, bool asks_status = true) {
     t.put(stwu_r1(0x80));
     t.put(kMflrR0);
     t.put(kSlwiR0R3By2);
     t.put(mr(27, 4));
     if (keeps_callback) t.put(mr(28, 5));
     t.put(li(30, -2));
-    t.put(li(4, 0x15));
+    if (asks_status) t.put(li(4, 0x15));
     t.put(mulli(0, 0, 48));
     t.put(stw(27, 1, 48));
     if (keeps_callback) t.put(stw(28, 1, 52));
@@ -181,6 +209,15 @@ void TestWpadGetInfo() {
         Section t{0x80030000, {}};
         put_get_info(t, true);
         put_get_info(t, true);
+        EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
+    }
+    {
+        // Every mark but the status report, which only a leaf function
+        // after it has: not it.
+        Section t{0x80030000, {}};
+        put_get_info(t, true, false);
+        t.put(li(3, 0x15));
+        t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
     }
 }

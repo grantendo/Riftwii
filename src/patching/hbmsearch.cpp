@@ -22,6 +22,30 @@ constexpr std::uint32_t kNop = 0x60000000u;
 constexpr std::uint32_t kMtlrR0 = 0x7C0803A6u;
 
 bool is_stwu_r1(std::uint32_t insn) { return (insn & kStwuR1Mask) == kStwuR1; }
+// Where a framed function that starts at word `start` ends, before word
+// `next` (the next `stwu r1`): after its last `blr` that follows a stack
+// frame's undoing (`addi r1,r1,N` or `lwz r1,...` within the four words
+// before), else after its first `blr`, else at `next`. Leaf code (no frame
+// of its own) between it and the next framed function isn't counted, so its
+// instructions can't lend the function marks it doesn't have.
+std::size_t function_end(const std::uint8_t* bytes, std::size_t start, std::size_t next) {
+    constexpr std::uint32_t kBlr = 0x4E800020u;
+    std::size_t last_framed = 0, first = 0;
+    for (std::size_t k = start; k < next; ++k) {
+        if (be32(bytes + 4 * k) != kBlr) continue;
+        if (first == 0) first = k + 1;
+        for (std::size_t back = 1; back <= 4 && back <= k - start; ++back) {
+            const std::uint32_t insn = be32(bytes + 4 * (k - back));
+            const bool restore = (opcode(insn) == 14 && reg_d(insn) == 1 && reg_a(insn) == 1) ||  // addi r1,r1,N
+                                 (opcode(insn) == 32 && reg_d(insn) == 1);                         // lwz r1,...
+            if (restore) {
+                last_framed = k + 1;
+                break;
+            }
+        }
+    }
+    return last_framed != 0 ? last_framed : first != 0 ? first : next;
+}
 bool is_call(std::uint32_t insn) { return opcode(insn) == 18 && (insn & 3u) == 1u; }  // bl
 
 // The word at `address` in any of `ranges`.
@@ -176,7 +200,8 @@ KpadRead find_kpad_read_2006(const std::vector<CodeRange>& text) {
             while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
             bool multiplied = false, dev_type = false, error = false;
             unsigned back_steps = 0;
-            for (std::size_t k = start; k < i; ++k) {
+            const std::size_t end = function_end(r.bytes, start, i);
+            for (std::size_t k = start; k < end; ++k) {
                 const std::uint32_t insn = be32(r.bytes + 4 * k);
                 const std::int32_t value = simm(insn);
                 if (opcode(insn) == 7 && value == kStatus2006Bytes) multiplied = true;     // mulli
@@ -272,7 +297,8 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
             bool index = false, report = false, busy = false, command = false;
             int info_reg = -1, callback_reg = -1;
             std::uint32_t stack_stores = 0;  // registers stored to the stack, one bit each
-            for (std::size_t k = start; k < i; ++k) {
+            const std::size_t end = function_end(r.bytes, start, i);
+            for (std::size_t k = start; k < end; ++k) {
                 const std::uint32_t insn = be32(r.bytes + 4 * k);
                 const std::int32_t value = simm(insn);
                 index = index || insn == kIndexChannel;
@@ -299,7 +325,6 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
 WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
     constexpr std::int32_t kConnectCallback = 2020;  // in the Oct 3 2006 WPAD's control block
     constexpr std::size_t kMaxWords = 40;
-    constexpr std::uint32_t kBlrInsn = 0x4E800020u;
     WpadConnect2006 found;
     unsigned matches = 0;
     for (const CodeRange& r : text) {
@@ -313,9 +338,7 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
             while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
             // The setter ends at its return: leaf code after it, before the
             // next framed function, isn't counted.
-            std::size_t end = start;
-            while (end < i && be32(r.bytes + 4 * end) != kBlrInsn) ++end;
-            if (end < i) ++end;
+            const std::size_t end = function_end(r.bytes, start, i);
             if (end - start > kMaxWords) continue;
             std::uint32_t high[32] = {}, address[32] = {};
             std::uint32_t table = 0;
