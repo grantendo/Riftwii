@@ -1203,6 +1203,15 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     // byte, and with Settings > Leaving a game on HOME only none were
     // looked for. Else the blob without it, as before it.
     out.home_blob = wants_home_build(out, code_build);
+    // With no adapter the hook is there only for the stand-in, which needs
+    // the HOME Menu's hooks; a build without them would ask USB on every
+    // PADRead anyway (only the stand-in builds leave it alone).
+    if (out.no_usb && !out.home_blob) {
+        why = "GameCube controllers as Classic Controllers need the game's KPAD read, WPADProbe and HOME Menu, which "
+              "weren't found";
+        close_pad_handles(out);
+        return false;
+    }
     if (!out.home_blob) {
         if (code_build && out.kpad_read != 0)
             logf("GameCube adapter: no HOME Menu by the controller in a code build (the combo is the way back)\n");

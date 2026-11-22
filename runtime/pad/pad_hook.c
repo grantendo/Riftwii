@@ -1142,7 +1142,15 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
 #ifndef RT_PAD_NO_HOME
 #ifdef RT_PAD_STANDIN
     if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
-    if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
+    if (join != RTHOME_NO_CHANNEL && !pad_tell_connect(c, join, 0)) {
+        /* Not heard (the game's callback isn't set yet): the record forgets
+         * it, so it is told again at the next PADRead and a GameCube
+         * controller arriving there never takes over a connection the game
+         * never heard of. */
+        uint32_t m = interrupts_off();
+        if (((c->kpad_connect_info >> 16) & 0xFFu) == join + 1u) c->kpad_connect_info &= 0xFFFFu;
+        interrupts_restore(m);
+    }
     if (c->gcwii && c->kpad_connect != 0) pad_gcwii_tell(c);
 #else
     if (leave != RTHOME_NO_CHANNEL) pad_tell_connect(c, leave, -1);
