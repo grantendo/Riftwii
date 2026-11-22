@@ -1123,16 +1123,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         const uint32_t now_channel = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
 #endif
         const uint32_t told_byte = (c->kpad_connect_info >> 16) & 0xFFu;
-        uint32_t told = told_byte == 0 ? RTHOME_NO_CHANNEL : told_byte - 1u;
-#ifdef RT_PAD_STANDIN
-        /* A GameCube controller arriving on the channel the HOME Menu's
-         * stand-in told the game of takes that connection over as it is:
-         * the game hears neither a "gone" nor a second "connected". */
-        if (c->gcwii && told != RTHOME_NO_CHANNEL && ((pad_gcwii_own(c) >> told) & 1u)) {
-            rtgcwii_still_told((struct rtgcwii*)(uintptr_t)c->gcwii, told);
-            told = RTHOME_NO_CHANNEL;
-        }
-#endif
+        const uint32_t told = told_byte == 0 ? RTHOME_NO_CHANNEL : told_byte - 1u;
         const uint32_t next = rthome_connect_change(told, now_channel, &leave, &join);
         c->kpad_connect_info = (c->kpad_connect_info & 0xFFFFu) |
                                ((next == RTHOME_NO_CHANNEL ? 0u : next + 1u) << 16);
@@ -1142,15 +1133,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
 #ifndef RT_PAD_NO_HOME
 #ifdef RT_PAD_STANDIN
     if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
-    if (join != RTHOME_NO_CHANNEL && !pad_tell_connect(c, join, 0)) {
-        /* Not heard (the game's callback isn't set yet): the record forgets
-         * it, so it is told again at the next PADRead and a GameCube
-         * controller arriving there never takes over a connection the game
-         * never heard of. */
-        uint32_t m = interrupts_off();
-        if (((c->kpad_connect_info >> 16) & 0xFFu) == join + 1u) c->kpad_connect_info &= 0xFFFFu;
-        interrupts_restore(m);
-    }
+    if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
     if (c->gcwii && c->kpad_connect != 0) pad_gcwii_tell(c);
 #else
     if (leave != RTHOME_NO_CHANNEL) pad_tell_connect(c, leave, -1);
