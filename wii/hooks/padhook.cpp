@@ -77,6 +77,9 @@ constexpr std::uint32_t kGcwiiGraceMs = 500;
 // C-stick last moved it, then hides (games that hide the cursor when
 // nothing points still do).
 constexpr std::uint32_t kGcwiiPointerShowMs = 2000;
+// A game that reads WPAD itself and hasn't read the stand-in since it was
+// told of it hears "connected" again after this long (rtgcwii_retell).
+constexpr std::uint32_t kGcwiiRetellMs = 1000;
 // v5 serves 16 handles, picked by the open mode: libogc's USB takes 0 and
 // fakemote (a cIOS module) 15. 0 is tried first (free once libogc's USB
 // is shut down; a Wii U's IOS 58 answered nothing on 1), then 1. v4
@@ -829,6 +832,29 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
              "is reported connected to the game's callback\n",
              connect.address, out.kpad_connect, connect.stride);
     }
+    // The stand-in below KPAD, for a game that reads WPAD itself and hears
+    // of its controllers through WPAD's own connect callback (Punch-Out!!):
+    // WPADRead gives the stand-in's report and WPADSetDataFormat is answered
+    // for it (in the Wii Remote forms' builds only: the form is picked after
+    // this, and install_pad_hook leaves them out of the others), and WPAD's
+    // callback is told where KPAD has none of its own.
+    if (out.standin) {
+        out.wpad_read = find_wpad_read(text);
+        out.wpad_set_format = find_wpad_set_format(text);
+        logf("GameCube adapter: WPADRead %s0x%08x, WPADSetDataFormat %s0x%08x (with GameCube controllers as Wii "
+             "Remotes, a game that reads WPAD itself gets the stand-in's reports)\n",
+             out.wpad_read != 0 ? "at " : "not found, ", out.wpad_read,
+             out.wpad_set_format != 0 ? "at " : "not found, ", out.wpad_set_format);
+        if (out.kpad_connect == 0 && out.wpad_connect_table == 0) {
+            const WpadConnect2006 later = find_wpad_connect_later(text);
+            out.wpad_connect_table = later.table;
+            out.wpad_connect_offset = later.offset;
+            if (later.table != 0)
+                logf("GameCube adapter: WPAD's connect callbacks (blocks from the table at 0x%08x, the callback at "
+                     "+%u): the stand-in is reported connected to the game's callback\n",
+                     later.table, later.offset);
+        }
+    }
 }
 
 // The game as loaded, read in place (nothing here writes to it).
@@ -1573,7 +1599,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     struct Site {
         std::uint32_t function, hook, replay, resume;
         const char* name;
-    } sites[kPadHookSites + 2] = {{hook.read, h.hook_read, h.replay_read, h.continue_read, "PADRead"},
+    } sites[kPadHookSites + 4] = {{hook.read, h.hook_read, h.replay_read, h.continue_read, "PADRead"},
                               {hook.motor, h.hook_motor, h.replay_motor, h.continue_motor, "PADControlMotor"},
                               {hook.ipc_submit, h.hook_submit, h.replay_submit, h.continue_submit, "the IPC submit routine"},
                               {hook.sleep_thread, h.hook_sleep, h.replay_sleep, h.continue_sleep, "OSSleepThread"},
@@ -1592,7 +1618,12 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                               // A stand-in build is never in MEM2 (the HOME Menu's builds
                               // aren't), so this hook never needs a twelfth veneer.
                               {standin_kind(kind) && hook.veneer == 0 ? hook.wpad_info : 0u, sh.hook_info,
-                               sh.replay_info, sh.continue_info, "WPADGetInfoAsync"}};
+                               sh.replay_info, sh.continue_info, "WPADGetInfoAsync"},
+                              // The stand-in below KPAD: only the Wii Remote forms' builds have them.
+                              {standin_kind(kind) && hook.veneer == 0 && sh.hook_wread != 0 ? hook.wpad_read : 0u,
+                               sh.hook_wread, sh.replay_wread, sh.continue_wread, "WPADRead"},
+                              {standin_kind(kind) && hook.veneer == 0 && sh.hook_format != 0 ? hook.wpad_set_format : 0u,
+                               sh.hook_format, sh.replay_format, sh.continue_format, "WPADSetDataFormat"}};
     Site& read_site = sites[0];
     Site& motor_site = sites[1];
     Site& submit_site = sites[2];
@@ -1607,6 +1638,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     Site& probe_site = sites[11];
     // The stand-in builds', for a 2006 KPAD game.
     Site& info_site = sites[12];
+    // The stand-in below KPAD's, in the Wii Remote forms.
+    Site& wread_site = sites[13];
+    Site& format_site = sites[14];
+    const auto is_wpad_site = [&](const Site& s) { return &s == &wread_site || &s == &format_site; };
     const auto is_home_site = [&](const Site& s) {
         for (const Site* home_site : home_sites)
             if (&s == home_site) return true;
@@ -1676,6 +1711,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                 logf("GameCube adapter: WPADGetInfoAsync cannot be hooked (%s); the 2006 KPAD game may not take the "
                      "stand-in\n",
                      reason.c_str());
+            } else if (is_wpad_site(s)) {
+                logf("GameCube adapter: %s cannot be hooked (%s); a game that reads WPAD itself may not take the "
+                     "stand-in\n",
+                     s.name, reason.c_str());
             } else {
                 way_back_off(s.name, "cannot be hooked (" + reason + ")");
             }
@@ -1721,7 +1760,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     }
     sync_code(hook.code_base, hook.code_bytes);
     unsigned veneers = 0;
-    bool unified = false;
+    bool unified = false, wpad_read_in = false;
     for (const Site& s : sites) {
         if (s.function == 0) continue;
         std::uint32_t target = hook.code_base + s.hook;
@@ -1760,11 +1799,16 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
             if (&s == &info_site)
                 logf("GameCube adapter: WPADGetInfoAsync is out of a branch's reach; the 2006 KPAD game may not take "
                      "the stand-in\n");
+            if (is_wpad_site(s))
+                logf("GameCube adapter: %s is out of a branch's reach; a game that reads WPAD itself may not take the "
+                     "stand-in\n",
+                     s.name);
             continue;
         }
         store_words(s.function, &branch, 1);
         sync_code(s.function & ~31u, 32);
         if (&s == &unified_site) unified = true;
+        if (&s == &wread_site) wpad_read_in = true;
     }
     // The loop above stored a branch on OSRestart's first word when it hooked it.
     if (hook.restart_os != 0 && restart_site.function != 0) {
@@ -1808,6 +1852,13 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     // The permanent stand-in needs the KPAD read's and WPADProbe's hooks,
     // in with the HOME Menu's or, without its functions, alone.
     ctx->gcwii = home || standin_reads ? hook.gcwii_base : 0u;
+    if (ctx->gcwii != 0 && wpad_read_in) {
+        // A game that reads WPAD itself is told of the stand-in again until
+        // it reads it (rtgcwii_retell); every other game is told once.
+        auto* state = reinterpret_cast<rtgcwii*>(ctx->gcwii);
+        state->retell_ticks = kGcwiiRetellMs * ctx->ticks_per_ms;
+        DCFlushRange(state, sizeof(*state));
+    }
     ctx->home_on = home && !hook.home_combo_off ? 1u : 0u;
     DCFlushRange(ctx, context_bytes(kind));
     logf("GameCube adapter: hooked%s\n", motor_site.function == 0 ? " (PADRead only)" : "");

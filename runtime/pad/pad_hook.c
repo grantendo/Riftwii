@@ -44,6 +44,10 @@ int32_t pad_on_select(struct rt_pad_context* c, int32_t result);
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count);
 #ifdef RT_PAD_STANDIN
 int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result);
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status);
+int32_t pad_on_set_format(struct rt_pad_context* c, int32_t chan, uint32_t format, int32_t result);
+#endif
 #endif
 #endif
 
@@ -950,6 +954,9 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         /* The permanent stand-in's channel, where no real controller is. */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
             pad_gcwii_status(c, (uint32_t)chan, status);
+#ifdef RT_PAD_FORM_REMOTE
+            rtgcwii_heard((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
+#endif
             if (c->kpad_takes_error && pad_in_ram(error)) *error = 0;
             interrupts_restore(msr);
             return 1;
@@ -1242,6 +1249,47 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
     interrupts_restore(msr);
     return 0;
 }
+
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+/* WPADRead(chan, status), for a game that reads WPAD itself (Punch-Out!!'s
+ * pad manager): on the stand-in's channel the report it copied (none: no
+ * Wii Remote there) becomes the stand-in's (rtgcwii_wpad_status), with the
+ * pads read first as at a KPAD read. The game reading it there has heard
+ * of the stand-in (rtgcwii_heard). */
+void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
+    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+    uint32_t msr;
+    int camera = 0;
+    if (!c->gcwii || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS || !pad_in_ram(status) ||
+        !pad_in_ram(status + RTGCWII_WPAD_FS_BYTES - 1))
+        return;
+    pad_gcwii_read_pads(c);
+    if (w->kpad_dpd != 0) {
+        /* KPAD's camera switch for this channel, as at a KPAD read. */
+        const uint8_t* wants =
+            (const uint8_t*)(uintptr_t)(w->kpad_dpd + (uint32_t)chan * w->kpad_dpd_stride + w->kpad_dpd_offset);
+        if (pad_in_ram(wants)) camera = *(const volatile uint8_t*)wants != 0;
+    }
+    msr = interrupts_off();
+    if (rtgcwii_wpad_status(w, (uint32_t)chan, status, now(), camera) != 0) rtgcwii_heard(w, (uint32_t)chan);
+    interrupts_restore(msr);
+}
+
+/* WPADSetDataFormat(chan, format): "no controller" (-1) on the stand-in's
+ * channel becomes done (0), the format noted for its reports (a game that
+ * asks for the camera's gets the pointer's dots). */
+int32_t pad_on_set_format(struct rt_pad_context* c, int32_t chan, uint32_t format, int32_t result) {
+    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+    uint32_t msr;
+    int on;
+    if (!c->gcwii || result != -1 || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS) return result;
+    msr = interrupts_off();
+    on = rtgcwii_on(w, (uint32_t)chan);
+    if (on) w->format[chan] = format;
+    interrupts_restore(msr);
+    return on ? 0 : result;
+}
+#endif
 #endif
 
 /* The game's connect callback for channel `chan`, told `reason` (0:
@@ -1420,6 +1468,10 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
         rtgcwii_read_by(w, t, (int)w->reading);
         rtgcwii_pads(w, status, t);
+#ifdef RT_PAD_FORM_REMOTE
+        /* Only the Wii Remote forms hook WPADRead (retell_ticks stays 0 in the others). */
+        rtgcwii_retell(w, t);
+#endif
     }
 #endif
     pad_leave_check(c, status, t);

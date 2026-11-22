@@ -27,6 +27,14 @@ _pad_blob_start:
 #ifdef RT_PAD_STANDIN
     /* The stand-in builds' own header after it (rt_pad_standin_header). */
     .long pad_hook_info - _pad_blob_start, pad_replay_info - _pad_blob_start, pad_continue_info - _pad_blob_start
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+    /* The stand-in below KPAD (the Wii Remote forms): WPADRead's and
+     * WPADSetDataFormat's. The Classic Controller form has none (zeros). */
+    .long pad_hook_wread - _pad_blob_start, pad_replay_wread - _pad_blob_start, pad_continue_wread - _pad_blob_start
+    .long pad_hook_format - _pad_blob_start, pad_replay_format - _pad_blob_start, pad_continue_format - _pad_blob_start
+#else
+    .long 0, 0, 0, 0, 0, 0
+#endif
 #endif
 #endif
     /* Without the HOME Menu (RT_PAD_NO_HOME) the header ends before its
@@ -369,6 +377,53 @@ pad_hook_info:
     mtlr 0
     addi 1, 1, 0x20
     blr
+
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+/* void WPADRead(chan, status), for a game that reads WPAD itself: the
+ * original first, then pad_on_wpad_read(ctx, chan, status) puts the
+ * stand-in's report there. Frame: 8 chan, 12 status. */
+    .globl pad_hook_wread
+pad_hook_wread:
+    stwu 1, -0x20(1)
+    mflr 0
+    stw 0, 0x24(1)
+    stw 3, 0x08(1)
+    stw 4, 0x0C(1)
+    bl pad_replay_wread
+    lwz 4, 0x08(1)
+    lwz 5, 0x0C(1)
+    bl 13f
+13: mflr 3
+    addi 3, 3, pad_context_data - 13b
+    bl pad_on_wpad_read
+    lwz 0, 0x24(1)
+    mtlr 0
+    addi 1, 1, 0x20
+    blr
+
+/* s32 WPADSetDataFormat(chan, format): the original first, then
+ * pad_on_set_format(ctx, chan, format, its result) answers for the
+ * stand-in's channel. Frame: 8 chan, 12 format. */
+    .globl pad_hook_format
+pad_hook_format:
+    stwu 1, -0x20(1)
+    mflr 0
+    stw 0, 0x24(1)
+    stw 3, 0x08(1)
+    stw 4, 0x0C(1)
+    bl pad_replay_format
+    mr 6, 3
+    lwz 4, 0x08(1)
+    lwz 5, 0x0C(1)
+    bl 14f
+14: mflr 3
+    addi 3, 3, pad_context_data - 14b
+    bl pad_on_set_format
+    lwz 0, 0x24(1)
+    mtlr 0
+    addi 1, 1, 0x20
+    blr
+#endif
 #endif
 
 #endif
@@ -407,6 +462,10 @@ pad_continue_\name:
     PAD_REPLAY unified
 #ifdef RT_PAD_STANDIN
     PAD_REPLAY info
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+    PAD_REPLAY wread
+    PAD_REPLAY format
+#endif
 #endif
 #endif
 
