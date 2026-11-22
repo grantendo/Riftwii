@@ -94,6 +94,10 @@ struct rtgcwii {
     uint32_t heard;                         /* channels read since they were told, one bit each */
     uint32_t told_at[RTGCWII_CHANNELS];     /* when each was told (low bit set), 0: not noted yet */
     uint32_t retells[RTGCWII_CHANNELS];     /* times told again since its controller came */
+    /* wpad_connect_table is the later WPAD's (find_wpad_connect_later): the
+     * game's sleeps don't read the pads for the stand-in (pad_hook.c's
+     * pad_reads_at_sleep). Loader-filled. */
+    uint32_t wpad_connect_later;
 };
 
 #define RTGCWII_RETELLS 30u
