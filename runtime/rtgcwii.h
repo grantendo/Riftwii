@@ -60,7 +60,12 @@ struct rtgcwii {
     int32_t pointer[RTGCWII_CHANNELS][2];      /* each channel's pointer, x and y over RTHOME_POINTER_FULL */
     uint32_t pointer_moved[RTGCWII_CHANNELS];  /* when the C-stick last moved it (low bit set), 0: never */
     uint32_t shake[RTGCWII_CHANNELS];          /* samples the shake button has been held, 0: not held */
-    uint32_t camera;  /* channels whose Wii Remote camera the game has on (WPADControlDpd), one bit each */
+    uint32_t camera;  /* channels whose Wii Remote camera the game wants on (KPAD's switch), one bit each */
+    /* Where KPAD keeps each channel's camera switch (KPADEnableDPD's
+     * code): the byte at kpad_dpd + channel * kpad_dpd_stride +
+     * kpad_dpd_offset, 0: not found (the pointer shows only after the
+     * C-stick moves). Loader-filled. */
+    uint32_t kpad_dpd, kpad_dpd_stride, kpad_dpd_offset;
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -127,10 +132,11 @@ struct rtgcwii_fs {
 #define RTGCWII_POINTER_STEP 143
 #define RTGCWII_POINTER_EDGE 3891
 
-/* The game asked for `channel`'s Wii Remote camera on (`mode` not 0) or
- * off (WPADControlDpd): a game turns it on for its pointer menus (Batman:
- * The Brave and the Bold from its title screen on), so the stand-in's
- * pointer is shown while it is on, as well as after the C-stick moves. */
+/* The game wants `channel`'s Wii Remote camera on (`mode` not 0) or off,
+ * as KPAD's switch says (KPADEnableDPD, KPADDisableDPD): a game turns it on
+ * for its pointer menus (Batman: The Brave and the Bold from its title
+ * screen on), so the stand-in's pointer is shown while it is on, as well as
+ * after the C-stick moves. */
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode);
 
 /* The stand-in's Wii Remote + Nunchuk on `channel` (RT_PAD_FORM_NUNCHUK),

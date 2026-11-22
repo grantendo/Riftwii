@@ -210,7 +210,7 @@ void TestCamera() {
     rtgcwii_fs f;
     rtgcwii_nunchuk(&w, 0, 10, &f);
     EXPECT_EQ(f.pointer_shown, 0);
-    rtgcwii_camera(&w, 0, 3);  // WPADControlDpd(0, WPAD_DPD_FULL, ...)
+    rtgcwii_camera(&w, 0, 1);  // KPADEnableDPD(0)
     rtgcwii_nunchuk(&w, 0, 5000, &f);
     EXPECT_EQ(f.pointer_shown, 1);
     EXPECT_EQ(f.pointer[0], 0);  // the middle of the screen, until the C-stick moves it

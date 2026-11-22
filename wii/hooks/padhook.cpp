@@ -767,13 +767,14 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
              kpad.address, kpad.status_bytes, kpad.takes_error ? ", with the error's address" : "", probe, hbm.calc,
              hbm.select);
     }
-    // Optional, for the Wii Remote + Nunchuk form: the game turning a Wii
-    // Remote's camera on for its pointer menus shows the stand-in's pointer.
-    out.wpad_dpd = find_wpad_control_dpd(text, probe);
-    if (out.wpad_dpd != 0)
-        logf("GameCube adapter: WPADControlDpd at 0x%08x (with GameCube controllers as Wii Remotes + Nunchuks, the "
-             "pointer shows while the game has the camera on)\n",
-             out.wpad_dpd);
+    // Optional, for the Wii Remote + Nunchuk form: KPAD's camera switch,
+    // which a game turns on for its pointer menus, shows the stand-in's
+    // pointer while it's on.
+    out.kpad_dpd = find_kpad_enable_dpd(text);
+    if (out.kpad_dpd.enable != 0)
+        logf("GameCube adapter: KPADEnableDPD at 0x%08x (its switch at 0x%08x + channel * %u + 0x%x: with GameCube "
+             "controllers as Wii Remotes + Nunchuks, the pointer shows while the game has it on)\n",
+             out.kpad_dpd.enable, out.kpad_dpd.base, out.kpad_dpd.stride, out.kpad_dpd.offset);
     // Optional: where the game has it (Mario Kart Wii), it reads a Classic
     // Controller's buttons from there, and the stand-in fills it too.
     const KpadUnified unified = find_kpad_unified(text);
@@ -1452,6 +1453,9 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         std::memset(state, 0, sizeof(rtgcwii));
         state->grace = kGcwiiGraceMs * (kBusClock / 4000u);
         state->pointer_show = kGcwiiPointerShowMs * (kBusClock / 4000u);
+        state->kpad_dpd = out.kpad_dpd.base;
+        state->kpad_dpd_stride = out.kpad_dpd.stride;
+        state->kpad_dpd_offset = out.kpad_dpd.offset;
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;
@@ -1519,16 +1523,13 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     }
     const int kind = kind_of(hook);
     const rt_pad_header& h = header(kind);
-    // The HOME Menu's hooks, read only from the blob that has them, and the
-    // Wii Remote + Nunchuk form's from the builds with it.
+    // The HOME Menu's hooks, read only from the blob that has them.
     static const rt_pad_header none{};
     const rt_pad_header& hh = hook.home_blob ? h : none;
-    const bool nunchuk_build = kind >= kBlobNunchuk;
-    const rt_pad_header& hn = nunchuk_build ? h : none;
     struct Site {
         std::uint32_t function, hook, replay, resume;
         const char* name;
-    } sites[kPadHookSites + 2] = {{hook.read, h.hook_read, h.replay_read, h.continue_read, "PADRead"},
+    } sites[kPadHookSites + 1] = {{hook.read, h.hook_read, h.replay_read, h.continue_read, "PADRead"},
                               {hook.motor, h.hook_motor, h.replay_motor, h.continue_motor, "PADControlMotor"},
                               {hook.ipc_submit, h.hook_submit, h.replay_submit, h.continue_submit, "the IPC submit routine"},
                               {hook.sleep_thread, h.hook_sleep, h.replay_sleep, h.continue_sleep, "OSSleepThread"},
@@ -1543,9 +1544,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                                "HBMGetSelectBtnNum"},
                               {hook.kpad_unified, hh.hook_unified, hh.replay_unified, hh.continue_unified,
                                "KPADGetUnifiedWpadStatus"},
-                              {hook.si_probe, h.hook_si_probe, h.replay_si_probe, h.continue_si_probe, "SIProbe"},
-                              {nunchuk_build ? hook.wpad_dpd : 0u, hn.hook_dpd, hn.replay_dpd, hn.continue_dpd,
-                               "WPADControlDpd"}};
+                              {hook.si_probe, h.hook_si_probe, h.replay_si_probe, h.continue_si_probe, "SIProbe"}};
     Site& read_site = sites[0];
     Site& motor_site = sites[1];
     Site& submit_site = sites[2];
@@ -1558,9 +1557,6 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     Site& unified_site = sites[10];
     // In either blob (#510).
     Site& probe_site = sites[11];
-    // Optional, in the Wii Remote + Nunchuk builds: without it the pointer
-    // shows only after the C-stick moves (never in a code build: no veneer).
-    Site& dpd_site = sites[12];
     const auto is_home_site = [&](const Site& s) {
         for (const Site* home_site : home_sites)
             if (&s == home_site) return true;
@@ -1626,10 +1622,6 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
             } else if (&s == &probe_site) {
                 logf("GameCube adapter: SIProbe cannot be hooked (%s); a game that asks it sees no controller there\n",
                      reason.c_str());
-            } else if (&s == &dpd_site) {
-                logf("GameCube adapter: WPADControlDpd cannot be hooked (%s); the pointer shows only after the "
-                     "C-stick moves\n",
-                     reason.c_str());
             } else {
                 way_back_off(s.name, "cannot be hooked (" + reason + ")");
             }
@@ -1644,7 +1636,6 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     if (!home && !standin_reads) {
         for (Site* s : home_sites) s->function = 0;
         unified_site.function = 0;
-        dpd_site.function = 0;
     } else if (!home) {
         // The stand-in's reads without the HOME Menu: its own two stay out
         // (each would return at once anyway, home_on being 0).
@@ -1712,9 +1703,6 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                      "out of a branch's reach\n");
             if (&s == &probe_site)
                 logf("GameCube adapter: SIProbe is out of a branch's reach; a game that asks it sees no controller there\n");
-            if (&s == &dpd_site)
-                logf("GameCube adapter: WPADControlDpd is out of a branch's reach; the pointer shows only after the "
-                     "C-stick moves\n");
             continue;
         }
         store_words(s.function, &branch, 1);
