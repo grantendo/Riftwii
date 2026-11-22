@@ -161,6 +161,22 @@ void TestKpadRead() {
         EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
     }
     {
+        // A ring walker without the stores whose frame is undone, then a
+        // leaf with the stores: the leaf's return doesn't take the walker's
+        // restore for its own, so the stores aren't the walker's.
+        Section t{0x80010000, {}};
+        t.put(stwu_r1(0x40));
+        t.put(kMflrR0);
+        t.put(mulli(0, 27, 136));
+        for (int i = 0; i < 4; ++i) t.put(addi(31, 31, -136));
+        t.put(addi(1, 1, 0x40));
+        t.put(kBlr);
+        t.put(stw(0, 3, 0x5C));
+        t.put(stb(0, 29, 0x85));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
+    }
+    {
         // A read with an early return and its frame undone at the end:
         // all of it counts (the stores after the early return too).
         Section t{0x80010000, {}};
@@ -245,6 +261,28 @@ void TestWpadConnect2006() {
         const riftwii::WpadConnect2006 found = riftwii::find_wpad_connect_2006({t.range()});
         EXPECT_EQ(found.table, 0x8038F4F0u);
         EXPECT_EQ(found.offset, 2020u);
+    }
+    {
+        // A 40-word setter that undoes its frame, then a two-word leaf: the
+        // leaf's return doesn't stretch the setter past its limit.
+        Section t{0x80040000, {}};
+        const std::uint32_t setter = t.here();
+        t.put(stwu_r1(0x10));
+        t.put(kMflrR0);
+        t.put(mr(30, 4));
+        t.put(lis(4, 0x8039));
+        t.put(addi(4, 4, -2832));
+        t.put(lwzx(4, 4, 0));
+        t.put(lwz(31, 4, 2020));
+        t.put(stw(30, 4, 2020));
+        for (int i = 0; i < 30; ++i) t.put(li(5, i));
+        t.put(addi(1, 1, 0x10));
+        t.put(kBlr);  // word 40
+        t.put(li(3, 0));
+        t.put(kBlr);
+        const riftwii::WpadConnect2006 found = riftwii::find_wpad_connect_2006({t.range()});
+        EXPECT_EQ(found.table, 0x8038F4F0u);
+        (void)setter;
     }
     {
         // A later WPAD (no such setter): none.
