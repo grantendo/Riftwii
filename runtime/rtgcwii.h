@@ -148,6 +148,14 @@ uint32_t rtgcwii_map_nunchuk(const uint8_t* pad);
  * every build; RT_PAD_FORM_SIDEWAYS builds take it. */
 uint32_t rtgcwii_map_sideways(const uint8_t* pad);
 
+/* The pointing Wii Remote form's buttons (KPADStatus' hold word) for a
+ * PADStatus, in #587's pointing layout (22 Nov): A as A, B as B, X as 1, Y
+ * as 2, Z as -, Start as +, the D-pad as the D-pad (not turned: the Wii
+ * Remote is held upright, pointed at the screen). The control stick is the
+ * pointer, the C-stick tilts it, R shakes it, L is nothing
+ * (rtgcwii_pointing). In every build; RT_PAD_FORM_POINTING builds take it. */
+uint32_t rtgcwii_map_pointing(const uint8_t* pad);
+
 /* A Wii Remote + Nunchuk as the game's KPAD read takes it: the words, the
  * Nunchuk's stick, both accelerometers (still, or shaking while X is held),
  * and the pointer, all numerators over RTHOME_AXIS_FULL but the pointer's
@@ -159,6 +167,14 @@ struct rtgcwii_fs {
     int32_t fs_acc[3], fs_acc_value, fs_acc_speed;  /* the Nunchuk's */
     int32_t pointer[2];
     int pointer_shown;  /* the game has the camera on, or the C-stick moved it within pointer_show ticks */
+#ifdef RT_PAD_FORM_POINTING
+    /* The pointing form's roll as the camera sees it (KPAD's horizon: the
+     * line between the sensor bar's lights), cos and sin over
+     * RTHOME_AXIS_FULL: a game that has the pointer may read its twist
+     * there instead of from the acceleration. Only in that form's builds,
+     * so the other forms' stack stays as it was. */
+    int32_t horizon[2];
+#endif
 };
 
 /* The shake: all three axes swing between +RTGCWII_SHAKE_G and -SHAKE_G,
@@ -174,11 +190,22 @@ struct rtgcwii_fs {
  * +-RTGCWII_POINTER_EDGE, so the cursor never leaves the screen. */
 #define RTGCWII_POINTER_STEP 143
 #define RTGCWII_POINTER_EDGE 3891
+/* The pointing form moves its pointer by time: a frame (1/60 s) of the
+ * Wii's time base (60.75 MHz), and the longest gap between two samples
+ * that still counts in full. */
+#define RTGCWII_TICKS_PER_FRAME 1012500u
+#define RTGCWII_POINTER_GAP_FRAMES 4u
 /* The sideways form's tilt: the C-stick held right turns the Wii Remote as
  * a wheel steering right, gravity from -Y towards -Z (Dolphin's emulated
  * sideways Wii Remote, Excite Truck's tutorial, 22 Nov): full C-stick is
  * sin 55 degrees of it, over RTHOME_AXIS_FULL. */
 #define RTGCWII_TILT_SIN 210
+/* The pointing form's tilt takes the same RTGCWII_TILT_SIN: the C-stick
+ * tips the upright Wii Remote any way, up as its nose dipping (gravity from
+ * -Y towards +Z) and right as it rolling right (gravity from -Y towards
+ * +X); a full diagonal goes no further than a full push one way, and the
+ * acceleration stays 1 g. The sides follow the sideways form's measured
+ * axes; no pointing game has confirmed them yet (22 Nov). */
 
 /* The game wants `channel`'s Wii Remote camera on (`mode` not 0) or off,
  * as KPAD's switch says (KPADEnableDPD, KPADDisableDPD): a game turns it on
@@ -205,6 +232,17 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
  * moves. The Nunchuk's fields stay at rest. All 0 where the stand-in isn't
  * on. */
 void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out);
+
+/* The stand-in's pointing Wii Remote on `channel` (RT_PAD_FORM_POINTING),
+ * for the game's KPAD read: the words, the acceleration (tilted any way by
+ * the C-stick, shaking while R is held) and, while the game has the camera
+ * on, the pointer the control stick moves (relative, as the other forms'
+ * C-stick pointer, past rthome_classic_axes' dead zone, but by time:
+ * RTGCWII_POINTER_STEP a frame at full push, however often the game reads).
+ * With the camera off the control stick does nothing. The Nunchuk's fields
+ * stay at rest. All 0 where the stand-in isn't on. Built only with
+ * RT_PAD_FORM_POINTING. */
+void rtgcwii_pointing(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out);
 
 /* The stand-in's Classic Controller on `channel`, for the game's KPAD read:
  * its hold, trig (newly pressed since the game last got it) and release

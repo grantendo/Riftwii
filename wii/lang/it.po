@@ -1557,6 +1557,12 @@ msgstr "Come telecomando Wii in orizzontale"
 msgid "As a sideways Wii Remote: as a Wii Remote held sideways (A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it)."
 msgstr "Come telecomando Wii in orizzontale: come un telecomando Wii tenuto in orizzontale (A è il 2, B è l'1, la levetta di controllo è la sua croce direzionale, la levetta C lo inclina, R lo scuote)."
 
+msgid "As a pointing Wii Remote"
+msgstr "Come telecomando Wii puntato"
+
+msgid "As a pointing Wii Remote: as a Wii Remote pointed at the screen (the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it)."
+msgstr "Come telecomando Wii puntato: come un telecomando Wii puntato verso lo schermo (la levetta di controllo muove il puntatore, X è l'1, Y è il 2, la levetta C lo inclina, R lo scuote)."
+
 msgid "As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. As Wii Remote + Nunchuk: as a Wii Remote with a Nunchuk (X shakes it, the C-stick moves the pointer). Off: as before."
 msgstr "Come Classic Controller: ogni controller GameCube gioca come un Classic Controller, la porta 1 come il telecomando Wii 1 e così via, nei giochi che lo supportano. Come telecomando Wii + Nunchuk: come un telecomando Wii con Nunchuk (X lo scuote, la levetta C muove il puntatore). Disattivato: come prima."
 

@@ -530,9 +530,10 @@ static void pad_put32(uint8_t* p, uint32_t v) { *(volatile uint32_t*)(void*)p = 
 #define PAD_DEV_CLASSIC 2u
 /* The permanent stand-in's device as WPADProbe reports it: a Classic
  * Controller, with RT_PAD_FORM_NUNCHUK a Wii Remote with a Nunchuk
- * (WPAD_DEV_FREESTYLE), with RT_PAD_FORM_SIDEWAYS a bare Wii Remote
- * (WPAD_DEV_CORE); and its KPAD data format (with acceleration, the pointer
- * shown by dpd_valid). RT_PAD_FORM_REMOTE: either Wii Remote form. The HOME
+ * (WPAD_DEV_FREESTYLE), with RT_PAD_FORM_SIDEWAYS or RT_PAD_FORM_POINTING a
+ * bare Wii Remote (WPAD_DEV_CORE); and its KPAD data format (with
+ * acceleration, the pointer shown by dpd_valid). RT_PAD_FORM_REMOTE: any
+ * Wii Remote form. The HOME
  * Menu's stand-in is a Classic Controller in every build, but on a channel
  * one of the Wii Remote forms holds. */
 #define PAD_DEV_CORE 0u
@@ -546,7 +547,7 @@ static void pad_put32(uint8_t* p, uint32_t v) { *(volatile uint32_t*)(void*)p = 
 #define PAD_DEV_STANDIN PAD_DEV_FREESTYLE
 #define PAD_FORMAT_STANDIN PAD_FORMAT_FREESTYLE_ACC
 #define PAD_FORMAT_STANDIN_DPD PAD_FORMAT_FREESTYLE_ACC_DPD  /* with the camera on (KPADEnableDPD sets it) */
-#elif defined(RT_PAD_FORM_SIDEWAYS)
+#elif defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 #define RT_PAD_FORM_REMOTE 1
 #define PAD_DEV_STANDIN PAD_DEV_CORE
 #define PAD_FORMAT_STANDIN PAD_FORMAT_CORE_ACC
@@ -735,7 +736,8 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
  * Remote shaking while X is held) and the pointer, shown while the C-stick
  * moves it and for a while after; or a sideways Wii Remote
  * (rtgcwii_sideways), tilted or shaking, its pointer while the game has
- * the camera on. Every other field 0, as pad_classic_status. */
+ * the camera on; or a pointing one (rtgcwii_pointing), the same with the
+ * control stick as its pointer. Every other field 0, as pad_classic_status. */
 static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     struct rtgcwii_fs f;
@@ -745,8 +747,17 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
         const uint8_t* wants = (const uint8_t*)(uintptr_t)(w->kpad_dpd + chan * w->kpad_dpd_stride + w->kpad_dpd_offset);
         if (pad_in_ram(wants)) rtgcwii_camera(w, chan, *(const volatile uint8_t*)wants);
     }
-#ifdef RT_PAD_FORM_SIDEWAYS
+#ifdef RT_PAD_FORM_POINTING
+    else {
+        /* KPAD's camera switch not found: a pointing game wants its
+         * pointer, so the camera counts as on. */
+        rtgcwii_camera(w, chan, 1u);
+    }
+#endif
+#if defined(RT_PAD_FORM_SIDEWAYS)
     rtgcwii_sideways(w, chan, &f);
+#elif defined(RT_PAD_FORM_POINTING)
+    rtgcwii_pointing(w, chan, &f);
 #else
     rtgcwii_nunchuk(w, chan, now(), &f);
 #endif
@@ -759,7 +770,12 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     pad_put32(status + PAD_KPAD_ACC_SPEED, rtgcwii_float_bits(f.acc_speed));
     pad_put32(status + PAD_KPAD_POS_X, rthome_float_bits(f.pointer[0] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
     pad_put32(status + PAD_KPAD_POS_Y, rthome_float_bits(f.pointer[1] * RTHOME_AXIS_FULL / RTHOME_POINTER_FULL));
+#ifdef RT_PAD_FORM_POINTING
+    pad_put32(status + PAD_KPAD_HORIZON_X, rthome_float_bits(f.horizon[0]));
+    pad_put32(status + PAD_KPAD_HORIZON_X + 4, rthome_float_bits(f.horizon[1]));
+#else
     pad_put32(status + PAD_KPAD_HORIZON_X, PAD_FLOAT_ONE);
+#endif
     pad_put32(status + PAD_KPAD_DIST, rtgcwii_float_bits(PAD_DIST_AT_REST));
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
     pad_put_device(c, status, PAD_DEV_STANDIN, f.pointer_shown ? PAD_DPD_SEEN : 0u,
@@ -784,7 +800,7 @@ static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c) {
 }
 
 /* The HOME Menu's stand-in on a channel this stand-in holds: the game knows
- * a Wii Remote (with a Nunchuk, or sideways) there, so the status keeps that shape
+ * a Wii Remote (with a Nunchuk, sideways or pointing) there, so the status keeps that shape
  * (pad_gcwii_status) and carries the HOME stand-in's Wii Remote words (its
  * HOME press, then the menu's buttons) and, while the menu is open, its
  * pointer; the Nunchuk's stick rests. Interrupts off, at its callers. */

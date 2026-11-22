@@ -135,7 +135,7 @@ struct GameSettings {
     // them as they are; "classic": each one is a Classic Controller on its
     // own Wii Remote channel (runtime/rtgcwii.h); "nunchuk": each one is a
     // Wii Remote with a Nunchuk there; "sideways": a Wii Remote held
-    // sideways.
+    // sideways; "pointing": a Wii Remote held upright, pointed at the screen.
     std::string gc_controllers = "off";
     std::string region_strings = "off"; // "on": the Region strings fix (gx_country_strings)
     std::string nand_source = "auto";

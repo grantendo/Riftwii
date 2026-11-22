@@ -411,6 +411,9 @@ static void test_saves() {
     model.game.gc_controllers = "sideways";
     prefs.restore(model.save());
     EXPECT_EQ(prefs.game.gc_controllers, std::string("sideways"));
+    model.game.gc_controllers = "pointing";
+    prefs.restore(model.save());
+    EXPECT_EQ(prefs.game.gc_controllers, std::string("pointing"));
     prefs.restore("*riftwii*\tgccontrollers\tbogus\n");
     EXPECT_EQ(prefs.game.gc_controllers, std::string("off"));
     prefs.restore("*riftwii*\tgccard\tbogus\n");

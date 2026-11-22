@@ -89,6 +89,22 @@ uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
     return h;
 }
 
+uint32_t rtgcwii_map_pointing(const uint8_t* pad) {
+    const uint32_t b = rtgcwii_pad_buttons(pad);
+    uint32_t h = 0;
+    if (b & RTGCWII_GC_A) h |= RTGCWII_WR_A;
+    if (b & RTGCWII_GC_B) h |= RTGCWII_WR_B;
+    if (b & RTGCWII_GC_X) h |= RTGCWII_WR_1;
+    if (b & RTGCWII_GC_Y) h |= RTGCWII_WR_2;
+    if (b & RTGCWII_GC_Z) h |= RTGCWII_WR_MINUS;
+    if (b & RTGCWII_GC_START) h |= RTGCWII_WR_PLUS;
+    if (b & RTGCWII_GC_LEFT) h |= RTGCWII_WR_LEFT;
+    if (b & RTGCWII_GC_RIGHT) h |= RTGCWII_WR_RIGHT;
+    if (b & RTGCWII_GC_UP) h |= RTGCWII_WR_UP;
+    if (b & RTGCWII_GC_DOWN) h |= RTGCWII_WR_DOWN;
+    return h;
+}
+
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
 /* Once a sample: the pointer follows the C-stick (in the sideways form
  * only while the game has the camera on: else the C-stick tilts), and the
@@ -126,6 +142,35 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
 }
 #endif
 
+#ifdef RT_PAD_FORM_POINTING
+/* Once a sample, in the pointing form: while the game has the camera on,
+ * the control stick moves the pointer by time, not by sample (a game's
+ * reads take one to three samples a frame: Battle Revolution about one,
+ * Wii Sports two or more), RTGCWII_POINTER_STEP a frame at full push;
+ * `last` is when the sample before was taken (0: none), and a gap counts
+ * for at most RTGCWII_POINTER_GAP_FRAMES frames. With the camera off the
+ * stick does nothing. R (or its analog trigger) shakes it. */
+static void rtgcwii_pointing_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint32_t now, uint32_t last) {
+    int32_t axes[6], k, sixteenths;
+    uint32_t dt;
+    const uint32_t shaking = (rtgcwii_pad_buttons(s) & RTGCWII_GC_R) || s[7] >= RTGCWII_TRIGGER_ON;
+    w->shake[i] = shaking ? w->shake[i] + 1u : 0u;
+    if (!((w->camera >> i) & 1u)) return;
+    rthome_classic_axes(s, axes);  /* the control stick is axes 0 and 1 */
+    dt = last != 0 ? rtgcwii_elapsed(now, last) : RTGCWII_TICKS_PER_FRAME;
+    if (dt > RTGCWII_POINTER_GAP_FRAMES * RTGCWII_TICKS_PER_FRAME) dt = RTGCWII_POINTER_GAP_FRAMES * RTGCWII_TICKS_PER_FRAME;
+    sixteenths = (int32_t)(dt * 16u / RTGCWII_TICKS_PER_FRAME);  /* the time since, in sixteenths of a frame */
+    for (k = 0; k < 2; ++k) {
+        /* Up on the stick is up on the screen (KPAD's y grows downward). */
+        const int32_t step = (k == 0 ? axes[0] : -axes[1]) * RTGCWII_POINTER_STEP * sixteenths / (RTHOME_AXIS_FULL * 16);
+        int32_t p = w->pointer[i][k] + step;
+        if (p > RTGCWII_POINTER_EDGE) p = RTGCWII_POINTER_EDGE;
+        if (p < -RTGCWII_POINTER_EDGE) p = -RTGCWII_POINTER_EDGE;
+        w->pointer[i][k] = p;
+    }
+}
+#endif
+
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     uint32_t i, k;
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
@@ -142,6 +187,9 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             ++w->samples[i];
             w->present |= bit;
         } else if ((int8_t)s[RTGCWII_PAD_ERR] == 0) {
+#ifdef RT_PAD_FORM_POINTING
+            const uint32_t last = (w->present & bit) ? w->seen[i] : 0u;
+#endif
             for (k = 0; k < RTGCWII_PAD_BYTES; ++k) w->pad[i][k] = s[k];
             w->seen[i] = now | 1u;
 #if defined(RT_PAD_FORM_NUNCHUK)
@@ -150,6 +198,9 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
 #elif defined(RT_PAD_FORM_SIDEWAYS)
             w->hold[i] = rtgcwii_map_sideways(s);
             rtgcwii_motion(w, i, s, now);
+#elif defined(RT_PAD_FORM_POINTING)
+            w->hold[i] = rtgcwii_map_pointing(s);
+            rtgcwii_pointing_motion(w, i, s, now, last);
 #else
             w->hold[i] = rthome_map_classic(rtgcwii_pad_buttons(s), RTHOME_CL_PLUS);
 #endif
@@ -161,7 +212,7 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             w->present &= ~bit;
             w->seen[i] = 0;
             w->hold[i] = w->delivered[i] = 0;
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
             w->shake[i] = 0;
             /* Unplugged: the pointer's last move is forgotten too, so an
              * old mark never reads as recent after the time base wraps. */
@@ -341,6 +392,57 @@ void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* ou
     }
     if (w->shake[channel] != 0) rtgcwii_shake(w->shake[channel], out->acc, &out->acc_value, &out->acc_speed);
 }
+
+#ifdef RT_PAD_FORM_POINTING
+/* Only in the pointing form's builds (and its host test): a third caller of
+ * the shake and the square root would change how the other forms' builds
+ * inline them. */
+void rtgcwii_pointing(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out) {
+    int32_t axes[6], x, z, r2;
+    rtgcwii_still(out->acc, &out->acc_value, &out->acc_speed);
+    rtgcwii_still(out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
+    out->stick[0] = out->stick[1] = 0;
+    out->pointer[0] = out->pointer[1] = 0;
+    out->pointer_shown = 0;
+    out->horizon[0] = RTHOME_AXIS_FULL;
+    out->horizon[1] = 0;
+    if (!rtgcwii_on(w, channel)) {
+        out->hold = out->trig = out->release = 0;
+        return;
+    }
+    rtgcwii_words(w, channel, &out->hold, &out->trig, &out->release);
+    if ((w->camera >> channel) & 1u) {
+        out->pointer[0] = w->pointer[channel][0];
+        out->pointer[1] = w->pointer[channel][1];
+        out->pointer_shown = 1;
+    }
+    /* Tilt, any way: the C-stick right rolls it right (gravity towards
+     * +X), up dips its nose (towards +Z); a diagonal goes no further than
+     * a full push one way, and the length stays 1 g. */
+    rthome_classic_axes(w->pad[channel], axes);
+    x = axes[2] * RTGCWII_TILT_SIN / RTHOME_AXIS_FULL;
+    z = axes[3] * RTGCWII_TILT_SIN / RTHOME_AXIS_FULL;
+    r2 = x * x + z * z;
+    if (r2 > RTGCWII_TILT_SIN * RTGCWII_TILT_SIN) {
+        const int32_t r = rtgcwii_isqrt(r2);
+        x = x * RTGCWII_TILT_SIN / r;
+        z = z * RTGCWII_TILT_SIN / r;
+        r2 = x * x + z * z;
+    }
+    out->acc[0] = x;
+    out->acc[2] = z;
+    out->acc[1] = -rtgcwii_isqrt(RTHOME_AXIS_FULL * RTHOME_AXIS_FULL - r2);
+    /* The roll alone (the nose's dip doesn't turn the lights' line):
+     * rolled right, the line turns the same way. */
+    r2 = x * x + out->acc[1] * out->acc[1];
+    {
+        const int32_t r = rtgcwii_isqrt(r2);
+        out->horizon[0] = -out->acc[1] * RTHOME_AXIS_FULL / r;
+        out->horizon[1] = x * RTHOME_AXIS_FULL / r;
+    }
+    if (w->shake[channel] != 0) rtgcwii_shake(w->shake[channel], out->acc, &out->acc_value, &out->acc_speed);
+}
+#endif
 
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) {
     if (channel >= RTGCWII_CHANNELS) return;
