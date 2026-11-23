@@ -35,6 +35,7 @@ std::uint32_t cmplwi(std::uint32_t a, std::uint32_t v) { return d_form(10, 0, a,
 std::uint32_t mr(std::uint32_t a, std::uint32_t s) { return (31u << 26) | (s << 21) | (a << 16) | (s << 11) | (444u << 1); }
 std::uint32_t lwzx(std::uint32_t d, std::uint32_t a, std::uint32_t b) { return (31u << 26) | (d << 21) | (a << 16) | (b << 11) | (23u << 1); }
 std::uint32_t bl(std::uint32_t from, std::uint32_t to) { return (18u << 26) | ((to - from) & 0x03FFFFFCu) | 1u; }
+std::uint32_t b(std::uint32_t from, std::uint32_t to) { return (18u << 26) | ((to - from) & 0x03FFFFFCu); }
 constexpr std::uint32_t kBlr = 0x4E800020u;
 constexpr std::uint32_t kSlwiR0R3By2 = 0x5460103Au;
 constexpr std::uint32_t kMflrR0 = 0x7C0802A6u;
@@ -175,6 +176,38 @@ void TestKpadRead() {
         t.put(stb(0, 29, 0x85));
         t.put(kBlr);
         EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
+    }
+    {
+        // A ring walker without the stores that undoes its frame and ends
+        // with a tail call, then a leaf with the stores: the leaf's return
+        // doesn't take the walker's restore for its own.
+        Section t{0x80010000, {}};
+        t.put(stwu_r1(0x40));
+        t.put(kMflrR0);
+        t.put(mulli(0, 27, 136));
+        for (int i = 0; i < 4; ++i) t.put(addi(31, 31, -136));
+        t.put(addi(1, 1, 0x40));
+        t.put(b(t.here(), 0x80000100));  // the tail call
+        t.put(stw(0, 3, 0x5C));
+        t.put(stb(0, 29, 0x85));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, 0u);
+    }
+    {
+        // A read whose frame is undone before a branch inside it to its
+        // return: still all of it, with its stores.
+        Section t{0x80010000, {}};
+        const std::uint32_t read = t.here();
+        t.put(stwu_r1(0x40));
+        t.put(kMflrR0);
+        t.put(mulli(0, 27, 136));
+        for (int i = 0; i < 4; ++i) t.put(addi(31, 31, -136));
+        t.put(stw(0, 3, 0x5C));
+        t.put(stb(0, 29, 0x85));
+        t.put(addi(1, 1, 0x40));
+        t.put(b(t.here(), t.here() + 4));  // to the blr right after
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_kpad_read({t.range()}).address, read);
     }
     {
         // A read with an early return and its frame undone at the end:
