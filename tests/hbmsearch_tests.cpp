@@ -466,6 +466,31 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
     }
     {
+        // r4 read, not written, after `li r4,-1` (`mr r5,r4`): still -1 at
+        // the call, so found; a rotate into r4 (`rlwinm r4,r5,0,0,31`) is a
+        // write, so not.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(li(4, -1));
+        t.put(mr(5, 4));
+        t.put(kMtctrR12);
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
+        Section u{0x80218000, {}};
+        put_later_setter(u, 2212);
+        u.put(stwu_r1(0x40));
+        u.put(lwz(12, 29, 2212));
+        u.put(li(4, -1));
+        u.put(0x54A4003Eu);  // rlwinm r4,r5,0,0,31
+        u.put(kMtctrR12);
+        u.put(kBctrl);
+        u.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({u.range()}).table, 0u);
+    }
+    {
         // The -1 belongs to a later call, past a jump: not this slot's.
         Section t{0x80218000, {}};
         put_later_setter(t, 2212);
