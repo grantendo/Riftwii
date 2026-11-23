@@ -494,6 +494,31 @@ void TestWpadExtension() {
         EXPECT_EQ(found.offset, 2016u);
     }
     {
+        // One setter that swaps the extension slot on two paths (each
+        // returning on its own): still one setter, so found.
+        Section t{0x80218000, {}};
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x803D));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(5, 5, -20720));
+        t.put(mr(29, 4));
+        t.put(lwzx(31, 5, 3));
+        t.put(lwz(30, 31, 2208));
+        t.put(stw(29, 31, 2208));
+        t.put(addi(1, 1, 0x20));
+        t.put(kBlr);
+        t.put(lwz(30, 31, 2208));
+        t.put(stw(29, 31, 2208));
+        t.put(addi(1, 1, 0x20));
+        t.put(kBlr);
+        put_later_setter(t, 2212);
+        riftwii::WpadConnect2006 connect;
+        connect.table = 0x803CAF10u;
+        connect.offset = 2212;
+        EXPECT_EQ(riftwii::find_wpad_extension({t.range()}, connect).offset, 2208u);
+    }
+    {
         // No setter for the word before the connect slot: none.
         Section t{0x80218000, {}};
         put_later_setter(t, 2212);
