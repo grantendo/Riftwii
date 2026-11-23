@@ -153,6 +153,39 @@ void TestButtonsAndSticks() {
     EXPECT_EQ(hold | trig | release, 0u);
 }
 
+// "Connected only" (a pack does the controls): the controller still comes
+// and goes and the game is told so, but the stand-in's input stays at rest,
+// and a Wii Remote seen on the channel (the pack's own answers) doesn't
+// take it back.
+void TestConnectedOnly() {
+    rtgcwii w = fresh();
+    w.inputless = 1;
+    Pads pads;
+    std::uint32_t leave = 0, join = 0, hold = 0, trig = 0, release = 0;
+    std::int32_t axes[6];
+    pads.plug(0, kGcA | kGcB, 72);
+    rtgcwii_pads(&w, pads.s, 1000);
+    EXPECT_EQ(rtgcwii_on(&w, 0), 1);
+    rtgcwii_connect_change(&w, &leave, &join);
+    EXPECT_EQ(join, 1u);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    EXPECT_EQ(hold | trig | release, 0u);
+    EXPECT_EQ(axes[0], 0);  // the stick at rest, though tilted
+    // The pack answering WPADProbe, or filling KPAD: still the stand-in's.
+    rtgcwii_probed(&w, 0, 0);
+    EXPECT_EQ(rtgcwii_on(&w, 0), 1);
+    rtgcwii_kpad_read(&w, 0, 2, RTGCWII_NO_ERROR, 1010);
+    EXPECT_EQ(rtgcwii_on(&w, 0), 1);
+    rtgcwii_connect_change(&w, &leave, &join);
+    EXPECT_EQ(leave | join, 0u);
+    // Unplugged: gone, as usual.
+    pads.unplug(0);
+    rtgcwii_pads(&w, pads.s, 1000 + kGrace + 1);
+    EXPECT_EQ(rtgcwii_on(&w, 0), 0);
+    rtgcwii_connect_change(&w, &leave, &join);
+    EXPECT_EQ(leave, 1u);
+}
+
 // The HOME Menu's stand-in on a port that already has a permanent one
 // takes that port's channel, not a free one.
 void TestHomeOnOwnChannel() {
@@ -423,6 +456,7 @@ int main() {
     TestEmptyReadsWithoutError();
     TestSkipMissingCallback();
     TestDroppedReportAndHomeKeep();
+    TestConnectedOnly();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

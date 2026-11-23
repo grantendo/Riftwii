@@ -961,6 +961,16 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
         /* The permanent stand-in's channel, where no real controller is. */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
+            struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+            if (w->inputless && result > 0) {
+                /* Connected only: samples here are the pack's (it fills
+                 * KPAD itself), so the game gets them as they are. */
+#ifdef RT_PAD_FORM_REMOTE
+                rtgcwii_heard(w, (uint32_t)chan);
+#endif
+                interrupts_restore(msr);
+                return result;
+            }
             pad_gcwii_status(c, (uint32_t)chan, status);
 #ifdef RT_PAD_FORM_REMOTE
             rtgcwii_heard((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
@@ -1184,8 +1194,10 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     t = now();
     stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
-        /* The permanent stand-in's raw status, in its form's shape. */
-        if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
+        /* The permanent stand-in's raw status, in its form's shape; with
+         * "connected only" the pack's, left as it is. */
+        if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan) &&
+            !((const struct rtgcwii*)(uintptr_t)c->gcwii)->inputless) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
 #ifdef RT_PAD_FORM_REMOTE
             for (i = 0; i < count; ++i) pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, hold);
@@ -1272,6 +1284,12 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
         !pad_in_ram(status + RTGCWII_WPAD_FS_BYTES - 1))
         return;
     pad_gcwii_read_pads(c);
+    /* Connected only: a report with no error (WPADStatus.err, byte 41) is
+     * the pack's own, left as it is. */
+    if (w->inputless && status[41] == 0) {
+        rtgcwii_heard(w, (uint32_t)chan);
+        return;
+    }
     if (w->kpad_dpd != 0) {
         /* KPAD's camera switch for this channel, as at a KPAD read. */
         const uint8_t* wants =
