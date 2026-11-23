@@ -136,8 +136,22 @@ void TestPointerSpeed() {
     for (std::uint32_t t = 1; t <= 20; ++t) rtgcwii_pads(&w, p.s, kFrame + t * (kFrame / 2));  // ten frames
     rtgcwii_fs f;
     rtgcwii_pointing(&w, 0, &f);
-    // Each step rounds down (under one of 8192 across the screen a sample).
-    EXPECT_TRUE(f.pointer[0] <= 10 * RTGCWII_POINTER_STEP && f.pointer[0] > 10 * RTGCWII_POINTER_STEP - 20);
+    // What a step doesn't move is kept for the next, so twice a frame comes
+    // to the same ten steps (within one).
+    EXPECT_TRUE(f.pointer[0] <= 10 * RTGCWII_POINTER_STEP && f.pointer[0] >= 10 * RTGCWII_POINTER_STEP - 1);
+    // Samples a 64th of a frame apart (under a sixteenth each) still move it
+    // by the time they span: 640 samples, ten frames.
+    rtgcwii w3 = fresh();
+    Pads p3;
+    std::uint8_t* s3 = p3.plug(0);
+    rtgcwii_camera(&w3, 0, 1);
+    rtgcwii_pads(&w3, p3.s, kFrame);
+    s3[2] = 72;
+    for (std::uint32_t t = 1; t <= 640; ++t) rtgcwii_pads(&w3, p3.s, kFrame + t * (kFrame / 64));
+    rtgcwii_pointing(&w3, 0, &f);
+    // (At most the last sixteenth, not yet whole at the final sample, waits.)
+    EXPECT_TRUE(f.pointer[0] <= 10 * RTGCWII_POINTER_STEP &&
+                f.pointer[0] >= 10 * RTGCWII_POINTER_STEP - RTGCWII_POINTER_STEP / 16 - 1);
     rtgcwii w2 = fresh();
     Pads p2;
     std::uint8_t* s2 = p2.plug(0);
@@ -343,6 +357,40 @@ void TestWords() {
     EXPECT_EQ(f.pointer_shown, 0);
 }
 
+int s16_at(const std::uint8_t* p) { return static_cast<std::int16_t>((p[0] << 8) | p[1]); }
+
+// The raw status for a game that reads WPAD itself (rtgcwii_wpad_status), as
+// a bare Wii Remote held upright: its buttons, one g along its face at rest
+// and, once the game asks for the camera's format, the two dots, which move
+// against the pointer the control stick moves.
+void TestWpadStatus() {
+    rtgcwii w = fresh();
+    Pads p;
+    std::uint8_t* s = p.plug(0, kGcA);
+    rtgcwii_pads(&w, p.s, kFrame);
+    std::uint8_t out[RTGCWII_WPAD_FS_BYTES + 4];
+    std::memset(out, 0xEE, sizeof(out));
+    EXPECT_EQ(rtgcwii_wpad_status(&w, 0, out, kFrame, 0), RTGCWII_WPAD_CORE_BYTES);
+    EXPECT_EQ((out[0] << 8) | out[1], static_cast<int>(kWrA));
+    EXPECT_EQ(s16_at(out + 2), 0);
+    EXPECT_EQ(s16_at(out + 4), 0);
+    EXPECT_EQ(s16_at(out + 6), RTGCWII_ACC_G);
+    EXPECT_EQ(out[40], 0);  // a bare Wii Remote
+    EXPECT_EQ(out[RTGCWII_WPAD_CORE_BYTES], 0xEE);
+    // The camera's format: the dots centred; the stick right moves the
+    // pointer right, and the dots left.
+    w.format[0] = 2;
+    rtgcwii_wpad_status(&w, 0, out, kFrame, 0);
+    EXPECT_EQ(s16_at(out + 8), 512 + RTGCWII_DOT_APART / 2 + 1);
+    s[2] = 72;
+    rtgcwii_pads(&w, p.s, 2 * kFrame);
+    rtgcwii_pads(&w, p.s, 3 * kFrame);
+    rtgcwii_wpad_status(&w, 0, out, 3 * kFrame, 0);
+    EXPECT_TRUE(s16_at(out + 8) < 512 + RTGCWII_DOT_APART / 2 + 1);
+    // No controller on channel 1: nothing written.
+    EXPECT_EQ(rtgcwii_wpad_status(&w, 1, out, 3 * kFrame, 0), 0u);
+}
+
 }  // namespace
 
 int main() {
@@ -354,6 +402,7 @@ int main() {
     TestHorizon();
     TestShake();
     TestWords();
+    TestWpadStatus();
     if (g_failures == 0) std::cout << "gcwii_pointing: all passed" << std::endl;
     return g_failures == 0 ? 0 : 1;
 }
