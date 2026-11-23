@@ -969,13 +969,26 @@ bool pad_read_in_place(std::uint32_t address) {
     return is_pad_read(code, address);
 }
 
+// Whether a plain memory patch will be written: its `original` guard, if
+// any, matches the game as loaded (apply_memory_patches skips it
+// otherwise). Search and ocarina patches find their place only as they
+// are applied, so they count.
+bool patch_will_apply(const MemoryPatch& patch) {
+    if (patch.search || patch.ocarina || patch.original.empty()) return true;
+    const std::uint32_t at = memory_patch_target(patch);
+    const std::uint32_t ram_end = at < 0x90000000u ? 0x81800000u : 0x94000000u;
+    if (at >= ram_end || ram_end - at < patch.original.size()) return false;
+    return std::memcmp(reinterpret_cast<const void*>(at), patch.original.data(), patch.original.size()) == 0;
+}
+
 // Whether a pack's own bytes (its memory patches' values, not the game code
 // around them: a game's SI library reads the same registers) read the
 // GameCube controller ports straight from the hardware (reads_gc_ports).
 // A value kept in a file isn't loaded yet here, so isn't looked at.
 bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
     for (const MemoryPatch& patch : patches) {
-        if (!patch.value.empty() && reads_gc_ports(patch.value.data(), patch.value.size())) return true;
+        if (patch.value.empty() || !patch_will_apply(patch)) continue;
+        if (reads_gc_ports(patch.value.data(), patch.value.size())) return true;
     }
     return false;
 }
@@ -989,16 +1002,23 @@ bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
 bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t kpad_read, std::uint32_t wpad_probe) {
     constexpr std::uint32_t kReadEntry = 0x20;  // KPADRead's few words ahead of the read itself
     const auto is_bl = [](std::uint32_t w) { return (w & 0xFC000003u) == 0x48000001u; };
+    const auto bl_target = [](std::uint32_t at, std::uint32_t w) {
+        std::uint32_t offset = w & 0x03FFFFFCu;
+        if (offset & 0x02000000u) offset |= 0xFC000000u;  // a call back: sign-extended
+        return at + offset;
+    };
     for (const MemoryPatch& patch : patches) {
-        if (!patch.has_offset || patch.value.size() != 4 || (patch.offset & 3u) != 0) continue;
-        const std::uint32_t at = static_cast<std::uint32_t>(patch.offset);
-        if (at < 0x80000000u || at >= 0x81800000u) continue;
+        if (!patch.has_offset || patch.search || patch.ocarina || patch.value.size() != 4) continue;
+        // Where the patcher writes it (a low or uncached offset at its
+        // cached alias), and only a patch it will write.
+        const std::uint32_t at = memory_patch_target(patch);
+        if ((at & 3u) != 0 || at >= 0x81800000u || !patch_will_apply(patch)) continue;
         const std::uint32_t now = be32(patch.value.data());
         const std::uint32_t old = *reinterpret_cast<const volatile std::uint32_t*>(at);
-        if (!is_bl(now) || !is_bl(old)) continue;
-        std::uint32_t offset = old & 0x03FFFFFCu;
-        if (offset & 0x02000000u) offset |= 0xFC000000u;  // a call back: sign-extended
-        const std::uint32_t target = at + offset;
+        // A call the pack sends somewhere else: the same call written back
+        // reroutes nothing.
+        if (!is_bl(now) || !is_bl(old) || bl_target(at, now) == bl_target(at, old)) continue;
+        const std::uint32_t target = bl_target(at, old);
         if ((wpad_probe != 0 && target == wpad_probe) ||
             (kpad_read != 0 && target <= kpad_read && kpad_read - target <= kReadEntry))
             return true;
