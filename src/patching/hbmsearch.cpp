@@ -44,6 +44,10 @@ bool writes_register(std::uint32_t insn, std::uint32_t reg) {
             return reg_d(insn) == reg || reg_a(insn) == reg;
         case 151: case 215: case 407: case 662: case 918: case 150:  // the other stores
             return false;
+        case 0: case 32: case 4:                          // cmp, cmpl, tw: compare only
+        case 144: case 146: case 467:                     // mtcrf, mtmsr, mtspr: rS is read
+        case 54: case 86: case 470: case 982: case 1014:  // dcbst, dcbf, dcbi, icbi, dcbz
+            return false;
         default:
             return reg_d(insn) == reg;
     }
@@ -451,11 +455,17 @@ void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_wo
     }
 }
 
-// `mr rA,rS` (`or rA,rS,rS`) copying `from`: the register it copies to, or -1.
-int mr_copy_of(std::uint32_t insn, std::uint32_t from) {
+// `mask` (registers holding an argument, one bit each) after `insn`: a
+// register it writes no longer holds it, unless the write is an `mr` from
+// one that does.
+std::uint32_t track_argument(std::uint32_t insn, std::uint32_t mask) {
     const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
                     reg_d(insn) == ((insn >> 11) & 31u);
-    return mr && reg_d(insn) == from ? static_cast<int>(reg_a(insn)) : -1;
+    const bool copies = mr && ((mask >> reg_d(insn)) & 1u);
+    for (std::uint32_t reg = 0; reg < 32; ++reg)
+        if (((mask >> reg) & 1u) && writes_register(insn, reg)) mask &= ~(1u << reg);
+    if (copies) mask |= 1u << reg_a(insn);
+    return mask;
 }
 
 bool is_li(std::uint32_t insn, std::int32_t value) { return opcode(insn) == 14 && reg_a(insn) == 0 && simm(insn) == value; }
@@ -489,8 +499,8 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             const std::uint32_t d = reg_d(insn), a = reg_a(insn);
-            const int copy = mr_copy_of(insn, 4);
-            if (copy >= 0) from_r4 |= 1u << copy;
+            const std::uint32_t r4_here = from_r4;  // as this instruction finds them
+            from_r4 = track_argument(insn, from_r4);
             if (opcode(insn) == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;  // lis
             if (opcode(insn) == 14 && a != 0 && high[a] != 0)                    // addi rD,rA,lo
                 address[d] = high[a] + static_cast<std::uint32_t>(simm(insn));
@@ -503,7 +513,7 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             }
             if (block < 0 || static_cast<int>(a) != block || simm(insn) < kBlockFields) continue;
             if (opcode(insn) == 32) loaded = simm(insn);  // lwz: the old callback
-            if (opcode(insn) != 36 || simm(insn) != loaded || !((from_r4 >> d) & 1u)) continue;
+            if (opcode(insn) != 36 || simm(insn) != loaded || !((r4_here >> d) & 1u)) continue;
             // stw: the new one, the second argument. Once per function, though
             // more than one of its paths swaps the same slot.
             const std::pair<std::uint32_t, std::int32_t> setter(table, loaded);
@@ -588,14 +598,14 @@ std::uint32_t find_wpad_read(const std::vector<CodeRange>& text) {
         std::uint32_t from_r3 = 1u << 3, from_r4 = 1u << 4;
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
-            const int c3 = mr_copy_of(insn, 3), c4 = mr_copy_of(insn, 4);
-            if (c3 >= 0) from_r3 |= 1u << c3;
-            if (c4 >= 0) from_r4 |= 1u << c4;
+            // The checks see the registers as this instruction finds them.
             index = index || indexes_channel(insn, from_r3);
             copy = copy || (is_li(insn, kCoreStatusBytes) && reg_d(insn) == 5);
             corrupt = corrupt || is_cmpwi(insn, -7);
             busy = busy || is_cmpwi(insn, -2);
             error = error || (opcode(insn) == 38 && simm(insn) == kErrorAt && ((from_r4 >> reg_a(insn)) & 1u));
+            from_r3 = track_argument(insn, from_r3);
+            from_r4 = track_argument(insn, from_r4);
         }
         if (!(index && copy && corrupt && busy && error)) return;
         found = r.address + static_cast<std::uint32_t>(4 * start);
@@ -611,18 +621,20 @@ std::uint32_t find_wpad_set_format(const std::vector<CodeRange>& text) {
     unsigned matches = 0;
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
         bool none = false, busy = false, compares = false, stores = false;
-        std::uint32_t from_r4 = 0;  // copies of r4 (the format), one bit each
+        // r4 (the format) and its copies, one bit each; the checks count
+        // its copies only, as this setter keeps the format in a copy.
+        std::uint32_t from_r4 = 1u << 4;
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
-            const int c = mr_copy_of(insn, 4);
-            if (c >= 0) from_r4 |= 1u << c;
+            const std::uint32_t copies = from_r4 & ~(1u << 4);  // as this instruction finds them
+            from_r4 = track_argument(insn, from_r4);
             // "No controller": returned as such, or the probe's result kept
             // and compared with it (The Complete Saga's 2007 WPAD).
             none = none || is_li(insn, -1) || is_cmpwi(insn, -1);
             busy = busy || is_li(insn, -2);
             const bool cmplw = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 32 && ((insn >> 21) & 1u) == 0;
-            compares = compares || (cmplw && (((from_r4 >> reg_a(insn)) & 1u) || ((from_r4 >> ((insn >> 11) & 31u)) & 1u)));
-            stores = stores || (opcode(insn) == 36 && simm(insn) >= kBlockFields && ((from_r4 >> reg_d(insn)) & 1u));
+            compares = compares || (cmplw && (((copies >> reg_a(insn)) & 1u) || ((copies >> ((insn >> 11) & 31u)) & 1u)));
+            stores = stores || (opcode(insn) == 36 && simm(insn) >= kBlockFields && ((copies >> reg_d(insn)) & 1u));
         }
         if (!(none && busy && compares && stores)) return;
         found = r.address + static_cast<std::uint32_t>(4 * start);

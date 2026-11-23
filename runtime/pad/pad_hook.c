@@ -1374,6 +1374,15 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
     if (!c->gcwii || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS || !pad_in_ram(status) ||
         !pad_in_ram(status + RTGCWII_WPAD_FS_BYTES - 1))
         return;
+    if ((int8_t)status[RTGCWII_WPAD_ERR] == 0) {
+        /* The game's own read found a real Wii Remote there: its report
+         * stays, and the stand-in steps aside as it does when WPADProbe
+         * finds one. */
+        msr = interrupts_off();
+        rtgcwii_probed(w, (uint32_t)chan, 0);
+        interrupts_restore(msr);
+        return;
+    }
     pad_gcwii_read_pads(c);
     if (w->kpad_dpd != 0) {
         /* KPAD's camera switch for this channel, as at a KPAD read. */

@@ -501,13 +501,24 @@ uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, 
     format = w->format[channel];
     rtgcwii_camera(w, channel,
                    kpad_camera || format == RTGCWII_FMT_CORE_ACC_DPD || format == RTGCWII_FMT_FS_ACC_DPD);
+    {
+        /* The report needs only the buttons held: what the game's KPAD reads
+         * were last given (and so what is new at its next one) stays as it
+         * was, as for the HOME Menu's stand-in. */
+        const uint32_t worked = w->worked[channel], delivered = w->delivered[channel];
+        const uint32_t trig = w->trig[channel], release = w->release[channel];
 #ifdef RT_PAD_FORM_SIDEWAYS
-    (void)now;
-    rtgcwii_sideways(w, channel, &f);
+        (void)now;
+        rtgcwii_sideways(w, channel, &f);
 #else
-    rtgcwii_nunchuk(w, channel, now, &f);
-    if (format >= RTGCWII_FMT_FS_FIRST && format <= RTGCWII_FMT_FS_ACC_DPD) bytes = RTGCWII_WPAD_FS_BYTES;
+        rtgcwii_nunchuk(w, channel, now, &f);
+        if (format >= RTGCWII_FMT_FS_FIRST && format <= RTGCWII_FMT_FS_ACC_DPD) bytes = RTGCWII_WPAD_FS_BYTES;
 #endif
+        w->worked[channel] = worked;
+        w->delivered[channel] = delivered;
+        w->trig[channel] = trig;
+        w->release[channel] = release;
+    }
     for (i = 0; i < bytes; ++i) out[i] = 0;
     rtgcwii_put16(out, (int32_t)(f.hold & 0xFFFFu));
     rtgcwii_put_acc(out + 2, f.acc);
