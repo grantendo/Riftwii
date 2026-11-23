@@ -464,6 +464,7 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             if (lwzx && address[a] != 0) {
                 table = address[a];
                 block = static_cast<int>(d);
+                loaded = -1;  // a load from another block isn't this one's
                 continue;
             }
             if (block < 0 || static_cast<int>(a) != block || simm(insn) < kBlockFields) continue;
