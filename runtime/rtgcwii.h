@@ -66,6 +66,11 @@ struct rtgcwii {
      * kpad_dpd_offset, 0: not found (the pointer shows only after the
      * C-stick moves). Loader-filled. */
     uint32_t kpad_dpd, kpad_dpd_stride, kpad_dpd_offset;
+    /* The HOME Menu's stand-in's channel (one bit) when the game knew it
+     * as this stand-in's as the HOME stand-in took it, 0: a Classic one.
+     * It keeps that shape until the next time it takes a channel, though
+     * the controller unplugs under the menu (Nunchuk form only). */
+    uint32_t home_shaped;
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game

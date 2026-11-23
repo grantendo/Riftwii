@@ -728,10 +728,12 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
 
 /* The channels the game knows as this stand-in's: held now, or told of and
  * not yet told it's gone (its controller unplugged under the HOME Menu), so
- * the HOME Menu's stand-in there keeps the shape until the game hears. */
+ * the HOME Menu's stand-in there keeps the shape until the game hears; and
+ * the HOME stand-in's own channel when it took one of these, so a game
+ * with no connect callback (nothing told) keeps that shape too. */
 static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c) {
     const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
-    return c->gcwii ? pad_gcwii_own(c) | w->told : 0u;
+    return c->gcwii ? pad_gcwii_own(c) | w->told | w->home_shaped : 0u;
 }
 
 /* The HOME Menu's stand-in on a channel this stand-in holds: the game knows
@@ -842,6 +844,16 @@ static void pad_home_check(struct rt_pad_context* c, const uint8_t* status, uint
         c->home_buffer = 0;
         c->home_fresh = 0;
         c->home_judged = 0;
+#ifdef RT_PAD_FORM_NUNCHUK
+        /* The shape it takes the channel in stays its own until it next
+         * takes one (pad_gcwii_shaped). */
+        if (c->gcwii) {
+            struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+            w->home_shaped = 0;
+            if (c->home.channel < RTGCWII_CHANNELS)
+                w->home_shaped = pad_gcwii_shaped(c) & (1u << c->home.channel);
+        }
+#endif
     }
 }
 
