@@ -455,15 +455,32 @@ void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_wo
     }
 }
 
-// `mask` (registers holding an argument, one bit each) after `insn`: a
-// register it writes no longer holds it, unless the write is an `mr` from
-// one that does. A register restored from the stack (`lwz`/`lmw` off r1)
-// is left as it was: that's an epilogue, and the scan reads straight
+// Whether the word at `k` (before word `end`) restores a register in an
+// epilogue: a load off r1 (`lwz`/`lmw`) followed, through nothing but more
+// such loads and `mtlr`, by the frame's undoing (`addi r1,r1,N`, N > 0) within
+// a few words. An ordinary reload through the stack isn't one.
+bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end) {
+    constexpr std::size_t kWithin = 8;
+    const auto restore_load = [](std::uint32_t w) { return (opcode(w) == 32 || opcode(w) == 46) && reg_a(w) == 1; };
+    if (!restore_load(be32(bytes + 4 * k))) return false;
+    for (std::size_t j = k + 1; j < end && j <= k + kWithin; ++j) {
+        const std::uint32_t w = be32(bytes + 4 * j);
+        if (opcode(w) == 14 && reg_d(w) == 1 && reg_a(w) == 1 && simm(w) > 0) return true;
+        const bool mtlr = (w & 0xFC1FFFFFu) == 0x7C0803A6u;
+        if (!restore_load(w) && !mtlr) return false;
+    }
+    return false;
+}
+
+// `mask` (registers holding an argument, one bit each) after the word at
+// `k` (before word `end`): a register it writes no longer holds it, unless
+// the write is an `mr` from one that does. A register restored in an
+// epilogue (epilogue_restore) is left as it was: the scan reads straight
 // through an early return's epilogue into the code its branch around it
 // reaches, where the register still holds the argument.
-std::uint32_t track_argument(std::uint32_t insn, std::uint32_t mask) {
-    const bool restore = (opcode(insn) == 32 || opcode(insn) == 46) && reg_a(insn) == 1;
-    if (restore) return mask;
+std::uint32_t track_argument(const std::uint8_t* bytes, std::size_t k, std::size_t end, std::uint32_t mask) {
+    const std::uint32_t insn = be32(bytes + 4 * k);
+    if (epilogue_restore(bytes, k, end)) return mask;
     const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
                     reg_d(insn) == ((insn >> 11) & 31u);
     const bool copies = mr && ((mask >> reg_d(insn)) & 1u);
@@ -505,7 +522,7 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             const std::uint32_t d = reg_d(insn), a = reg_a(insn);
             const std::uint32_t r4_here = from_r4;  // as this instruction finds them
-            from_r4 = track_argument(insn, from_r4);
+            from_r4 = track_argument(r.bytes, k, end, from_r4);
             if (opcode(insn) == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;  // lis
             if (opcode(insn) == 14 && a != 0 && high[a] != 0)                    // addi rD,rA,lo
                 address[d] = high[a] + static_cast<std::uint32_t>(simm(insn));
@@ -609,8 +626,8 @@ std::uint32_t find_wpad_read(const std::vector<CodeRange>& text) {
             corrupt = corrupt || is_cmpwi(insn, -7);
             busy = busy || is_cmpwi(insn, -2);
             error = error || (opcode(insn) == 38 && simm(insn) == kErrorAt && ((from_r4 >> reg_a(insn)) & 1u));
-            from_r3 = track_argument(insn, from_r3);
-            from_r4 = track_argument(insn, from_r4);
+            from_r3 = track_argument(r.bytes, k, end, from_r3);
+            from_r4 = track_argument(r.bytes, k, end, from_r4);
         }
         if (!(index && copy && corrupt && busy && error)) return;
         found = r.address + static_cast<std::uint32_t>(4 * start);
@@ -632,7 +649,7 @@ std::uint32_t find_wpad_set_format(const std::vector<CodeRange>& text) {
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             const std::uint32_t copies = from_r4 & ~(1u << 4);  // as this instruction finds them
-            from_r4 = track_argument(insn, from_r4);
+            from_r4 = track_argument(r.bytes, k, end, from_r4);
             // "No controller": returned as such, or the probe's result kept
             // and compared with it (The Complete Saga's 2007 WPAD).
             none = none || is_li(insn, -1) || is_cmpwi(insn, -1);
