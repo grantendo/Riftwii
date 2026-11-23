@@ -395,8 +395,9 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
 namespace {
 
 // Calls `visit(range, start, end)` (word indexes) for each framed function
-// in `text`: from its `stwu r1` to its first `blr`, or to the next `stwu r1`
-// when none comes before it, if that is at most `max_words` long.
+// in `text`: from its `stwu r1` to where it ends (function_end: its last
+// return or tail call after the frame is undone, else its first return,
+// else the next `stwu r1`), if that is at most `max_words` long.
 template <typename Visit>
 void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_words, Visit visit) {
     for (const CodeRange& r : text) {
@@ -408,9 +409,9 @@ void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_wo
             if (i >= words) break;
             const std::size_t start = i++;
             while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
-            std::size_t end = start;
-            while (end < i && be32(r.bytes + 4 * end) != kBlr) ++end;
-            if (end < i) ++end;
+            // To its last return after the frame is undone (an early
+            // error return doesn't end it), else its first.
+            const std::size_t end = function_end(r.bytes, start, i);
             if (end - start <= max_words) visit(r, start, end);
         }
     }
@@ -479,8 +480,9 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
     constexpr std::uint32_t kBctrl = 0x4E800421u;
     constexpr unsigned kCallWindow = 8;  // words from the slot's load to its call
     const std::vector<std::pair<std::uint32_t, std::int32_t>> setters = wpad_setters(text);
-    // The slots WPAD calls with "no controller".
-    std::vector<std::pair<std::uint32_t, std::int32_t>> told_gone;
+    // The slot offsets WPAD calls with "no controller" (the call's load
+    // doesn't say which table's block it is: that is the setters').
+    std::vector<std::int32_t> told_gone;
     for (const CodeRange& r : text) {
         if (r.bytes == nullptr) continue;
         const std::size_t words = r.size / 4;
@@ -494,8 +496,8 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
             for (std::size_t k = i + 1; k < words && k <= i + kCallWindow; ++k) {
                 const std::uint32_t next = be32(r.bytes + 4 * k);
                 if (next == kBctrl) {
-                    if (gone && std::find(told_gone.begin(), told_gone.end(), *setter) == told_gone.end())
-                        told_gone.push_back(*setter);
+                    if (gone && std::find(told_gone.begin(), told_gone.end(), setter->second) == told_gone.end())
+                        told_gone.push_back(setter->second);
                     break;
                 }
                 // A jump or return, or r12 loaded again: not this slot's call
@@ -508,9 +510,16 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
         }
     }
     if (told_gone.size() != 1) return WpadConnect2006{};
+    // One table with a setter for that offset; two: not guessed.
+    std::uint32_t table = 0;
+    for (const auto& setter : setters) {
+        if (setter.second != told_gone[0]) continue;
+        if (table != 0 && table != setter.first) return WpadConnect2006{};
+        table = setter.first;
+    }
     WpadConnect2006 found;
-    found.table = told_gone[0].first;
-    found.offset = static_cast<std::uint32_t>(told_gone[0].second);
+    found.table = table;
+    found.offset = static_cast<std::uint32_t>(told_gone[0]);
     return found;
 }
 

@@ -421,6 +421,26 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
     }
     {
+        // Setters for the called slot in two tables: which table WPAD's
+        // call goes through can't be told, so none.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x8040));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(5, 5, 0x100));  // another table, 0x80400100
+        t.put(mr(29, 4));
+        t.put(lwzx(31, 5, 3));
+        t.put(lwz(30, 31, 2212));
+        t.put(stw(29, 31, 2212));
+        t.put(kBlr);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
+    }
+    {
         // Two slots called with it: unsure, none.
         Section t{0x80218000, {}};
         put_later_setter(t, 2208);
