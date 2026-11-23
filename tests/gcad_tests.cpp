@@ -1684,6 +1684,57 @@ static void TestPatchedCodeRanges() {
 
 // The Wii Remotes' screen-dimming reset found with no PADRead to start
 // from: the one-store reset the Wii Remote library (near WPADProbe) calls.
+// KPAD's camera switch where the game never links KPADEnableDPD, found
+// where KPAD reads it before WPADIsDpdEnabled (Super Mario Galaxy 2's KPAD:
+// blocks from 0x80750A00, 1672 bytes each, the switch at +0x642).
+static void TestKpadDpdSwitch() {
+    const auto is_dpd = [](Asm& a) {
+        const std::uint32_t at = a.here();
+        a.prologue();
+        a.op(0x3C808079u);  // lis r4,0x8079
+        a.op(0x5460103Au);  // slwi r0,r3,2
+        a.op(0x38841C10u);  // addi r4,r4,0x1C10
+        a.op(0x7FE4002Eu);  // lwzx r31,r4,r0
+        a.op(0x83FF0838u);  // lwz r31,0x838(r31): +2104
+        a.op(0x7FE3FB78u);  // mr r3,r31
+        a.blr();
+        return at;
+    };
+    const auto reader = [](Asm& a, std::uint32_t call, std::uint32_t lbz) {
+        a.prologue();
+        a.op(0x3FE08075u);  // lis r31,0x8075
+        a.op(0x3BFF0A00u);  // addi r31,r31,0x0A00
+        a.op(0x1CC30688u);  // mulli r6,r3,1672
+        a.op(0x389F0000u);  // addi r4,r31,0 (a copy of the base)
+        a.op(0x7FC43214u);  // add r30,r4,r6
+        a.op(lbz);          // lbz r0,offset(r30)
+        a.op(0x2C000000u);  // cmpwi r0,0
+        a.op(0x7F83E378u);  // mr r3,r28
+        a.bl(call);
+        a.blr();
+    };
+    Asm a{0x8054C000u, {}};
+    const std::uint32_t call = is_dpd(a);
+    reader(a, call, 0x881E0642u);  // lbz r0,0x642(r30)
+    std::vector<std::uint8_t> code = a.bytes();
+    std::vector<riftwii::CodeRange> text = {{a.base, code.data(), code.size()}};
+    riftwii::KpadDpd k = riftwii::find_kpad_dpd_switch(text);
+    EXPECT_EQ(k.base, 0x80750A00u);
+    EXPECT_EQ(k.stride, 1672u);
+    EXPECT_EQ(k.offset, 0x642u);
+    EXPECT_TRUE(k.enable != 0);
+    // A second read of another byte before another call: two switches, not guessed.
+    reader(a, call, 0x881E0645u);  // lbz r0,0x645(r30)
+    code = a.bytes();
+    text = {{a.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
+    // No WPADIsDpdEnabled: nothing.
+    Asm b{0x8054C000u, {}};
+    reader(b, 0x8054C000u, 0x881E0642u);
+    code = b.bytes();
+    text = {{b.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
+}
 // KPAD's camera switch, read from KPADEnableDPD's code just after
 // KPADDisableDPD's (Batman: The Brave and the Bold's pair).
 static void TestKpadEnableDpd() {
@@ -2500,6 +2551,7 @@ int main() {
     TestIdleResetSearch();
     TestRemotesIdleReset();
     TestKpadEnableDpd();
+    TestKpadDpdSwitch();
     TestGcPadMotorSearch();
     TestGcSiTypeCacheSearch();
     TestGcSiProbeSearch();
