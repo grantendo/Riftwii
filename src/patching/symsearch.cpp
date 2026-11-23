@@ -1488,6 +1488,9 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
             const std::uint32_t insn = be32(bytes + k * 4);
             const std::uint32_t op = insn >> 26;
             const std::uint32_t low = insn & 0xFFFFu;
+            // rX loaded anew (`lis r6,0x8000` after it): no longer the
+            // hardware's base, so a use after it reads plain memory.
+            if (op == 15 && ((insn >> 21) & 31u) == reg) break;
             if (low < kSiFirst || low >= kSiEnd) continue;
             // ori rA,rS,low takes rX as its source (rS); addi and the
             // loads and stores as their base (rA).
