@@ -137,6 +137,12 @@ struct PadHook {
     bool standin_nunchuk = false;
     // ...or a sideways Wii Remote (RT_PAD_FORM_SIDEWAYS).
     bool standin_sideways = false;
+    // "Connected only" (#587): a pack does the controls, so the stand-in
+    // tells the game a Wii Remote is there and answers its questions, but
+    // gives no input of its own. For a pack that reads the GameCube ports
+    // itself, once RiftWii routes the adapter into it (not yet: until then
+    // the stand-in keeps the controls, find_pad_functions).
+    bool standin_inputless = false;
     // ...or a pointing Wii Remote (RT_PAD_FORM_POINTING).
     bool standin_pointing = false;
     // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on

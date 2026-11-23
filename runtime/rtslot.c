@@ -15,6 +15,8 @@ void rtslot_probed(struct rtslot* s, uint32_t channel, int32_t result) {
     uint32_t bit;
     if (channel >= RTSLOT_SLOTS || result == -2) return;  /* busy: no answer either way */
     ++s->probe_counts[channel];
+    /* Connected only: a controller found is the pack's, not a real one. */
+    if (result == 0 && s->inputless) return;
     bit = 1u << channel;
     if (result == 0) {
         s->real |= bit;

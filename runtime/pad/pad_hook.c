@@ -1089,8 +1089,19 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         pad_gcwii_read_pads(c);
         /* Samples the game's own read brought are a real controller's: they
          * go back as they are, even if the refresh just saw it leave (the
-         * next read finds the new owner; CodeRabbit on #609). */
-        if (result > 0) return result;
+         * next read finds the new owner; CodeRabbit on #609). Connected
+         * only, they are the pack's on the stand-in's own slot, which the
+         * game has now heard of. */
+        if (result > 0) {
+#ifdef RT_PAD_FORM_REMOTE
+            if (w->slot.inputless && (uint32_t)chan < RTGCWII_CHANNELS) {
+                msr = interrupts_off();
+                if (rtslot_on(&w->slot, (uint32_t)chan)) rtgcwii_heard(w, (uint32_t)chan);
+                interrupts_restore(msr);
+            }
+#endif
+            return result;
+        }
     }
     msr = interrupts_off();
     t = now();
@@ -1377,7 +1388,8 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     owner = pad_owner(c, (uint32_t)chan, t);
     if (owner != RTSLOT_HOME) {
         /* The permanent stand-in's raw status, in its form's shape. */
-        if (owner == RTSLOT_STANDIN) {
+        /* Connected only: the raw samples there are the pack's, left as they are. */
+        if (owner == RTSLOT_STANDIN && !((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot.inputless) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
 #ifdef RT_PAD_FORM_REMOTE
             const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
@@ -1514,6 +1526,16 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
         !pad_in_ram(status + RTGCWII_WPAD_FS_BYTES - 1))
         return;
     pad_gcwii_wii_read(c);
+    /* Connected only: a report with no error is the pack's own, left as it
+     * is, never taken for a real Wii Remote; the game has heard of the
+     * stand-in there. */
+    if (w->slot.inputless && (int8_t)status[RTGCWII_WPAD_ERR] == 0) {
+        pad_gcwii_read_pads(c);
+        msr = interrupts_off();
+        if (rtslot_on(&w->slot, (uint32_t)chan)) rtgcwii_heard(w, (uint32_t)chan);
+        interrupts_restore(msr);
+        return;
+    }
     /* The report's answer is noted before the pads are polled (as at a KPAD
      * read), so whatever the poll then learns is newer than this report and
      * stands (CodeRabbit on #616). */
