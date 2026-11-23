@@ -519,6 +519,28 @@ void TestWpadExtension() {
         EXPECT_EQ(riftwii::find_wpad_extension({t.range()}, connect).offset, 2208u);
     }
     {
+        // A load from one table's block, then a store into another's: no
+        // setter for either (the store has no load of its own).
+        Section t{0x80218000, {}};
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x803D));
+        t.put(addi(5, 5, -20720));
+        t.put(mr(29, 4));
+        t.put(lwzx(31, 5, 3));
+        t.put(lwz(30, 31, 2208));
+        t.put(lis(6, 0x8040));
+        t.put(addi(6, 6, 0x100));
+        t.put(lwzx(28, 6, 3));
+        t.put(stw(29, 28, 2208));
+        t.put(kBlr);
+        put_later_setter(t, 2212);
+        riftwii::WpadConnect2006 connect;
+        connect.table = 0x80400100u;
+        connect.offset = 2212;
+        EXPECT_EQ(riftwii::find_wpad_extension({t.range()}, connect).table, 0u);
+    }
+    {
         // No setter for the word before the connect slot: none.
         Section t{0x80218000, {}};
         put_later_setter(t, 2212);
