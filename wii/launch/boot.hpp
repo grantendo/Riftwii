@@ -13,6 +13,7 @@
 #include "riftwii/disc.hpp"
 #include "riftwii/dol.hpp"
 #include "riftwii/fst.hpp"
+#include "riftwii/padlayout.hpp"
 #include "riftwii/gameconfig.hpp"
 #include "riftwii/hook.hpp"
 #include "riftwii/patch.hpp"
@@ -233,6 +234,10 @@ struct LaunchExtras {
     // game's with USB controllers on, a GameCube game's always).
     bool pad_calibrated = false;
     rtpadcal_table pad_calibration{};
+    // The game's own GameCube controller layout for the stand-in's shape
+    // (sd:/riftwii/layouts/<game ID>.txt, #587's light patches); present
+    // false: the shape's built-in layout.
+    GcLayout gc_layout;
     bool screenshots = false;
     bool screenshots_demo = false;
     bool region_video = false;  // the Region video fix (riftwii/gxpatches.hpp)

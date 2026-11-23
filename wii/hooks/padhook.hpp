@@ -9,6 +9,7 @@
 
 #include "riftwii/dol.hpp"
 #include "riftwii/mempatch.hpp"
+#include "riftwii/padlayout.hpp"
 #include "riftwii/patch.hpp"
 #include "riftwii/symsearch.hpp"
 #include "rtpadcal.h"
@@ -126,6 +127,10 @@ struct PadHook {
     // The GameCube controllers' calibrations (Settings > Controllers), put
     // after the driver's state in MEM2; nullptr: none stored, none placed.
     const rtpadcal_table* calibration = nullptr;
+    // The game's own GameCube controller layout for the stand-in's shape
+    // (riftwii/padlayout.hpp), copied into its state; nullptr: the shape's
+    // built-in layout.
+    const GcLayout* layout = nullptr;
     std::uint32_t calibration_base = 0;     // where the table went, 0: none
     // GameCube controllers as Classic Controllers (#587): the game's own
     // setting (off by default). Its state goes after the calibrations in

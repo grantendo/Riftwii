@@ -14,6 +14,7 @@
 #include "log.hpp"
 #include "online.hpp"
 #include "padcalstore.hpp"
+#include "padlayoutstore.hpp"
 #include "textfile.hpp"
 #include "riftwii/homeorder.hpp"
 #include "riftwii/settingsfile.hpp"
@@ -387,6 +388,14 @@ void PrepareLaunchExtras(const FrontendState& state, const HeadlessLaunch* headl
     extras.gc_standin_nunchuk = state.model.game.gc_controllers == "nunchuk";
     extras.gc_standin_sideways = state.model.game.gc_controllers == "sideways";
     extras.gc_standin_pointing = state.model.game.gc_controllers == "pointing";
+    // The game's own layout for that shape, read while the card is RiftWii's.
+    // (The pointing shape has no section of its own yet: its built-in layout.)
+    if (extras.gc_standin && !extras.gc_standin_pointing) {
+        const GcShape shape = extras.gc_standin_nunchuk    ? GcShape::Nunchuk
+                              : extras.gc_standin_sideways ? GcShape::Sideways
+                                                           : GcShape::Classic;
+        extras.gc_layout = LoadPadLayout(extras.game_id, shape);
+    }
     extras.region_strings = state.model.game.region_strings == "on";
     extras.wfc_domain = wfc_domain(extras.server, Settings().wfc_domain);
     const std::string& adapter = Settings().gc_adapter;
