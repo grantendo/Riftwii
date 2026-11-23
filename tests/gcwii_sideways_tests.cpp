@@ -268,6 +268,7 @@ void TestWpadStatus() {
         rtgcwii_pads(&w2, p2.s, 17);
         rtgcwii_wpad_status(&w2, 0, out, 17, 0);
         EXPECT_EQ((out[0] << 8) | out[1], static_cast<int>(kWrA));
+        rtgcwii_pads(&w2, p2.s, 33);  // a new sample: the KPAD read works its words out again
         rtgcwii_sideways(&w2, 0, &f);
         EXPECT_EQ(f.trig, kWrA);
     }
