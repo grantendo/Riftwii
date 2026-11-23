@@ -1371,6 +1371,39 @@ static int pad_tell_connect(const struct rt_pad_context* c, uint32_t chan, int32
 #endif
 
 #if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
+/* The attachment the stand-in's form has, as WPAD reports it: a Nunchuk
+ * (1), a Classic Controller (2); the sideways Wii Remote has none (-1). */
+#if defined(RT_PAD_FORM_SIDEWAYS)
+#define PAD_EXTENSION_TYPE (-1)
+#elif defined(RT_PAD_FORM_NUNCHUK)
+#define PAD_EXTENSION_TYPE 1
+#else
+#define PAD_EXTENSION_TYPE 2
+#endif
+
+/* WPAD's extension callback for channel `chan` (the game's own, set with
+ * WPADSetExtensionCallback; its slot is in the channel's control block)
+ * told the stand-in's attachment, as WPAD tells it once it has read a Wii
+ * Remote's extension. Super Mario Galaxy 2 notes "Nunchuk attached" only
+ * from it, and asks for a Nunchuk until it hears. Called after the connect
+ * callback, which may be what sets it (Galaxy 2's does), with interrupts
+ * as the game's PADRead had them. */
+static void pad_tell_extension(const struct rt_pad_context* c, uint32_t chan) {
+#if PAD_EXTENSION_TYPE >= 0
+    const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
+    uint32_t block, callback;
+    if (!c->gcwii || w->wpad_ext_table == 0 || chan >= RTGCWII_CHANNELS) return;
+    block = *(const volatile uint32_t*)(uintptr_t)(w->wpad_ext_table + chan * 4u);
+    if (!pad_in_ram((const void*)(uintptr_t)block)) return;
+    callback = *(const volatile uint32_t*)(uintptr_t)(block + w->wpad_ext_offset);
+    if (callback == 0 || !pad_in_ram((const void*)(uintptr_t)callback)) return;
+    ((void (*)(int32_t, int32_t))(uintptr_t)callback)((int32_t)chan, PAD_EXTENSION_TYPE);
+#else
+    (void)c;
+    (void)chan;
+#endif
+}
+
 /* The game's connect callback hears of the permanent stand-ins coming and
  * going, one change at a time from what is true now (rtgcwii_next_change),
  * with interrupts on for the game's code. A PADRead nested in this one (an
@@ -1413,6 +1446,13 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
             }
             skip |= 1u << chan;
             continue;
+        }
+        /* Connected: then what is plugged into it, as WPAD tells it once
+         * it has read the Wii Remote's extension. */
+        if (reason == 0) {
+            interrupts_restore(msr);
+            pad_tell_extension(c, chan);
+            msr = interrupts_off();
         }
         /* A real controller that arrived while "gone" was being told (its
          * own "connected" may have come first): the channel has a controller,

@@ -144,6 +144,9 @@ struct PadHook {
     // WPAD with no KPAD-level callback found, find_wpad_connect_later), 0: none.
     std::uint32_t wpad_connect_table = 0, wpad_connect_offset = 0;
     bool wpad_connect_later = false;  // the later WPAD's (its sleeps don't read the pads)
+    // The game's WPAD extension callbacks (find_wpad_extension, beside the
+    // connect callback's slot), told the stand-in's attachment, 0: none.
+    std::uint32_t wpad_ext_table = 0, wpad_ext_offset = 0;
     // The stand-in below KPAD, in the Wii Remote forms: WPADRead and
     // WPADSetDataFormat, for a game that reads WPAD itself (Punch-Out!!),
     // 0: not hooked.
