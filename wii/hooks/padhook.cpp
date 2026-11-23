@@ -966,6 +966,38 @@ bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
     return false;
 }
 
+// Whether an applied memory patch lands inside the KPAD read (from its entry
+// to the next function's `stwu r1`). The stand-in answers that read in the
+// game's place, so a pack hooking inside it (quatric's Excite Truck and
+// Mario Super Sluggers patches add the pad there) never runs while the
+// stand-in is a Wii Remote "connected only"; quatric's Punch-Out!! patch adds
+// it in the game's own pad code, after the read, and does.
+bool pack_patches_kpad_read(const std::vector<MemoryPatch>& patches, const std::vector<CodeRange>& text,
+                            std::uint32_t kpad_read) {
+    if (kpad_read == 0) return false;
+    std::uint32_t end = 0;
+    for (const CodeRange& r : text) {
+        if (r.bytes == nullptr || kpad_read < r.address || kpad_read - r.address >= r.size) continue;
+        end = r.address + static_cast<std::uint32_t>(r.size);
+        for (std::uint32_t at = kpad_read + 4; at + 4 <= r.address + r.size; at += 4) {
+            if ((be32(r.bytes + (at - r.address)) & 0xFFFF0000u) == 0x94210000u) {  // stwu r1,d(r1)
+                end = at;
+                break;
+            }
+        }
+    }
+    if (end == 0) return false;
+    const std::vector<bool> applies = patches_that_apply(patches);
+    for (std::size_t i = 0; i < patches.size(); ++i) {
+        const MemoryPatch& patch = patches[i];
+        if (!applies[i] || !patch.has_offset || patch.search || patch.value.empty()) continue;
+        const std::uint32_t at = memory_patch_target(patch);
+        const std::uint32_t bytes = static_cast<std::uint32_t>(patch.value.size());
+        if (at < end && at + bytes > kpad_read) return true;
+    }
+    return false;
+}
+
 // Whether every port read in the pack's applied memory patches can be pointed
 // at the copy (gc_ports_routable): none shares its base with another
 // hardware register.
@@ -1155,18 +1187,30 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
                             : "it reads the GameCube ports, in the program file it brings");
         standin = false;
         out.standin = out.standin_nunchuk = out.standin_sideways = out.standin_pointing = false;
-    } else if (pack_ports && !pack_wraps) {
+    } else if (pack_ports) {
         // A pack that reads the GameCube ports straight from the hardware
-        // over the game's own program (quatric's GameCube controller patches)
-        // gets nothing there from the adapter, which isn't a port: until
-        // RiftWii routes the adapter into such a pack, the stand-in keeps
-        // the controls (the pack's code then has no pad to read). Once it
-        // does, the stand-in becomes "connected only" (standin_inputless).
-        // quatric's Excite Truck patch also takes its input inside KPAD's
-        // handling of a Wii Remote's reports, which a connection alone
-        // doesn't start.
-        logf("GameCube adapter: a pack reads the GameCube controller ports itself, which the adapter doesn't "
-             "answer; the GameCube controllers' stand-in keeps the controls for this launch\n");
+        // over the game's own program but leaves the Wii controller reads to
+        // the game (quatric's Punch-Out!!, Mario Super Sluggers and Excite
+        // Truck patches) adds the pad's buttons to a Wii Remote's, so it
+        // still needs one there. Where it adds them after the KPAD read
+        // (Punch-Out!!), the adapter is routed into its port reads and the
+        // stand-in is that Wii Remote with nothing pressed ("connected
+        // only"). Where it adds them inside the read, which the stand-in
+        // answers in the game's place (Excite Truck, Sluggers), or can't be
+        // routed, the stand-in keeps the controls.
+        const bool inside_read = pack_patches_kpad_read(patches, text, find_kpad_read(text).address);
+        if (pack_ports_routable(patches) && !inside_read) {
+            logf("GameCube adapter: a pack reads the GameCube controller ports itself and adds them to a Wii "
+                 "Remote's input: the adapter is routed into its port reads, and the GameCube controllers' stand-in "
+                 "is a Wii Remote with nothing pressed\n");
+            out.route_pack = true;
+            out.standin_inputless = true;
+        } else {
+            logf("GameCube adapter: a pack reads the GameCube controller ports itself, %s; the GameCube "
+                 "controllers' stand-in keeps the controls for this launch\n",
+                 inside_read ? "inside the KPAD read the stand-in answers"
+                             : "through a base it also uses for other hardware");
+        }
     }
     out.read_sites = pad.read_sites;
     out.motor = pad.control_motor;
@@ -1671,9 +1715,12 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
                                        : read32(kMem2ArenaEndField);
     if (mem1_veneer != 0 && out.route_pack) {
         // A code build's blob sits at MEM2's top, planned from its size:
-        // no routing there (the pack's hooks keep the stand-in out anyway).
+        // no routing there. A pack hooking the reads keeps the stand-in out
+        // anyway; for one that only adds to a Wii Remote's input, the
+        // stand-in keeps the controls instead of being "connected only".
         logf("GameCube adapter: no routing into the pack's port reads in a code build\n");
         out.route_pack = false;
+        out.standin_inputless = false;
     }
     if (mem1_veneer != 0) {
         const std::uint32_t bytes = out.code_bytes + out.state_bytes;
