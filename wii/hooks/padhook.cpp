@@ -851,14 +851,25 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, co
     // pointer while it's on.
     // In the code as the packs' patches leave it (CodeRabbit on #610): a
     // pack that moves or changes the switch isn't read at its old place.
-    {
-        std::vector<CodeRange> view;
-        if (code_with_patches(text, patched, view)) out.kpad_dpd = find_kpad_enable_dpd(view);
-    }
-    if (out.kpad_dpd.enable != 0)
+    std::vector<CodeRange> dpd_view;
+    const bool have_view = code_with_patches(text, patched, dpd_view);
+    if (have_view) out.kpad_dpd = find_kpad_enable_dpd(dpd_view);
+    if (out.kpad_dpd.enable != 0) {
         logf("GameCube adapter: KPADEnableDPD at 0x%08x (its switch at 0x%08x + channel * %u + 0x%x: with GameCube "
-             "controllers as Wii Remotes + Nunchuks, the pointer shows while the game has it on)\n",
+             "controllers as Wii Remotes + Nunchuks, the pointer shows while the game has it on)
+",
              out.kpad_dpd.enable, out.kpad_dpd.base, out.kpad_dpd.stride, out.kpad_dpd.offset);
+    } else if (have_view) {
+        // A game that never links KPADEnableDPD keeps the camera as KPAD
+        // set it at its start (Super Mario Galaxy 2: on): the same switch,
+        // found where KPAD reads it.
+        out.kpad_dpd = find_kpad_dpd_switch(dpd_view);
+        if (out.kpad_dpd.enable != 0)
+            logf("GameCube adapter: KPAD's camera switch at 0x%08x + channel * %u + 0x%x (read at 0x%08x; the game "
+                 "has no KPADEnableDPD): the pointer shows while it's on
+",
+                 out.kpad_dpd.base, out.kpad_dpd.stride, out.kpad_dpd.offset, out.kpad_dpd.enable);
+    }
     // Optional: where the game has it (Mario Kart Wii), it reads a Classic
     // Controller's buttons from there, and the stand-in fills it too.
     const KpadUnified unified = find_kpad_unified(text);

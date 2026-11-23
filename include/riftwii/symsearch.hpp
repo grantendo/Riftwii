@@ -149,6 +149,16 @@ struct KpadDpd {
 };
 KpadDpd find_kpad_enable_dpd(const std::vector<CodeRange>& text);
 
+// The same switch in a game that never links KPADEnableDPD (Super Mario
+// Galaxy 2: KPAD sets the switch at its start and nothing changes it),
+// found where KPAD reads it: the `lbz rX,offset(rBlock)` within 8 words
+// before a call to WPADIsDpdEnabled (the one short function that takes a
+// channel's WPAD block from its table and returns the word at +2104, or
+// +1912 in late 2006), where rBlock is KPAD's channel block, `base`
+// (`lis`/`addi`) plus the channel times `stride` (`mulli`). `enable` is
+// that reading function. All 0 unless every such read agrees.
+KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text);
+
 // PADControlMotor(chan, command) in a GameCube game's own SDK (the one the
 // game was linked with, not the Wii's): after its checks it keeps the
 // command's two low bits (`rlwinm rX, rY, 0, 30, 31`), ORs them into the
