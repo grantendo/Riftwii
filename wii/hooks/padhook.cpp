@@ -990,13 +990,19 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t
         }
         return word;
     };
-    // Over the function's own first word, changed: the pack's hook is there
-    // (a patch writing the same word back hooks nothing).
+    // Over the function's first few words, changed: the pack's hook is there,
+    // at the entry or just past it (a hook that keeps the `stwu` and
+    // branches from the next word still runs beside the stand-in's); a
+    // patch writing the same words back hooks nothing.
+    constexpr std::uint32_t kEntryWords = 4;
     for (const std::uint32_t entry : {wpad_probe, kpad_read}) {
-        if (entry == 0 || entry >= 0x81800000u) continue;
-        bool written = false;
-        const std::uint32_t final = final_word(entry, written);
-        if (written && final != *reinterpret_cast<const volatile std::uint32_t*>(entry)) return true;
+        if (entry == 0 || entry >= 0x81800000u - 4 * kEntryWords) continue;
+        for (std::uint32_t w = 0; w < kEntryWords; ++w) {
+            const std::uint32_t at = entry + 4 * w;
+            bool written = false;
+            const std::uint32_t final = final_word(at, written);
+            if (written && final != *reinterpret_cast<const volatile std::uint32_t*>(at)) return true;
+        }
     }
     for (std::size_t i = 0; i < patches.size(); ++i) {
         if (!placed(i)) continue;
