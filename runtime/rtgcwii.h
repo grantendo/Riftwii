@@ -56,6 +56,12 @@ struct rtgcwii {
     uint32_t pointer_show;                     /* ticks the pointer stays shown after the C-stick (loader-filled) */
     int32_t pointer[RTGCWII_CHANNELS][2];      /* each channel's pointer, x and y over RTHOME_POINTER_FULL */
     uint32_t pointer_moved[RTGCWII_CHANNELS];  /* when the C-stick last moved it (low bit set), 0: never */
+    /* The pointing form's pointer moves by time: the time its motion has
+     * been counted up to (low bit set, 0: not yet), and the part of a step
+     * not moved yet on each axis, so neither samples close together nor a
+     * slight push lose movement to rounding. */
+    uint32_t pointer_at[RTGCWII_CHANNELS];
+    int32_t pointer_rest[RTGCWII_CHANNELS][2];
     uint32_t shake[RTGCWII_CHANNELS];          /* samples the shake button has been held, 0: not held */
     uint32_t camera;  /* channels whose Wii Remote camera the game wants on (KPAD's switch), one bit each */
     /* Where KPAD keeps each channel's camera switch (KPADEnableDPD's
