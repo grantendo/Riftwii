@@ -845,16 +845,34 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
              "Remotes, a game that reads WPAD itself gets the stand-in's reports)\n",
              out.wpad_read != 0 ? "at " : "not found, ", out.wpad_read,
              out.wpad_set_format != 0 ? "at " : "not found, ", out.wpad_set_format);
+        // WPAD's connect callback slot: the 2006 one (find_home_menu), else
+        // the later one, which is told only where KPAD has no callback of
+        // its own; the extension callback's sits beside it either way.
+        WpadConnect2006 slot;
+        slot.table = out.wpad_connect_table;
+        slot.offset = out.wpad_connect_offset;
+        if (slot.table == 0) slot = find_wpad_connect_later(text);
         if (out.kpad_connect == 0 && out.wpad_connect_table == 0) {
-            const WpadConnect2006 later = find_wpad_connect_later(text);
-            out.wpad_connect_table = later.table;
-            out.wpad_connect_offset = later.offset;
-            out.wpad_connect_later = later.table != 0;
-            if (later.table != 0)
+            out.wpad_connect_table = slot.table;
+            out.wpad_connect_offset = slot.offset;
+            out.wpad_connect_later = slot.table != 0;
+            if (slot.table != 0)
                 logf("GameCube adapter: WPAD's connect callbacks (blocks from the table at 0x%08x, the callback at "
                      "+%u): the stand-in is reported connected to the game's callback\n",
-                     later.table, later.offset);
+                     slot.table, slot.offset);
         }
+        // The game's WPAD extension callback, told the stand-in's attachment
+        // after each "connected" (Super Mario Galaxy 2 asks for a Nunchuk
+        // until it hears).
+        const WpadConnect2006 ext = find_wpad_extension(text, slot);
+        out.wpad_ext_table = ext.table;
+        out.wpad_ext_offset = ext.offset;
+        if (ext.table != 0)
+            logf("GameCube adapter: WPAD's extension callbacks (blocks from the table at 0x%08x, the callback at "
+                 "+%u): the game hears of the stand-in's attachment\n",
+                 ext.table, ext.offset);
+        else
+            logf("GameCube adapter: WPAD's extension callbacks not found\n");
     }
 }
 
@@ -1524,6 +1542,8 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->wpad_connect_table = out.wpad_connect_table;
         state->wpad_connect_offset = out.wpad_connect_offset;
         state->wpad_connect_later = out.wpad_connect_later ? 1u : 0u;
+        state->wpad_ext_table = out.wpad_ext_table;
+        state->wpad_ext_offset = out.wpad_ext_offset;
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;

@@ -446,6 +446,60 @@ void TestWpadConnectLater() {
     }
 }
 
+// WPAD's extension callback slot: the setter just before the connect slot.
+void TestWpadExtension() {
+    {
+        // The 2008 layout: extension +2208 beside connect +2212.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        put_later_setter(t, 2216);
+        riftwii::WpadConnect2006 connect;
+        connect.table = 0x803CAF10u;
+        connect.offset = 2212;
+        const riftwii::WpadConnect2006 found = riftwii::find_wpad_extension({t.range()}, connect);
+        EXPECT_EQ(found.table, 0x803CAF10u);
+        EXPECT_EQ(found.offset, 2208u);
+    }
+    {
+        // The 2006 WPAD's (Excite Truck): +2016 beside +2020.
+        Section t{0x80040000, {}};
+        put_connect_setter(t, 2016);
+        put_connect_setter(t, 2020);
+        riftwii::WpadConnect2006 connect;
+        connect.table = 0x8038F4F0u;
+        connect.offset = 2020;
+        const riftwii::WpadConnect2006 found = riftwii::find_wpad_extension({t.range()}, connect);
+        EXPECT_EQ(found.table, 0x8038F4F0u);
+        EXPECT_EQ(found.offset, 2016u);
+    }
+    {
+        // No setter for the word before the connect slot: none.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2212);
+        put_later_setter(t, 2216);
+        riftwii::WpadConnect2006 connect;
+        connect.table = 0x803CAF10u;
+        connect.offset = 2212;
+        EXPECT_EQ(riftwii::find_wpad_extension({t.range()}, connect).table, 0u);
+    }
+    {
+        // A setter at that offset through another table: none.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        riftwii::WpadConnect2006 connect;
+        connect.table = 0x80400000u;
+        connect.offset = 2212;
+        EXPECT_EQ(riftwii::find_wpad_extension({t.range()}, connect).table, 0u);
+    }
+    {
+        // No connect slot: none.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        EXPECT_EQ(riftwii::find_wpad_extension({t.range()}, riftwii::WpadConnect2006{}).table, 0u);
+    }
+}
+
 // WPADRead (the 2008 WPAD's shape): the channel's block, the error compared
 // with -2 and -7, 42 bytes copied, the error stored into the game's status
 // (through r29, its copy of r4) unless `stores_error` is false (another
@@ -815,6 +869,7 @@ int main() {
     TestWpadGetInfo();
     TestWpadConnect2006();
     TestWpadConnectLater();
+    TestWpadExtension();
     TestWpadRead();
     TestWpadSetFormat();
     TestSmallDataBase();

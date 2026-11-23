@@ -98,6 +98,11 @@ struct rtgcwii {
      * game's sleeps don't read the pads for the stand-in (pad_hook.c's
      * pad_reads_at_sleep). Loader-filled. */
     uint32_t wpad_connect_later;
+    /* WPAD's extension callbacks (the game's, WPADSetExtensionCallback):
+     * the table of the channels' control blocks and the callback's place in
+     * one (just before the connect callback's), 0: none. Told the stand-in's
+     * attachment after its "connected" (pad_tell_extension). Loader-filled. */
+    uint32_t wpad_ext_table, wpad_ext_offset;
 };
 
 #define RTGCWII_RETELLS 30u
