@@ -449,6 +449,7 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
     each_framed_function(text, kMaxSetterWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
         std::uint32_t high[32] = {}, address[32] = {};
         std::uint32_t table = 0, from_r4 = 1u << 4;  // r4 and its copies, one bit each
+        const std::size_t first_of_function = setters.size();
         int block = -1;
         std::int32_t loaded = -1;
         for (std::size_t k = start; k < end; ++k) {
@@ -467,8 +468,13 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             }
             if (block < 0 || static_cast<int>(a) != block || simm(insn) < kBlockFields) continue;
             if (opcode(insn) == 32) loaded = simm(insn);  // lwz: the old callback
-            if (opcode(insn) == 36 && simm(insn) == loaded && ((from_r4 >> d) & 1u))
-                setters.emplace_back(table, loaded);      // stw: the new one, the second argument
+            if (opcode(insn) != 36 || simm(insn) != loaded || !((from_r4 >> d) & 1u)) continue;
+            // stw: the new one, the second argument. Once per function, though
+            // more than one of its paths swaps the same slot.
+            const std::pair<std::uint32_t, std::int32_t> setter(table, loaded);
+            if (std::find(setters.begin() + static_cast<std::ptrdiff_t>(first_of_function), setters.end(), setter) ==
+                setters.end())
+                setters.push_back(setter);
         }
     });
     return setters;
