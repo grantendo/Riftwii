@@ -868,7 +868,7 @@ static void pad_home_check(struct rt_pad_context* c, const uint8_t* status, uint
         c->home_buffer = 0;
         c->home_fresh = 0;
         c->home_judged = 0;
-#ifdef RT_PAD_FORM_NUNCHUK
+#ifdef RT_PAD_FORM_REMOTE
         /* The shape it takes the channel in stays its own until it next
          * takes one (pad_gcwii_shaped). */
         if (c->gcwii) {
