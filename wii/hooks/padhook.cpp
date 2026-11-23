@@ -26,6 +26,7 @@
 #include "rtgcwii.h"
 #include "pentablet.h"
 #include "plugins.hpp"
+#include "riftwii/byteorder.hpp"
 #include "riftwii/hbmsearch.hpp"
 #include "riftwii/hook.hpp"
 #include "riftwii/mempatch.hpp"
@@ -914,6 +915,43 @@ bool pad_read_in_place(std::uint32_t address) {
     return is_pad_read(code, address);
 }
 
+// Whether a pack's own bytes (its memory patches' values, not the game code
+// around them: a game's SI library reads the same registers) read the
+// GameCube controller ports straight from the hardware (reads_gc_ports).
+// A value kept in a file isn't loaded yet here, so isn't looked at.
+bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
+    for (const MemoryPatch& patch : patches) {
+        if (!patch.value.empty() && reads_gc_ports(patch.value.data(), patch.value.size())) return true;
+    }
+    return false;
+}
+
+// Whether a pack's memory patches reroute one of the game's calls to its
+// Wii controller reads into the pack's own code: a 4-byte patch whose new
+// word is a `bl` over the game's `bl` (as loaded, before the patches) to
+// WPADProbe or to the KPAD read (or the short KPADRead just before it,
+// which hands its call on). Our own full packs wrap them this way (Kamen
+// Rider: Dragon Knight's), with their own stand-in code behind.
+bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t kpad_read, std::uint32_t wpad_probe) {
+    constexpr std::uint32_t kReadEntry = 0x20;  // KPADRead's few words ahead of the read itself
+    const auto is_bl = [](std::uint32_t w) { return (w & 0xFC000003u) == 0x48000001u; };
+    for (const MemoryPatch& patch : patches) {
+        if (!patch.has_offset || patch.value.size() != 4 || (patch.offset & 3u) != 0) continue;
+        const std::uint32_t at = static_cast<std::uint32_t>(patch.offset);
+        if (at < 0x80000000u || at >= 0x81800000u) continue;
+        const std::uint32_t now = be32(patch.value.data());
+        const std::uint32_t old = *reinterpret_cast<const volatile std::uint32_t*>(at);
+        if (!is_bl(now) || !is_bl(old)) continue;
+        std::uint32_t offset = old & 0x03FFFFFCu;
+        if (offset & 0x02000000u) offset |= 0xFC000000u;  // a call back: sign-extended
+        const std::uint32_t target = at + offset;
+        if ((wpad_probe != 0 && target == wpad_probe) ||
+            (kpad_read != 0 && target <= kpad_read && kpad_read - target <= kReadEntry))
+            return true;
+    }
+    return false;
+}
+
 void read_patched_code(const std::vector<MemoryPatch>& patches, PatchedCode& out) {
     LoadedGame game;
     std::string error;
@@ -971,6 +1009,40 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     }
     out.read = pad.read;
     out.read_in_patch = from_patch;
+    // A pack or the setting, never both, on the controller's input (#587).
+    // A pack handles the controller itself (our full packs: their own
+    // layout and their own stand-in code), so the setting stays off for
+    // this launch, when it has its own PADRead in its memory patches, when
+    // it reroutes the game's calls to its Wii controller reads into its own
+    // code (Kamen Rider: Dragon Knight's), or when its code reads the
+    // GameCube ports and the game as loaded has a PADRead: a PADRead the
+    // pack added in a program file it replaces (the LEGO Star Wars packs')
+    // reads the ports itself, as the SDK's does.
+    const bool pack_reads_pad = standin && from_patch;
+    const bool pack_wraps = standin && !pack_reads_pad &&
+                            pack_wraps_wii_reads(patches, find_kpad_read(text).address, find_wpad_probe(text));
+    const bool pack_ports = standin && !pack_reads_pad && !pack_wraps && pack_reads_gc_ports(patches);
+    if (pack_reads_pad || pack_wraps || (pack_ports && pad.read != 0)) {
+        logf("GameCube adapter: a pack brings its own controller code (%s), so the game's GameCube controllers "
+             "setting stays off for this launch\n",
+             pack_reads_pad ? "its PADRead is in its memory patches"
+             : pack_wraps   ? "it reroutes the game's calls to its Wii controller reads"
+                            : "it reads the GameCube ports, beside a PADRead");
+        standin = false;
+        out.standin = out.standin_nunchuk = out.standin_sideways = false;
+    } else if (pack_ports) {
+        // A pack that reads the GameCube ports straight from the hardware in
+        // a game with no PADRead (quatric's GameCube controller patches)
+        // gets nothing there from the adapter, which isn't a port: until
+        // RiftWii routes the adapter into such a pack, the stand-in keeps
+        // the controls (the pack's code then has no pad to read). Once it
+        // does, the stand-in becomes "connected only" (standin_inputless).
+        // quatric's Excite Truck patch also takes its input inside KPAD's
+        // handling of a Wii Remote's reports, which a connection alone
+        // doesn't start.
+        logf("GameCube adapter: a pack reads the GameCube controller ports itself, which the adapter doesn't "
+             "answer; the GameCube controllers' stand-in keeps the controls for this launch\n");
+    }
     out.read_sites = pad.read_sites;
     out.motor = pad.control_motor;
     out.idle_reset = pad.idle_reset;
@@ -1565,6 +1637,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->wpad_connect_table = out.wpad_connect_table;
         state->wpad_connect_offset = out.wpad_connect_offset;
         state->wpad_connect_later = out.wpad_connect_later ? 1u : 0u;
+        state->inputless = out.standin_inputless ? 1u : 0u;
         state->wpad_ext_table = out.wpad_ext_table;
         state->wpad_ext_offset = out.wpad_ext_offset;
         state->info_answers = out.info_answers ? 1u : 0u;

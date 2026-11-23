@@ -1684,6 +1684,33 @@ static void TestPatchedCodeRanges() {
 
 // The Wii Remotes' screen-dimming reset found with no PADRead to start
 // from: the one-store reset the Wii Remote library (near WPADProbe) calls.
+// A pack's code that reads the GameCube ports itself (quatric's Excite
+// Truck GameCube patch: `lis r6,0xCD00` then `add r6,r6,r5` and `lwz
+// r8,0x6404(r6)`... here with the access right after): found; other
+// hardware registers, or an SI offset through another register: not.
+static void TestReadsGcPorts() {
+    const auto bytes = [](std::initializer_list<std::uint32_t> words) {
+        std::vector<std::uint8_t> out;
+        for (std::uint32_t w : words) {
+            out.push_back(static_cast<std::uint8_t>(w >> 24));
+            out.push_back(static_cast<std::uint8_t>(w >> 16));
+            out.push_back(static_cast<std::uint8_t>(w >> 8));
+            out.push_back(static_cast<std::uint8_t>(w));
+        }
+        return out;
+    };
+    std::vector<std::uint8_t> code = bytes({0x3CC0CD00u, 0x60000000u, 0x81066404u, 0x4E800020u});  // lis r6,0xCD00; nop; lwz r8,0x6404(r6)
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CC00u, 0x60C66430u, 0x4E800020u});  // lis r6,0xCC00; ori r6,r6,0x6430 (SIPOLL)
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x81060000u, 0x4E800020u});  // lis r6,0xCD00; lwz r8,0(r6): IPC, not the ports
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x81076404u, 0x4E800020u});  // the SI offset through r7, not r6
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC08000u, 0x81066404u, 0x4E800020u});  // lis r6,0x8000: plain memory
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+}
+
 // KPAD's camera switch, read from KPADEnableDPD's code just after
 // KPADDisableDPD's (Batman: The Brave and the Bold's pair).
 static void TestKpadEnableDpd() {
@@ -2460,6 +2487,7 @@ int main() {
     TestIdleResetSearch();
     TestRemotesIdleReset();
     TestKpadEnableDpd();
+    TestReadsGcPorts();
     TestGcPadMotorSearch();
     TestGcSiTypeCacheSearch();
     TestGcSiProbeSearch();

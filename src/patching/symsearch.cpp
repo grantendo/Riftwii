@@ -1475,5 +1475,29 @@ std::int32_t find_gc_pad_enabled_offset(const std::vector<CodeRange>& text, std:
     return 0;
 }
 
+bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
+    constexpr unsigned kWithin = 8;  // words from the `lis` to its use
+    constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
+    const std::size_t words = size / 4;
+    for (std::size_t i = 0; i < words; ++i) {
+        const std::uint32_t lis = be32(bytes + i * 4);
+        const std::uint32_t high = lis & 0xFFFFu;
+        if ((lis >> 26) != 15 || ((lis >> 16) & 31u) != 0 || (high != 0xCD00u && high != 0xCC00u)) continue;
+        const std::uint32_t reg = (lis >> 21) & 31u;
+        for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
+            const std::uint32_t insn = be32(bytes + k * 4);
+            const std::uint32_t op = insn >> 26;
+            const std::uint32_t low = insn & 0xFFFFu;
+            if (low < kSiFirst || low >= kSiEnd) continue;
+            // ori rA,rS,low takes rX as its source (rS); addi and the
+            // loads and stores as their base (rA).
+            const std::uint32_t source = op == 24 ? (insn >> 21) & 31u : (insn >> 16) & 31u;
+            const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 || op == 40 ||
+                              op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
+            if (uses && source == reg) return true;
+        }
+    }
+    return false;
+}
 
 }  // namespace riftwii

@@ -121,6 +121,12 @@ struct rtgcwii {
      * one (just before the connect callback's), 0: none. Told the stand-in's
      * attachment after its "connected" (pad_tell_extension). Loader-filled. */
     uint32_t wpad_ext_table, wpad_ext_offset;
+    /* "Connected only" (a pack does the controls: it reads the GameCube
+     * ports itself): the stand-in's channel is connected and answered for
+     * as usual, but its input stays at rest (rtgcwii_pads), a read that
+     * brings samples (the pack's) is left to the game, and nothing counts
+     * as a real Wii Remote taking the channel back. Loader-filled. */
+    uint32_t inputless;
 };
 
 #define RTGCWII_RETELLS 30u

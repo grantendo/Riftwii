@@ -1048,6 +1048,16 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
         /* The permanent stand-in's channel, where no real controller is. */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
+            struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+            if (w->inputless && result > 0) {
+                /* Connected only: samples here are the pack's (it fills
+                 * KPAD itself), so the game gets them as they are. */
+#ifdef RT_PAD_FORM_REMOTE
+                rtgcwii_heard(w, (uint32_t)chan);
+#endif
+                interrupts_restore(msr);
+                return result;
+            }
             pad_gcwii_status(c, (uint32_t)chan, status);
 #ifdef RT_PAD_FORM_REMOTE
             rtgcwii_heard((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
@@ -1306,8 +1316,10 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     t = now();
     stand_in = pad_home_unless_real(c, c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL);
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
-        /* The permanent stand-in's raw status, in its form's shape. */
-        if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
+        /* The permanent stand-in's raw status, in its form's shape; with
+         * "connected only" the pack's, left as it is. */
+        if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan) &&
+            !((const struct rtgcwii*)(uintptr_t)c->gcwii)->inputless) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
 #ifdef RT_PAD_FORM_REMOTE
             const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
@@ -1412,6 +1424,12 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
      * (Punch-Out!!) polls the adapter through here for every channel. */
     pad_gcwii_wii_read(c);
     pad_gcwii_read_pads(c);
+    /* Connected only: a report with no error is the pack's own, left as it
+     * is, and never taken for a real Wii Remote. */
+    if (w->inputless && (int8_t)status[RTGCWII_WPAD_ERR] == 0) {
+        rtgcwii_heard(w, (uint32_t)chan);
+        return;
+    }
     if ((int8_t)status[RTGCWII_WPAD_ERR] == 0) {
         /* The game's own read found a real Wii Remote there: its report
          * stays, and the stand-in steps aside as it does when WPADProbe

@@ -131,7 +131,17 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
         const uint8_t* s = status + i * RTGCWII_PAD_BYTES;
         const uint32_t bit = 1u << i;
-        if ((int8_t)s[RTGCWII_PAD_ERR] == 0) {
+        if ((int8_t)s[RTGCWII_PAD_ERR] == 0 && w->inputless) {
+            /* Connected only: the pack does the controls, so the stand-in's
+             * input stays at rest (buttons up, sticks centred, no motion);
+             * the controller being there still counts. */
+            for (k = 0; k < RTGCWII_PAD_BYTES; ++k) w->pad[i][k] = 0;
+            w->seen[i] = now | 1u;
+            w->hold[i] = 0;
+            if (!(w->present & bit)) w->delivered[i] = 0;
+            ++w->samples[i];
+            w->present |= bit;
+        } else if ((int8_t)s[RTGCWII_PAD_ERR] == 0) {
             for (k = 0; k < RTGCWII_PAD_BYTES; ++k) w->pad[i][k] = s[k];
             w->seen[i] = now | 1u;
 #if defined(RT_PAD_FORM_NUNCHUK)
@@ -169,6 +179,10 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
 void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result) {
     uint32_t bit;
     if (channel >= RTGCWII_CHANNELS || result == -2) return;  /* busy: no answer either way */
+    /* Connected only: what the game reads there is the pack's (a pack may
+     * answer WPADProbe or fill KPAD itself), never a real Wii Remote taking
+     * the channel back. */
+    if (result == 0 && w->inputless) return;
     bit = 1u << channel;
     if (result == 0) {
         w->real |= bit;
