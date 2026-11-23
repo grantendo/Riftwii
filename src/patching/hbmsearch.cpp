@@ -437,14 +437,13 @@ bool indexes_channel(std::uint32_t insn, std::uint32_t channel) {
     return (insn & ~(31u << 16) & ~(31u << 21)) == 0x5400103Au && ((channel >> reg_d(insn)) & 1u);
 }
 
-}  // namespace
-
-WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
+// WPAD's per-channel callback setters: the (table, offset) pair of each
+// short framed function that takes a channel's control block from a table
+// (`lwzx`) and swaps one word of it past its buffers, loading the old
+// callback and storing its second argument (r4, or a copy) in its place.
+std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vector<CodeRange>& text) {
     constexpr std::size_t kMaxSetterWords = 48;
     constexpr std::int32_t kBlockFields = 0x400;  // the callbacks sit past the control block's buffers
-    constexpr std::uint32_t kBctrl = 0x4E800421u;
-    constexpr unsigned kCallWindow = 8;           // words from the slot's load to its call
-    // The setters' (table, offset) pairs.
     std::vector<std::pair<std::uint32_t, std::int32_t>> setters;
     each_framed_function(text, kMaxSetterWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
         std::uint32_t high[32] = {}, address[32] = {};
@@ -471,6 +470,15 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                 setters.emplace_back(table, loaded);      // stw: the new one, the second argument
         }
     });
+    return setters;
+}
+
+}  // namespace
+
+WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
+    constexpr std::uint32_t kBctrl = 0x4E800421u;
+    constexpr unsigned kCallWindow = 8;  // words from the slot's load to its call
+    const std::vector<std::pair<std::uint32_t, std::int32_t>> setters = wpad_setters(text);
     // The slots WPAD calls with "no controller".
     std::vector<std::pair<std::uint32_t, std::int32_t>> told_gone;
     for (const CodeRange& r : text) {
@@ -503,6 +511,17 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
     WpadConnect2006 found;
     found.table = told_gone[0].first;
     found.offset = static_cast<std::uint32_t>(told_gone[0].second);
+    return found;
+}
+
+WpadConnect2006 find_wpad_extension(const std::vector<CodeRange>& text, const WpadConnect2006& connect) {
+    if (connect.table == 0 || connect.offset < 4) return WpadConnect2006{};
+    const std::pair<std::uint32_t, std::int32_t> slot(connect.table, static_cast<std::int32_t>(connect.offset) - 4);
+    const std::vector<std::pair<std::uint32_t, std::int32_t>> setters = wpad_setters(text);
+    if (std::count(setters.begin(), setters.end(), slot) != 1) return WpadConnect2006{};
+    WpadConnect2006 found;
+    found.table = slot.first;
+    found.offset = static_cast<std::uint32_t>(slot.second);
     return found;
 }
 

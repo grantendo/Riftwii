@@ -111,6 +111,15 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text);
 // and O (+2212 in Punch-Out!!'s 2008 WPAD); both 0 when not exactly one.
 WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text);
 
+// The game's WPAD extension callback (WPADSetExtensionCallback's slot),
+// which WPAD calls with the channel and the attachment's type once it has
+// read it (Super Mario Galaxy 2 notes "Nunchuk attached" only from it):
+// the word just before `connect`'s slot in the same control block (+2016
+// by the 2006 WPAD's +2020, +2208 by +2212 in 2007-2008, +2276 by +2280
+// from 2009), when exactly one setter of the same shape swaps it. Both 0
+// otherwise, or when `connect` is none.
+WpadConnect2006 find_wpad_extension(const std::vector<CodeRange>& text, const WpadConnect2006& connect);
+
 // WPADRead(chan, status), which copies a channel's newest report into the
 // game's WPADStatus: the one function that indexes the channels
 // (`slwi rX,r3,2`), copies 42 bytes (`li r5,42`, the bare Wii Remote's
