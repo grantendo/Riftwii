@@ -1928,7 +1928,11 @@ void log_pad_diagnostics(std::uint32_t code_base, std::uint32_t print_entry) {
 
 unsigned unroute_pack(PadHook& hook) {
     unsigned restored = 0;
-    for (std::size_t i = 0; i + 3 <= hook.route_restore.size(); i += 3) {
+    // Newest record first: where two patches wrote the same word, the one
+    // written last is what's in memory, and its original is what belongs
+    // there (the first record then no longer matches and is left be).
+    for (std::size_t n = hook.route_restore.size() / 3; n-- > 0;) {
+        const std::size_t i = n * 3;
         const std::uint32_t address = hook.route_restore[i];
         const std::uint32_t original = hook.route_restore[i + 1];
         const std::uint32_t routed = hook.route_restore[i + 2];
@@ -2220,6 +2224,13 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     if (!hook.home_blob) {
         DCFlushRange(ctx, context_bytes(kind));
         logf("GameCube adapter: hooked%s\n", motor_site.function == 0 ? " (PADRead only)" : "");
+        // No stand-in in this build: nothing fills the copy the pack's
+        // port reads were pointed at, so they go back to the hardware.
+        if (hook.route_pack) {
+            const unsigned restored = unroute_pack(hook);
+            logf("GameCube adapter: no stand-in here, so the pack's %u port reads point at the hardware again\n",
+                 restored);
+        }
         if (hook.return_to_menu != 0)
             logf("GameCube adapter: the way back is on: the combo held %u ms (%u time base ticks), %u ms after a save\n",
                  static_cast<unsigned>(kLeaveHoldMs), static_cast<unsigned>(ctx->leave.hold),
