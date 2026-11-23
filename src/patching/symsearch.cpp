@@ -758,12 +758,9 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
             const std::uint32_t at = r.address + static_cast<std::uint32_t>(4 * call);
             const std::uint32_t insn = be32(r.bytes + 4 * call);
             if (!is_bl(insn) || bl_target(at, insn) != is_dpd) continue;
-            // The calling function: back to its `stwu r1` (function_start:
-            // a bounded look back, no `blr` between); a call found outside
-            // a framed function isn't the read.
-            const std::uint32_t function = function_start(text, at);
-            if (function < r.address || function >= at) continue;
-            const std::size_t start = (function - r.address) / 4;
+            // The calling function: back to its `stwu r1`.
+            std::size_t start = call;
+            while (start > 0 && (be32(r.bytes + 4 * start) & 0xFFFF0000u) != 0x94210000u) --start;
             // Its channel blocks: base (lis/addi, or a copy by `addi rD,rA,0`) plus a `mulli` of the channel.
             std::uint32_t high[32] = {}, address[32] = {}, stride_of[32] = {};
             std::uint32_t block_base[32] = {}, block_stride[32] = {};
@@ -1588,32 +1585,59 @@ std::int32_t find_gc_pad_enabled_offset(const std::vector<CodeRange>& text, std:
     return 0;
 }
 
-bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
-    constexpr unsigned kWithin = 8;  // words from the `lis` to its use
+namespace {
+
+// Whether the word at `i` is a `lis rX,0xCD00` (or 0xCC00), or an
+// `addis rX,rY,0xCD00` that adds it to a port's offset, whose rX is used
+// within the next 24 words, before another `lis`/`addis` sets rX, at the
+// serial interface's registers (0x6400 to 0x64FF): an address or access
+// through it. (quatric's Kirby's Return to Dream Land patch loads it ten
+// words ahead of its `ori rX,rX,0x6438`, and reads a port as
+// `mulli r9,chan,12; addis r9,r9,0xCD00; lwz rD,0x6404(r9)`.)
+bool gc_port_high(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
+    constexpr unsigned kWithin = 24;  // words from the `lis`/`addis` to its use
     constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
-    const std::size_t words = size / 4;
-    for (std::size_t i = 0; i < words; ++i) {
-        const std::uint32_t lis = be32(bytes + i * 4);
-        const std::uint32_t high = lis & 0xFFFFu;
-        if ((lis >> 26) != 15 || ((lis >> 16) & 31u) != 0 || (high != 0xCD00u && high != 0xCC00u)) continue;
-        const std::uint32_t reg = (lis >> 21) & 31u;
-        for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
-            const std::uint32_t insn = be32(bytes + k * 4);
-            const std::uint32_t op = insn >> 26;
-            const std::uint32_t low = insn & 0xFFFFu;
-            // rX loaded anew (`lis r6,0x8000` after it): no longer the
-            // hardware's base, so a use after it reads plain memory.
-            if (op == 15 && ((insn >> 21) & 31u) == reg) break;
-            if (low < kSiFirst || low >= kSiEnd) continue;
-            // ori rA,rS,low takes rX as its source (rS); addi and the
-            // loads and stores as their base (rA).
-            const std::uint32_t source = op == 24 ? (insn >> 21) & 31u : (insn >> 16) & 31u;
-            const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 || op == 40 ||
-                              op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
-            if (uses && source == reg) return true;
-        }
+    const std::uint32_t addis = be32(bytes + i * 4);
+    const std::uint32_t high = addis & 0xFFFFu;
+    if ((addis >> 26) != 15 || (high != 0xCD00u && high != 0xCC00u)) return false;
+    const std::uint32_t reg = (addis >> 21) & 31u;
+    for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
+        const std::uint32_t insn = be32(bytes + k * 4);
+        const std::uint32_t op = insn >> 26;
+        const std::uint32_t low = insn & 0xFFFFu;
+        if (op == 15 && ((insn >> 21) & 31u) == reg) return false;  // rX set anew
+        if (low < kSiFirst || low >= kSiEnd) continue;
+        // ori rA,rS,low takes rX as its source (rS); addi and the loads
+        // and stores as their base (rA).
+        const std::uint32_t source = op == 24 ? (insn >> 21) & 31u : (insn >> 16) & 31u;
+        const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 || op == 40 ||
+                          op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
+        if (uses && source == reg) return true;
     }
     return false;
+}
+
+}  // namespace
+
+bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
+    const std::size_t words = size / 4;
+    for (std::size_t i = 0; i < words; ++i)
+        if (gc_port_high(bytes, words, i)) return true;
+    return false;
+}
+
+unsigned retarget_gc_ports(std::uint8_t* bytes, std::size_t size, std::uint32_t copy) {
+    if ((copy & 0xFFFFu) != 0x6400u) return 0;
+    const std::size_t words = size / 4;
+    unsigned rewritten = 0;
+    for (std::size_t i = 0; i < words; ++i) {
+        if (!gc_port_high(bytes, words, i)) continue;
+        // Keep the instruction and its register, change only the upper half.
+        bytes[i * 4 + 2] = static_cast<std::uint8_t>(copy >> 24);
+        bytes[i * 4 + 3] = static_cast<std::uint8_t>(copy >> 16);
+        ++rewritten;
+    }
+    return rewritten;
 }
 
 }  // namespace riftwii

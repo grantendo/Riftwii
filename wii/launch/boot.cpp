@@ -3058,6 +3058,17 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
     } else {
         plan_game_extras(dol, extras_context, extras);
     }
+    // Routing (#587): the pack's port reads, not yet written, pointed at the
+    // copy the stand-in fills from the adapter.
+    if (extras.pad.active && extras.pad.route_pack && extras.pad.route_si != 0) {
+        unsigned rewritten = 0;
+        for (MemoryPatch& patch : options.memory_patches) {
+            if (!patch.value.empty())
+                rewritten += retarget_gc_ports(patch.value.data(), patch.value.size(), extras.pad.route_si);
+        }
+        logf("GameCube adapter: %u of the pack's port reads now read the adapter's copy at 0x%08x\n", rewritten,
+             extras.pad.route_si);
+    }
     if (pad_reset && (!extras.pad.active || extras.pad.restart_os == 0)) {
         logf("Reset: the game's own Reset restarts it without the GameCube adapter or USB controllers: the adapter's "
              "hook could not take it\n");
