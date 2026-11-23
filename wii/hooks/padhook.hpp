@@ -225,7 +225,9 @@ AdapterSeen ogc_adapter(std::int32_t& dev_id, std::string& devices);
 // loaded game, into a fresh `out`, then /dev/usb/hid opened for the game
 // (libogc's USB is shut down for it). A PADRead in a pack's plain
 // <memory> patches (`patches`, not applied yet) is found too, and wins
-// over the game's own. `standin`: the game's GameCube controllers
+// over the game's own. `program_from_pack`: a pack replaced the game's
+// main.dol with its own (its code is then in `dol`, not in `patches`).
+// `standin`: the game's GameCube controllers
 // setting is on, as Classic Controllers or as a Wii Remote + Nunchuk (its
 // KPAD hooks are looked for even with Leaving a game on HOME only);
 // `nunchuk` and `sideways` its form, as a Wii Remote + Nunchuk or a
@@ -234,8 +236,9 @@ AdapterSeen ogc_adapter(std::int32_t& dev_id, std::string& devices);
 // Controller); `usb` false: no adapter is wanted and /dev/usb/hid is never
 // opened (the Wii's own ports only). False (with a reason) turns the
 // adapter off.
-bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches, bool standin,
-                        bool nunchuk, bool sideways, bool usb, PadHook& out, std::string& why);
+bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches,
+                        bool program_from_pack, bool standin, bool nunchuk, bool sideways, bool usb, PadHook& out,
+                        std::string& why);
 
 // Before the <memory> patches, on the game as loaded: what their plain
 // writes will leave (PatchedCode), for a PADRead search. Without memory
