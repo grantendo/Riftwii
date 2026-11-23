@@ -186,6 +186,23 @@ void TestConnectedOnly() {
     EXPECT_EQ(leave, 1u);
 }
 
+// The game's own layout (a light patch): the table decides, and buttons
+// it gives nothing press nothing.
+void TestGameLayout() {
+    rtgcwii w = fresh();
+    for (unsigned k = 0; k < RTGCWII_LAYOUT_BUTTONS; ++k) w.layout[k] = 0;
+    w.layout[4] = RTHOME_CL_ZL;                  // z: ZL (the built-in layout's ZR)
+    w.layout[8] = RTHOME_CL_A | RTHOME_CL_B;      // a: both
+    w.layout_on = 1;
+    Pads pads;
+    std::uint32_t hold = 0, trig = 0, release = 0;
+    std::int32_t axes[6];
+    pads.plug(0, kGcZ | kGcA | kGcStart);
+    rtgcwii_pads(&w, pads.s, 1000);
+    rtgcwii_classic(&w, 0, &hold, &trig, &release, axes);
+    EXPECT_EQ(hold, RTHOME_CL_ZL | RTHOME_CL_A | RTHOME_CL_B);  // Start: nothing here
+}
+
 // Routing: each port's PADStatus as the serial interface answers a poll,
 // in the copy a pack reads; a port with no controller answers its error.
 void TestRoute() {
@@ -474,6 +491,7 @@ int main() {
     TestSkipMissingCallback();
     TestDroppedReportAndHomeKeep();
     TestConnectedOnly();
+    TestGameLayout();
     TestRoute();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;

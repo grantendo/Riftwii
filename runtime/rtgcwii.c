@@ -89,6 +89,37 @@ uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
     return h;
 }
 
+/* The GameCube buttons a layout reads, in a PADStatus button word: the
+ * buttons, with what each shape's built-in layout counts too (the analog
+ * L and R pulled far enough with a Nunchuk, the analog R and the control
+ * stick's directions held sideways), so a layout file that names nothing
+ * presses what the built-in layout does. */
+static uint32_t rtgcwii_layout_word(const uint8_t* s) {
+    uint32_t b = rtgcwii_pad_buttons(s);
+#if defined(RT_PAD_FORM_NUNCHUK)
+    if (s[6] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_L;
+    if (s[7] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_R;
+#elif defined(RT_PAD_FORM_SIDEWAYS)
+    int32_t axes[6];
+    rthome_classic_axes(s, axes);
+    if (axes[0] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_LEFT;
+    if (axes[0] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_RIGHT;
+    if (axes[1] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_UP;
+    if (axes[1] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_DOWN;
+    if (s[7] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_R;
+#endif
+    return b;
+}
+
+/* What the game's layout presses for GameCube buttons `b`: each button's
+ * Wii buttons, with RTGCWII_LAYOUT_SHAKE where one shakes. */
+static uint32_t rtgcwii_layout_map(const struct rtgcwii* w, uint32_t b) {
+    uint32_t h = 0, k;
+    for (k = 0; k < RTGCWII_LAYOUT_BUTTONS; ++k)
+        if ((b >> k) & 1u) h |= w->layout[k];
+    return h;
+}
+
 uint32_t rtgcwii_map_pointing(const uint8_t* pad) {
     const uint32_t b = rtgcwii_pad_buttons(pad);
     uint32_t h = 0;
@@ -115,11 +146,13 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
     uint32_t shaking;
     rthome_classic_axes(s, axes);  /* the C-stick is axes 2 and 3 */
 #ifdef RT_PAD_FORM_SIDEWAYS
-    shaking = (rtgcwii_pad_buttons(s) & RTGCWII_GC_R) || s[7] >= RTGCWII_TRIGGER_ON;
+    shaking = w->layout_on ? (rtgcwii_layout_map(w, rtgcwii_layout_word(s)) & RTGCWII_LAYOUT_SHAKE) != 0
+                           : (rtgcwii_pad_buttons(s) & RTGCWII_GC_R) || s[7] >= RTGCWII_TRIGGER_ON;
     w->shake[i] = shaking ? w->shake[i] + 1u : 0u;
     if (!((w->camera >> i) & 1u)) return;
 #else
-    shaking = rtgcwii_pad_buttons(s) & RTGCWII_GC_X;
+    shaking = w->layout_on ? (rtgcwii_layout_map(w, rtgcwii_layout_word(s)) & RTGCWII_LAYOUT_SHAKE) != 0
+                           : (rtgcwii_pad_buttons(s) & RTGCWII_GC_X) != 0;
 #endif
     for (k = 0; k < 2; ++k) {
         /* Up on the C-stick is up on the screen (KPAD's y grows downward). */
@@ -250,17 +283,24 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
 #endif
             for (k = 0; k < RTGCWII_PAD_BYTES; ++k) w->pad[i][k] = s[k];
             w->seen[i] = now | 1u;
+            if (w->layout_on) {
+                /* The game's own layout (#587's light patches). */
+                w->hold[i] = rtgcwii_layout_map(w, rtgcwii_layout_word(s)) & ~RTGCWII_LAYOUT_SHAKE;
+            } else {
 #if defined(RT_PAD_FORM_NUNCHUK)
-            w->hold[i] = rtgcwii_map_nunchuk(s);
-            rtgcwii_motion(w, i, s, now);
+                w->hold[i] = rtgcwii_map_nunchuk(s);
 #elif defined(RT_PAD_FORM_SIDEWAYS)
-            w->hold[i] = rtgcwii_map_sideways(s);
+                w->hold[i] = rtgcwii_map_sideways(s);
+#elif defined(RT_PAD_FORM_POINTING)
+                w->hold[i] = rtgcwii_map_pointing(s);
+#else
+                w->hold[i] = rthome_map_classic(rtgcwii_pad_buttons(s), RTHOME_CL_PLUS);
+#endif
+            }
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
             rtgcwii_motion(w, i, s, now);
 #elif defined(RT_PAD_FORM_POINTING)
-            w->hold[i] = rtgcwii_map_pointing(s);
             rtgcwii_pointing_motion(w, i, s, now, last);
-#else
-            w->hold[i] = rthome_map_classic(rtgcwii_pad_buttons(s), RTHOME_CL_PLUS);
 #endif
             /* Newly plugged in: what it holds already isn't newly pressed. */
             if (!(w->present & bit)) w->delivered[i] = w->hold[i];

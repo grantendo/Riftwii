@@ -1831,6 +1831,11 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->wpad_connect_offset = out.wpad_connect_offset;
         state->wpad_connect_later = out.wpad_connect_later ? 1u : 0u;
         state->inputless = out.standin_inputless ? 1u : 0u;
+        if (out.layout != nullptr) {
+            for (unsigned k = 0; k < RTGCWII_LAYOUT_BUTTONS && k < kGcLayoutButtons; ++k)
+                state->layout[k] = out.layout->buttons[k];
+            state->layout_on = 1u;
+        }
         state->wpad_ext_table = out.wpad_ext_table;
         state->wpad_ext_offset = out.wpad_ext_offset;
         if (out.route_pack && out.route_si != 0) {

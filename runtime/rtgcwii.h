@@ -19,6 +19,8 @@
 
 #define RTGCWII_CHANNELS 4u
 #define RTGCWII_PAD_BYTES 12u
+#define RTGCWII_LAYOUT_BUTTONS 13u /* a PADStatus button word's bits 0-12 */
+#define RTGCWII_LAYOUT_SHAKE 0x80000000u
 
 struct rtgcwii {
     uint32_t grace;    /* ticks a port may report no controller before its channel's goes (loader-filled) */
@@ -112,6 +114,13 @@ struct rtgcwii {
      * brings samples (the pack's) is left to the game, and nothing counts
      * as a real Wii Remote taking the channel back. Loader-filled. */
     uint32_t inputless;
+    /* The game's own layout (#587's light patches, from
+     * sd:/riftwii/layouts/<game ID>.txt, riftwii/padlayout.hpp): for each
+     * GameCube button, by its bit in a PADStatus button word, the Wii
+     * buttons it presses in the stand-in's shape, RTGCWII_LAYOUT_SHAKE for
+     * a shake. layout_on 0: the shape's built-in layout. Loader-filled. */
+    uint32_t layout[RTGCWII_LAYOUT_BUTTONS];
+    uint32_t layout_on;
     /* Routing (#587): a pack that reads the GameCube controller ports
      * itself (quatric's patches) has its reads pointed here, at a copy of
      * the serial interface's registers (an address ending in 0x6400; each
