@@ -1015,12 +1015,14 @@ bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
     return false;
 }
 
-// Whether a pack's memory patches reroute one of the game's calls to its
-// Wii controller reads into the pack's own code: a 4-byte patch whose new
-// word is a `bl` over the game's `bl` (as loaded, before the patches) to
-// WPADProbe or to the KPAD read (or the short KPADRead just before it,
-// which hands its call on). Our own full packs wrap them this way (Kamen
-// Rider: Dragon Knight's), with their own stand-in code behind.
+// Whether a pack's memory patches take over the game's Wii controller
+// reads: a 4-byte patch whose new word is a `bl` over the game's `bl` (as
+// loaded, before the patches) to WPADProbe or to the KPAD read (or the
+// short KPADRead just before it, which hands its call on), as our own full
+// packs reroute them (Kamen Rider: Dragon Knight's); or any patch written
+// over the first word of WPADProbe or the KPAD read, where the stand-in's
+// hooks would go and so can't (quatric's Kirby's Return to Dream Land
+// patch hooks both there).
 bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t kpad_read, std::uint32_t wpad_probe) {
     constexpr std::uint32_t kReadEntry = 0x20;  // KPADRead's few words ahead of the read itself
     const auto is_bl = [](std::uint32_t w) { return (w & 0xFC000003u) == 0x48000001u; };
@@ -1032,11 +1034,15 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t
     const std::vector<bool> applies = patches_that_apply(patches);
     for (std::size_t i = 0; i < patches.size(); ++i) {
         const MemoryPatch& patch = patches[i];
-        if (!applies[i] || !patch.has_offset || patch.search || patch.ocarina || patch.value.size() != 4) continue;
+        if (!applies[i] || !patch.has_offset || patch.search || patch.ocarina || patch.value.empty()) continue;
         // Where the patcher writes it (a low or uncached offset at its
         // cached alias), and only a patch it will write.
         const std::uint32_t at = memory_patch_target(patch);
-        if ((at & 3u) != 0 || at >= 0x81800000u) continue;
+        const std::uint32_t bytes = static_cast<std::uint32_t>(patch.value.size());
+        // Over the function's own first word: the pack's hook is there.
+        const auto covers = [&](std::uint32_t entry) { return entry != 0 && entry >= at && entry - at < bytes; };
+        if (covers(wpad_probe) || covers(kpad_read)) return true;
+        if (bytes != 4 || (at & 3u) != 0 || at >= 0x81800000u) continue;
         const std::uint32_t now = be32(patch.value.data());
         const std::uint32_t old = *reinterpret_cast<const volatile std::uint32_t*>(at);
         // A call the pack sends somewhere else: the same call written back
@@ -1057,8 +1063,9 @@ void read_patched_code(const std::vector<MemoryPatch>& patches, PatchedCode& out
         logf("GameCube adapter: a PADRead in the packs' memory patches isn't looked for: %s\n", error.c_str());
 }
 
-bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches, bool standin,
-                        bool nunchuk, bool sideways, bool pointing, bool usb, PadHook& out, std::string& why) {
+bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches,
+                        bool program_from_pack, bool standin, bool nunchuk, bool sideways, bool pointing, bool usb,
+                        PadHook& out, std::string& why) {
     out = PadHook{};
     out.demo = demo;
     out.standin = standin;
@@ -1114,24 +1121,25 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     // this launch, when it has its own PADRead in its memory patches, when
     // it reroutes the game's calls to its Wii controller reads into its own
     // code (Kamen Rider: Dragon Knight's), or when its code reads the
-    // GameCube ports and the game as loaded has a PADRead: a PADRead the
-    // pack added in a program file it replaces (the LEGO Star Wars packs')
-    // reads the ports itself, as the SDK's does.
+    // GameCube ports and it replaced the game's program file (the LEGO Star
+    // Wars packs: a PADRead added to their own main.dol). A port-reading
+    // patch over the game's own program (quatric's) isn't one, though the
+    // game links a PADRead it never calls (Kirby's Return to Dream Land).
     const bool pack_reads_pad = standin && from_patch;
     const bool pack_wraps = standin && !pack_reads_pad &&
                             pack_wraps_wii_reads(patches, find_kpad_read(text).address, find_wpad_probe(text));
     const bool pack_ports = standin && !pack_reads_pad && !pack_wraps && pack_reads_gc_ports(patches);
-    if (pack_reads_pad || pack_wraps || (pack_ports && pad.read != 0)) {
+    if (pack_reads_pad || pack_wraps || (pack_ports && program_from_pack)) {
         logf("GameCube adapter: a pack brings its own controller code (%s), so the game's GameCube controllers "
              "setting stays off for this launch\n",
              pack_reads_pad ? "its PADRead is in its memory patches"
-             : pack_wraps   ? "it reroutes the game's calls to its Wii controller reads"
-                            : "it reads the GameCube ports, beside a PADRead");
+             : pack_wraps   ? "it hooks or reroutes the game's Wii controller reads"
+                            : "it reads the GameCube ports, in the program file it brings");
         standin = false;
         out.standin = out.standin_nunchuk = out.standin_sideways = false;
     } else if (pack_ports) {
-        // A pack that reads the GameCube ports straight from the hardware in
-        // a game with no PADRead (quatric's GameCube controller patches)
+        // A pack that reads the GameCube ports straight from the hardware
+        // over the game's own program (quatric's GameCube controller patches)
         // gets nothing there from the adapter, which isn't a port: until
         // RiftWii routes the adapter into such a pack, the stand-in keeps
         // the controls (the pack's code then has no pad to read). Once it
