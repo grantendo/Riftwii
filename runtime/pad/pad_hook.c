@@ -1448,8 +1448,10 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
             continue;
         }
         /* Connected: then what is plugged into it, as WPAD tells it once
-         * it has read the Wii Remote's extension. */
-        if (reason == 0) {
+         * it has read the Wii Remote's extension; only while the channel is
+         * still the stand-in's (a real Wii Remote found during the connect
+         * callback tells its own). */
+        if (reason == 0 && rtgcwii_on(w, chan)) {
             interrupts_restore(msr);
             pad_tell_extension(c, chan);
             msr = interrupts_off();
