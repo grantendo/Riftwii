@@ -457,15 +457,25 @@ void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_wo
 
 // Whether the word at `k` (before word `end`) restores a register in an
 // epilogue: a load off r1 (`lwz`/`lmw`) followed, through nothing but more
-// such loads and `mtlr`, by the frame's undoing (`addi r1,r1,N`, N > 0) within
-// a few words. An ordinary reload through the stack isn't one.
+// such loads and `mtlr`, by the frame's undoing (`addi r1,r1,N`, N > 0) and
+// then a return or tail call, within a few words. An ordinary reload
+// through the stack isn't one.
 bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end) {
     constexpr std::size_t kWithin = 8;
     const auto restore_load = [](std::uint32_t w) { return (opcode(w) == 32 || opcode(w) == 46) && reg_a(w) == 1; };
     if (!restore_load(be32(bytes + 4 * k))) return false;
     for (std::size_t j = k + 1; j < end && j <= k + kWithin; ++j) {
         const std::uint32_t w = be32(bytes + 4 * j);
-        if (opcode(w) == 14 && reg_d(w) == 1 && reg_a(w) == 1 && simm(w) > 0) return true;
+        if (opcode(w) == 14 && reg_d(w) == 1 && reg_a(w) == 1 && simm(w) > 0) {
+            // The frame undone, then the function leaves (a return or a
+            // tail call, maybe after mtlr): only then is it an epilogue.
+            for (std::size_t n = j + 1; n < end && n <= j + 2; ++n) {
+                const std::uint32_t x = be32(bytes + 4 * n);
+                if (x == kBlr || x == 0x4E800420u || (opcode(x) == 18 && (x & 1u) == 0)) return true;
+                if ((x & 0xFC1FFFFFu) != 0x7C0803A6u) return false;
+            }
+            return false;
+        }
         const bool mtlr = (w & 0xFC1FFFFFu) == 0x7C0803A6u;
         if (!restore_load(w) && !mtlr) return false;
     }

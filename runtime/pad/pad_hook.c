@@ -1343,7 +1343,16 @@ int32_t pad_on_set_format(struct rt_pad_context* c, int32_t chan, uint32_t forma
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     uint32_t msr;
     int on;
-    if (!c->gcwii || result != -1 || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS) return result;
+    if (!c->gcwii || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS) return result;
+    if (result == 0) {
+        /* A real Wii Remote took it: noted all the same, so the stand-in's
+         * reports keep the format the game last asked for if it leaves. */
+        msr = interrupts_off();
+        w->format[chan] = format;
+        interrupts_restore(msr);
+        return result;
+    }
+    if (result != -1) return result;
     msr = interrupts_off();
     on = rtgcwii_on(w, (uint32_t)chan);
     if (on) w->format[chan] = format;
