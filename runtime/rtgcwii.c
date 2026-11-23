@@ -152,18 +152,41 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
  * stick does nothing. R (or its analog trigger) shakes it. */
 static void rtgcwii_pointing_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint32_t now, uint32_t last) {
     int32_t axes[6], k, sixteenths;
-    uint32_t dt;
+    uint32_t dt, at;
+    const uint32_t gap = RTGCWII_POINTER_GAP_FRAMES * RTGCWII_TICKS_PER_FRAME;
+    const int32_t whole_step = RTHOME_AXIS_FULL * 16;  /* a full push for a frame, in the sums below */
     const uint32_t shaking = (rtgcwii_pad_buttons(s) & RTGCWII_GC_R) || s[7] >= RTGCWII_TRIGGER_ON;
     w->shake[i] = shaking ? w->shake[i] + 1u : 0u;
-    if (!((w->camera >> i) & 1u)) return;
+    if (!((w->camera >> i) & 1u)) {
+        /* Camera off: nothing counts until it's on again. */
+        w->pointer_at[i] = 0;
+        w->pointer_rest[i][0] = w->pointer_rest[i][1] = 0;
+        return;
+    }
     rthome_classic_axes(s, axes);  /* the control stick is axes 0 and 1 */
-    dt = last != 0 ? rtgcwii_elapsed(now, last) : RTGCWII_TICKS_PER_FRAME;
-    if (dt > RTGCWII_POINTER_GAP_FRAMES * RTGCWII_TICKS_PER_FRAME) dt = RTGCWII_POINTER_GAP_FRAMES * RTGCWII_TICKS_PER_FRAME;
-    sixteenths = (int32_t)(dt * 16u / RTGCWII_TICKS_PER_FRAME);  /* the time since, in sixteenths of a frame */
+    /* The time to count: since the motion was last counted up to, or for
+     * the first sample since the sample before (a frame if none). */
+    at = w->pointer_at[i];
+    if (at == 0) {
+        dt = last != 0 ? rtgcwii_elapsed(now, last) : RTGCWII_TICKS_PER_FRAME;
+        if (dt > gap) dt = gap;
+        at = now - dt;
+    } else {
+        dt = rtgcwii_elapsed(now, at);
+        if (dt > gap) {
+            dt = gap;
+            at = now - gap;
+        }
+    }
+    sixteenths = (int32_t)(dt * 16u / RTGCWII_TICKS_PER_FRAME);  /* the time since, in whole sixteenths of a frame */
+    /* What wasn't a whole sixteenth stays to be counted at the next sample. */
+    w->pointer_at[i] = (at + (uint32_t)sixteenths * RTGCWII_TICKS_PER_FRAME / 16u) | 1u;
     for (k = 0; k < 2; ++k) {
         /* Up on the stick is up on the screen (KPAD's y grows downward). */
-        const int32_t step = (k == 0 ? axes[0] : -axes[1]) * RTGCWII_POINTER_STEP * sixteenths / (RTHOME_AXIS_FULL * 16);
+        const int32_t push = (k == 0 ? axes[0] : -axes[1]) * RTGCWII_POINTER_STEP * sixteenths + w->pointer_rest[i][k];
+        const int32_t step = push / whole_step;
         int32_t p = w->pointer[i][k] + step;
+        w->pointer_rest[i][k] = push - step * whole_step;
         if (p > RTGCWII_POINTER_EDGE) p = RTGCWII_POINTER_EDGE;
         if (p < -RTGCWII_POINTER_EDGE) p = -RTGCWII_POINTER_EDGE;
         w->pointer[i][k] = p;
@@ -217,6 +240,11 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             /* Unplugged: the pointer's last move is forgotten too, so an
              * old mark never reads as recent after the time base wraps. */
             w->pointer_moved[i] = 0;
+#endif
+#ifdef RT_PAD_FORM_POINTING
+            /* ...and the time its motion was counted up to. */
+            w->pointer_at[i] = 0;
+            w->pointer_rest[i][0] = w->pointer_rest[i][1] = 0;
 #endif
         } else if (w->present & bit) {
             /* A dropped report, within the grace period: the buttons stay
@@ -559,7 +587,7 @@ void rtgcwii_retell(struct rtgcwii* w, uint32_t now) {
     }
 }
 
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 static void rtgcwii_put16(uint8_t* p, int32_t v) {
     p[0] = (uint8_t)((uint32_t)v >> 8);
     p[1] = (uint8_t)v;
@@ -605,9 +633,14 @@ uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, 
          * was, as for the HOME Menu's stand-in. */
         const uint32_t worked = w->worked[channel], delivered = w->delivered[channel];
         const uint32_t trig = w->trig[channel], release = w->release[channel];
-#ifdef RT_PAD_FORM_SIDEWAYS
+#if defined(RT_PAD_FORM_SIDEWAYS)
         (void)now;
         rtgcwii_sideways(w, channel, &f);
+#elif defined(RT_PAD_FORM_POINTING)
+        /* A bare Wii Remote held upright: its buttons, its tilt and, with the
+         * camera on, the pointer the control stick moves, as the two dots. */
+        (void)now;
+        rtgcwii_pointing(w, channel, &f);
 #else
         rtgcwii_nunchuk(w, channel, now, &f);
         if (format >= RTGCWII_FMT_FS_FIRST && format <= RTGCWII_FMT_FS_ACC_DPD) bytes = RTGCWII_WPAD_FS_BYTES;
