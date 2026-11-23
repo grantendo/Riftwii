@@ -457,8 +457,13 @@ void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_wo
 
 // `mask` (registers holding an argument, one bit each) after `insn`: a
 // register it writes no longer holds it, unless the write is an `mr` from
-// one that does.
+// one that does. A register restored from the stack (`lwz`/`lmw` off r1)
+// is left as it was: that's an epilogue, and the scan reads straight
+// through an early return's epilogue into the code its branch around it
+// reaches, where the register still holds the argument.
 std::uint32_t track_argument(std::uint32_t insn, std::uint32_t mask) {
+    const bool restore = (opcode(insn) == 32 || opcode(insn) == 46) && reg_a(insn) == 1;
+    if (restore) return mask;
     const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
                     reg_d(insn) == ((insn >> 11) & 31u);
     const bool copies = mr && ((mask >> reg_d(insn)) & 1u);
