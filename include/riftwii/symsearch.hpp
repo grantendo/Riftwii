@@ -167,11 +167,19 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text);
 // this way, as their games link no PAD library).
 bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size);
 
+// Whether every port read reads_gc_ports finds in these bytes can be pointed
+// at a copy: false when one's base also reaches another hardware register in
+// the same stretch of code (`lis r6,0xCD00; lwz r8,0(r6); lwz r9,0x6404(r6)`),
+// which a copy would cut off. Such a pack isn't routed at all.
+bool gc_ports_routable(const std::uint8_t* bytes, std::size_t size);
+
 // Points those reads at a copy of the serial interface's registers in
 // memory: every `lis`/`addis` reads_gc_ports would match gets `copy >> 16`
-// as its upper half (register and offset kept), so its uses at +0x6400..+0x64FF reach the
-// copy, which must sit at an address ending in 0x6400 (copy & 0xFFFF ==
-// 0x6400). Returns how many it rewrote; 0 for a copy at another address.
+// as its upper half (register and offset kept), so its uses at
+// +0x6400..+0x64FF reach the copy, which must sit at an address ending in
+// 0x6400 (copy & 0xFFFF == 0x6400). One whose base also reaches other
+// hardware (gc_ports_routable) is left alone. Returns how many it rewrote;
+// 0 for a copy at another address.
 unsigned retarget_gc_ports(std::uint8_t* bytes, std::size_t size, std::uint32_t copy);
 
 // PADControlMotor(chan, command) in a GameCube game's own SDK (the one the

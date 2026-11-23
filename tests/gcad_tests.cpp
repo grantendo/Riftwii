@@ -1818,6 +1818,23 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
     EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90126400u), 1u);
     EXPECT_TRUE(code[8] == 0x3D && code[9] == 0x29 && code[10] == 0x90 && code[11] == 0x12);  // addis r9,r9,0x9012
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    // One base for the IPC register and a port: a port read, but not
+    // routable, and left alone (the IPC read would go to the copy too).
+    code = bytes({0x3CC0CD00u, 0x81060000u, 0x81266404u, 0x4E800020u});
+    // lis r6,0xCD00; lwz r8,0(r6); lwz r9,0x6404(r6); blr
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90126400u), 0u);
+    // The base turned into a register's address (`ori rX,rX,0x6438`) and
+    // then read at 0 (quatric's Kirby poll): routable. A use past a return
+    // belongs to other code: not counted.
+    code = bytes({0x3C80CD00u, 0x60846438u, 0x80040000u, 0x4E800020u, 0x80040000u});
+    // lis r4,0xCD00; ori r4,r4,0x6438; lwz r0,0(r4); blr; lwz r0,0(r4)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3C80CD00u, 0x80046404u, 0x4E800020u, 0x80840000u});
+    // lis r4,0xCD00; lwz r0,0x6404(r4); blr; lwz r4,0(r4)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
     // A copy that doesn't end in 0x6400: nothing rewritten.
     code = bytes({0x3CC0CD00u, 0x81066404u});
     EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90120000u), 0u);
