@@ -226,10 +226,12 @@ void rtgcwii_route(const struct rtgcwii* w, const uint8_t* status) {
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     uint32_t i, k;
     if (w->route_si != 0) {
-        /* Routing: the pack reads the controllers from the copy, and the
-         * stand-in itself has nothing plugged in, so it answers nothing. */
+        /* Routing: the pack reads the controllers from the copy. A pack
+         * that hooks the Wii controller reads itself needs nothing more
+         * from the stand-in; one that adds the pad to a Wii Remote's input
+         * gets the stand-in as that Wii Remote, at rest (inputless). */
         rtgcwii_route(w, status);
-        return;
+        if (!w->inputless) return;
     }
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
         const uint8_t* s = status + i * RTGCWII_PAD_BYTES;
