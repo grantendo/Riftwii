@@ -1305,11 +1305,12 @@ const char* whole_mem1_reason(bool code_build, bool clears_mem1_top) {
 // (false when it turns the adapter off; its USB handle is then let go,
 // so the game's own USB gets it), and Settings > GameCube rumble Off.
 // `patches` are the packs' <memory> patches, not applied yet: a PADRead
-// one of them writes is found too. `classic_without_usb`: the game's
+// one of them writes is found too; `program_from_pack`: a pack replaced
+// the game's main.dol. `classic_without_usb`: the game's
 // GameCube controllers as Classic Controllers setting wants the hook even
 // with no adapter (the Wii's own ports).
 bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, bool classic_without_usb,
-                     const std::vector<MemoryPatch>& patches, PadHook& pad) {
+                     const std::vector<MemoryPatch>& patches, bool program_from_pack, PadHook& pad) {
     if (gx_protected && g_extras.gc_adapter != GcAdapterMode::Off)
         logf("GameCube adapter: off: the game checks its own code (MetaFortress)\n");
     // With no adapter the hook still goes in for the Wii's own ports, and
@@ -1319,8 +1320,9 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
     if (gc_adapter) {
         std::string why;
         // With the stand-in's form, which picks its pad build (fetch_pad_build).
-        if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, g_extras.gc_standin,
-                                g_extras.gc_standin_nunchuk, g_extras.gc_standin_sideways, usb, pad, why)) {
+        if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, program_from_pack,
+                                g_extras.gc_standin, g_extras.gc_standin_nunchuk, g_extras.gc_standin_sideways, usb,
+                                pad, why)) {
             logf("GameCube adapter: off: %s\n", why.c_str());
             gc_adapter = false;
         }
@@ -2698,7 +2700,7 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
     // setup comes after the runtime's, when the log has ended.
     GameExtras extras;
     gc_adapter = prepare_gc_pads(dol, gc_adapter, gx_protected, g_extras.gc_standin && !clears_mem1_top && !code_build,
-                                 options.memory_patches, extras.pad);
+                                 options.memory_patches, !options.main_dol.empty(), extras.pad);
     // Its code from the pads plugin while the card is still RiftWii's.
     if (gc_adapter && !fetch_pad_build(extras.pad, code_build, error)) return false;
     if (!gc_adapter) release_pads_plugin();
@@ -4554,7 +4556,7 @@ bool boot_channel(ChannelBootFiles files, std::string& error) {
     extras_context.arena2_lo = read32(0x80003124);
     extras_context.mem1_floor = channel_extras_floor(dol, loader_end);
     extras_context.gc_adapter =
-        prepare_gc_pads(dol, adapter_wanted, gx_protected, g_extras.gc_standin && !clears_mem1_top, {}, extras.pad);
+        prepare_gc_pads(dol, adapter_wanted, gx_protected, g_extras.gc_standin && !clears_mem1_top, {}, false, extras.pad);
     // Its code from the pads plugin while the card is still RiftWii's
     // (a channel is never a code build).
     if (extras_context.gc_adapter && !fetch_pad_build(extras.pad, false, error)) return false;
