@@ -472,7 +472,17 @@ bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end)
             // caller's frame and mtlr): only then is it an epilogue.
             for (std::size_t n = j + 1; n < end && n <= j + 4; ++n) {
                 const std::uint32_t x = be32(bytes + 4 * n);
-                if (x == kBlr || x == 0x4E800420u || (opcode(x) == 18 && (x & 1u) == 0)) return true;
+                if (x == kBlr || x == 0x4E800420u) return true;
+                if (opcode(x) == 18 && (x & 1u) == 0) {
+                    // A `b` is a tail call only if it leaves the code being
+                    // read: absolute, or to before the restore or past `end`;
+                    // a branch further into the function isn't an epilogue.
+                    if ((x & 2u) != 0) return true;
+                    std::int32_t offset = static_cast<std::int32_t>(x & 0x03FFFFFCu);
+                    if (offset & 0x02000000) offset -= 0x04000000;
+                    const std::int64_t target = static_cast<std::int64_t>(n) + offset / 4;
+                    return target < static_cast<std::int64_t>(k) || target >= static_cast<std::int64_t>(end);
+                }
                 if ((x & 0xFC1FFFFFu) != 0x7C0803A6u && !restore_load(x)) return false;
             }
             return false;
