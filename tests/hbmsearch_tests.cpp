@@ -410,6 +410,27 @@ void TestWpadConnectLater() {
         EXPECT_EQ(found.offset, 2212u);
     }
     {
+        // The setter's copy of r4 overwritten before its store (`mr r29,r4;
+        // li r29,0`): it stores 0, not the callback, so it isn't a setter
+        // and the slot isn't found.
+        Section t{0x80218000, {}};
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x803D));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(5, 5, -20720));
+        t.put(mr(29, 4));
+        t.put(li(29, 0));
+        t.put(lwzx(31, 5, 3));
+        t.put(lwz(30, 31, 2212));
+        t.put(stw(29, 31, 2212));
+        t.put(kBlr);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
+    }
+    {
         // No slot called with "no controller": none.
         Section t{0x80218000, {}};
         put_later_setter(t, 2212);

@@ -275,6 +275,7 @@ void rtgcwii_retell(struct rtgcwii* w, uint32_t now);
  * and 49 (signed bytes, RTGCWII_FS_STICK_FULL full). */
 #define RTGCWII_WPAD_CORE_BYTES 42u
 #define RTGCWII_WPAD_FS_BYTES 50u
+#define RTGCWII_WPAD_ERR 41u  /* the report's error byte: 0 is a real report */
 #define RTGCWII_ACC_G 104         /* Dolphin's calibration: zero 0x200, one g 0x268 */
 #define RTGCWII_FS_STICK_FULL 100
 /* The camera's two sensor-bar dots: centred on (512, 384) when the pointer

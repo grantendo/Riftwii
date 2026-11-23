@@ -255,6 +255,22 @@ void TestWpadStatus() {
     std::memset(out, 0xEE, sizeof(out));
     EXPECT_EQ(rtgcwii_wpad_status(&w, 1, out, 49, 0), 0u);
     EXPECT_EQ(out[0], 0xEE);
+    // A raw read doesn't take a press from the game's next KPAD read: X
+    // pressed, read raw first, is still new (A's trig) at the KPAD read.
+    {
+        rtgcwii w2 = fresh();
+        Pads p2;
+        p2.plug(0, 0);
+        rtgcwii_pads(&w2, p2.s, 1);
+        rtgcwii_fs f;
+        rtgcwii_sideways(&w2, 0, &f);
+        p2.plug(0, kGcX);
+        rtgcwii_pads(&w2, p2.s, 17);
+        rtgcwii_wpad_status(&w2, 0, out, 17, 0);
+        EXPECT_EQ((out[0] << 8) | out[1], static_cast<int>(kWrA));
+        rtgcwii_sideways(&w2, 0, &f);
+        EXPECT_EQ(f.trig, kWrA);
+    }
 }
 
 // Telling again (rtgcwii_retell): a channel told and not read since is told
