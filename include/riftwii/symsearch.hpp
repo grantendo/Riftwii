@@ -142,7 +142,7 @@ std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std
 // dumped (19 of 21 games; 2006's have neither). The switch is the byte at
 // base + chan * stride + offset. All 0 when there's no such pair, or two.
 struct KpadDpd {
-    std::uint32_t enable = 0;  // KPADEnableDPD
+    std::uint32_t enable = 0;  // KPADEnableDPD, or the function found reading the switch: where it was found (0: not)
     std::uint32_t base = 0;    // KPAD's per-channel blocks
     std::uint32_t stride = 0;  // one channel's
     std::uint32_t offset = 0;  // the switch's, in one (signed, as stb takes it: added with wrap-around)
