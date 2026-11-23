@@ -901,16 +901,36 @@ bool pad_read_in_place(std::uint32_t address) {
     return is_pad_read(code, address);
 }
 
-// Whether a plain memory patch will be written: its `original` guard, if
-// any, matches the game as loaded (apply_memory_patches skips it
-// otherwise). Search and ocarina patches find their place only as they
-// are applied, so they count.
-bool patch_will_apply(const MemoryPatch& patch) {
-    if (patch.search || patch.ocarina || patch.original.empty()) return true;
-    const std::uint32_t at = memory_patch_target(patch);
-    const std::uint32_t ram_end = at < 0x90000000u ? 0x81800000u : 0x94000000u;
-    if (at >= ram_end || ram_end - at < patch.original.size()) return false;
-    return std::memcmp(reinterpret_cast<const void*>(at), patch.original.data(), patch.original.size()) == 0;
+// Which memory patches will be written, one flag each, as
+// apply_memory_patches goes: in document order, a plain patch with an
+// `original` guard only where the guard matches the game as loaded with
+// the earlier plain writes over it. Search and ocarina patches find their
+// place only as they are applied, so they count (and their writes aren't
+// followed here).
+std::vector<bool> patches_that_apply(const std::vector<MemoryPatch>& patches) {
+    std::vector<bool> applies(patches.size(), true);
+    std::vector<std::size_t> written;  // the plain patches written so far, in order
+    const auto byte_at = [&](std::uint32_t address, std::uint8_t& out) {
+        const std::uint32_t ram_end = address < 0x90000000u ? 0x81800000u : 0x94000000u;
+        if (address < 0x80000000u || address >= ram_end) return false;
+        out = *reinterpret_cast<const volatile std::uint8_t*>(address);
+        for (std::size_t w : written) {  // the latest write over it wins
+            const std::uint32_t start = memory_patch_target(patches[w]);
+            if (address >= start && address - start < patches[w].value.size()) out = patches[w].value[address - start];
+        }
+        return true;
+    };
+    for (std::size_t i = 0; i < patches.size(); ++i) {
+        const MemoryPatch& patch = patches[i];
+        if (patch.search || patch.ocarina || !patch.has_offset) continue;
+        const std::uint32_t at = memory_patch_target(patch);
+        for (std::size_t k = 0; k < patch.original.size() && applies[i]; ++k) {
+            std::uint8_t now = 0;
+            applies[i] = byte_at(at + static_cast<std::uint32_t>(k), now) && now == patch.original[k];
+        }
+        if (applies[i] && !patch.value.empty()) written.push_back(i);
+    }
+    return applies;
 }
 
 // Whether a pack's own bytes (its memory patches' values, not the game code
@@ -918,8 +938,10 @@ bool patch_will_apply(const MemoryPatch& patch) {
 // GameCube controller ports straight from the hardware (reads_gc_ports).
 // A value kept in a file isn't loaded yet here, so isn't looked at.
 bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
-    for (const MemoryPatch& patch : patches) {
-        if (patch.value.empty() || !patch_will_apply(patch)) continue;
+    const std::vector<bool> applies = patches_that_apply(patches);
+    for (std::size_t i = 0; i < patches.size(); ++i) {
+        const MemoryPatch& patch = patches[i];
+        if (patch.value.empty() || !applies[i]) continue;
         if (reads_gc_ports(patch.value.data(), patch.value.size())) return true;
     }
     return false;
@@ -939,12 +961,14 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t
         if (offset & 0x02000000u) offset |= 0xFC000000u;  // a call back: sign-extended
         return at + offset;
     };
-    for (const MemoryPatch& patch : patches) {
-        if (!patch.has_offset || patch.search || patch.ocarina || patch.value.size() != 4) continue;
+    const std::vector<bool> applies = patches_that_apply(patches);
+    for (std::size_t i = 0; i < patches.size(); ++i) {
+        const MemoryPatch& patch = patches[i];
+        if (!applies[i] || !patch.has_offset || patch.search || patch.ocarina || patch.value.size() != 4) continue;
         // Where the patcher writes it (a low or uncached offset at its
         // cached alias), and only a patch it will write.
         const std::uint32_t at = memory_patch_target(patch);
-        if ((at & 3u) != 0 || at >= 0x81800000u || !patch_will_apply(patch)) continue;
+        if ((at & 3u) != 0 || at >= 0x81800000u) continue;
         const std::uint32_t now = be32(patch.value.data());
         const std::uint32_t old = *reinterpret_cast<const volatile std::uint32_t*>(at);
         // A call the pack sends somewhere else: the same call written back
