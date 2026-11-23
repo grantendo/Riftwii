@@ -66,7 +66,7 @@ struct rtgcwii {
     /* The HOME Menu's stand-in's channel (one bit) when the game knew it
      * as this stand-in's as the HOME stand-in took it, 0: a Classic one.
      * It keeps that shape until the next time it takes a channel, though
-     * the controller unplugs under the menu (Nunchuk form only). */
+     * the controller unplugs under the menu (the Wii Remote forms only). */
     uint32_t home_shaped;
 };
 
