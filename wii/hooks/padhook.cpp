@@ -748,10 +748,14 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     const HbmFunctions hbm = find_hbm_functions(text, all, find_small_data_base(all, dol.entry));
     // The 2006 KPAD's 136-byte status lays its last fields out apart from
     // the later ones', and only the stand-in builds write it that way: the
-    // pad builds without a stand-in never get its read.
+    // pad builds without a stand-in never get its read. Nor does the
+    // Classic Controller stand-in: that KPAD knows no Classic Controller,
+    // so only the Wii Remote forms take it.
     const bool old_kpad = kpad.status_bytes == 136;
+    const bool takes_old_kpad = out.standin_nunchuk || out.standin_sideways;
     const char* missing_read = kpad.address == 0                ? "the KPAD read"
                                : old_kpad && !out.standin       ? "a KPAD read for the HOME Menu (the 2006 KPAD's)"
+                               : old_kpad && !takes_old_kpad    ? "a KPAD read for Classic Controllers (the 2006 KPAD's)"
                                : probe == 0                     ? "WPADProbe"
                                                                 : nullptr;
     const char* missing_menu = hbm.calc == 0 ? "HBMCalc" : hbm.select == 0 ? "HBMGetSelectBtnNum" : nullptr;
@@ -859,10 +863,12 @@ void read_patched_code(const std::vector<MemoryPatch>& patches, PatchedCode& out
 }
 
 bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches, bool standin,
-                        bool usb, PadHook& out, std::string& why) {
+                        bool nunchuk, bool sideways, bool usb, PadHook& out, std::string& why) {
     out = PadHook{};
     out.demo = demo;
     out.standin = standin;
+    out.standin_nunchuk = standin && nunchuk;
+    out.standin_sideways = standin && sideways;
     std::vector<CodeRange> text;
     for (std::size_t i = 0; i < kDolTextSections; ++i) {
         const DolSection& s = dol.sections[i];

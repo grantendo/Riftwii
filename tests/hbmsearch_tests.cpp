@@ -318,6 +318,26 @@ void TestWpadConnect2006() {
         (void)setter;
     }
     {
+        // The callback swapped through one table, then a lookup through
+        // another: the first table is the one found.
+        Section t{0x80040000, {}};
+        t.put(stwu_r1(0x10));
+        t.put(kMflrR0);
+        t.put(mr(30, 4));
+        t.put(lis(4, 0x8039));
+        t.put(addi(4, 4, -2832));  // table A, 0x8038F4F0
+        t.put(lwzx(4, 4, 0));
+        t.put(lwz(31, 4, 2020));
+        t.put(stw(30, 4, 2020));
+        t.put(lis(5, 0x8040));
+        t.put(addi(5, 5, 0x100));  // table B, 0x80400100
+        t.put(lwzx(6, 5, 0));
+        t.put(kBlr);
+        const riftwii::WpadConnect2006 found = riftwii::find_wpad_connect_2006({t.range()});
+        EXPECT_EQ(found.table, 0x8038F4F0u);
+        EXPECT_EQ(found.offset, 2020u);
+    }
+    {
         // A later WPAD (no such setter): none.
         Section t{0x80040000, {}};
         put_connect_setter(t, 2024);
