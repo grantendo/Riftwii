@@ -3075,17 +3075,21 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
             const std::vector<std::uint8_t> before = patch.value;
             const unsigned count = retarget_gc_ports(patch.value.data(), patch.value.size(), extras.pad.route_si);
             rewritten += count;
-            // Where each rewritten word will sit, with its original, so a
-            // hook that fails to go in can undo it (unroute_pack). A search
-            // patch's place isn't known yet: its reads stay rewritten.
+            // Where each rewritten word will sit, with its original and
+            // rewritten forms, so a hook that fails to go in can undo it
+            // (unroute_pack, which only puts back a word still as
+            // rewritten). Routing leaves out a pack with port reads in a
+            // search patch (pack_ports_routable), whose place isn't known.
             if (count == 0 || !patch.has_offset || patch.search) continue;
             const std::uint32_t at = memory_patch_target(patch);
+            const auto word_at = [](const std::uint8_t* b) {
+                return (std::uint32_t(b[0]) << 24) | (std::uint32_t(b[1]) << 16) | (std::uint32_t(b[2]) << 8) | b[3];
+            };
             for (std::size_t w = 0; w + 4 <= before.size(); w += 4) {
                 if (std::memcmp(before.data() + w, patch.value.data() + w, 4) == 0) continue;
-                const std::uint32_t original = (std::uint32_t(before[w]) << 24) | (std::uint32_t(before[w + 1]) << 16) |
-                                               (std::uint32_t(before[w + 2]) << 8) | before[w + 3];
                 extras.pad.route_restore.push_back(at + static_cast<std::uint32_t>(w));
-                extras.pad.route_restore.push_back(original);
+                extras.pad.route_restore.push_back(word_at(before.data() + w));
+                extras.pad.route_restore.push_back(word_at(patch.value.data() + w));
             }
         }
         logf("GameCube adapter: %u of the pack's port reads now read the adapter's copy at 0x%08x\n", rewritten,

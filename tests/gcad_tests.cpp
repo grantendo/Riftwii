@@ -1909,6 +1909,11 @@ static void TestReadsGcPorts() {
     code = bytes({0x3C80CD00u, 0x80046404u, 0x4E800020u, 0x80840000u});
     // lis r4,0xCD00; lwz r0,0x6404(r4); blr; lwz r4,0(r4)
     EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    // A conditional branch doesn't end what's followed: the IPC read past
+    // it, through the same base, still makes it not routable.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x41820008u, 0x81260000u, 0x4E800020u});
+    // lis r6,0xCD00; lwz r8,0x6404(r6); beq +8; lwz r9,0(r6); blr
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
     // A copy that doesn't end in 0x6400: nothing rewritten.
     code = bytes({0x3CC0CD00u, 0x81066404u});
     EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90120000u), 0u);

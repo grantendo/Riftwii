@@ -1725,9 +1725,11 @@ bool gc_port_high(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
 // something other than the serial interface's registers before the code
 // changes it (`lis r6,0xCD00; lwz r8,0(r6); lwz r9,0x6404(r6)` reads the
 // IPC register at 0xCD000000 through the same r6): pointing that base at the
-// copy would send the other access there too. Straight-line code only: it
-// stops at a branch, a call, a return or anything that may write the
-// register, so a use it can't follow isn't counted.
+// copy would send the other access there too. It reads on through a
+// conditional branch (the code after it runs when the branch isn't taken,
+// and a forward target is further on in the same words) and stops at an
+// unconditional branch, a call, a return or anything that may write the
+// register.
 bool gc_port_base_shared(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
     constexpr unsigned kWithin = 24;
     constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
@@ -1739,7 +1741,8 @@ bool gc_port_base_shared(const std::uint8_t* bytes, std::size_t words, std::size
         const std::uint32_t field_d = (insn >> 21) & 31u;  // rD or rS
         const std::uint32_t field_a = (insn >> 16) & 31u;  // rA
         const bool si = low >= kSiFirst && low < kSiEnd;
-        if (op == 18 || op == 19 || op == 16) return false;  // b, bl, blr, bc: the code goes elsewhere
+        if (op == 16) continue;                // bc: read on along the path not taken
+        if (op == 18 || op == 19) return false;  // b, bl, blr, bctr: the code goes elsewhere
         const bool load = (op >= 32 && op <= 35) || (op >= 40 && op <= 43) || op == 46;  // lwz..lbzu, lhz..lhau, lmw
         const bool store = (op >= 36 && op <= 39) || op == 44 || op == 45 || op == 47;  // stw..stbu, sth, sthu, stmw
         if ((load || store) && field_a == reg) {

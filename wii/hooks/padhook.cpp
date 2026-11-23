@@ -1030,6 +1030,11 @@ bool pack_ports_routable(const std::vector<MemoryPatch>& patches) {
         const MemoryPatch& patch = patches[i];
         if (patch.value.empty() || !applies[i]) continue;
         if (!gc_ports_routable(patch.value.data(), patch.value.size())) return false;
+        // A search patch's place is found only as it's written, so its
+        // rewritten reads couldn't be put back if the adapter's hook then
+        // failed to go in: such a pack isn't routed.
+        const bool placed = patch.has_offset && !patch.search;
+        if (!placed && reads_gc_ports(patch.value.data(), patch.value.size())) return false;
     }
     return true;
 }
@@ -1923,9 +1928,13 @@ void log_pad_diagnostics(std::uint32_t code_base, std::uint32_t print_entry) {
 
 unsigned unroute_pack(PadHook& hook) {
     unsigned restored = 0;
-    for (std::size_t i = 0; i + 1 < hook.route_restore.size(); i += 2) {
+    for (std::size_t i = 0; i + 3 <= hook.route_restore.size(); i += 3) {
         const std::uint32_t address = hook.route_restore[i];
         const std::uint32_t original = hook.route_restore[i + 1];
+        const std::uint32_t routed = hook.route_restore[i + 2];
+        // Only a word the pack's patch did write, still as rewritten: a
+        // patch whose guard failed, or one written over since, is left be.
+        if (*reinterpret_cast<const volatile std::uint32_t*>(address) != routed) continue;
         store_words(address, &original, 1);
         sync_code(address, 4);
         ++restored;
@@ -2254,6 +2263,13 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
     } else if (hook.standin && hook.gcwii_base != 0) {
         logf("GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the KPAD read's or WPADProbe's "
              "hook didn't go in\n");
+    }
+    // Routing: the stand-in fills the copy the pack's port reads point at;
+    // without it nothing would, so they go back to the hardware.
+    if (hook.route_pack && ctx->gcwii == 0) {
+        const unsigned restored = unroute_pack(hook);
+        logf("GameCube adapter: the stand-in isn't in, so the pack's %u port reads point at the hardware again\n",
+             restored);
     }
     if (home) {
         logf("GameCube adapter: the HOME Menu by the controller is on: the combo held %u ms opens the game's own "
