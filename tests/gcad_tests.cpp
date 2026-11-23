@@ -1763,6 +1763,22 @@ static void TestKpadDpdSwitch() {
         text = {{c.base, code.data(), code.size()}};
         EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
     }
+    // The read and call with no function start before them (a `blr` ends
+    // the code before): not inside a framed function, so nothing.
+    {
+        Asm c{0x8054C000u, {}};
+        const std::uint32_t is = is_dpd(c);
+        c.op(0x3FE08075u);  // lis r31,0x8075
+        c.op(0x3BFF0A00u);  // addi r31,r31,0x0A00
+        c.op(0x1CC30688u);  // mulli r6,r3,1672
+        c.op(0x7FDF3214u);  // add r30,r31,r6
+        c.op(0x881E0642u);  // lbz r0,0x642(r30)
+        c.bl(is);
+        c.blr();
+        code = c.bytes();
+        text = {{c.base, code.data(), code.size()}};
+        EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
+    }
     // No WPADIsDpdEnabled: nothing.
     Asm b{0x8054C000u, {}};
     reader(b, 0x8054C000u, 0x881E0642u);

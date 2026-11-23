@@ -797,9 +797,12 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
             const std::uint32_t at = r.address + static_cast<std::uint32_t>(4 * call);
             const std::uint32_t insn = be32(r.bytes + 4 * call);
             if (!is_bl(insn) || bl_target(at, insn) != is_dpd) continue;
-            // The calling function: back to its `stwu r1`.
-            std::size_t start = call;
-            while (start > 0 && (be32(r.bytes + 4 * start) & 0xFFFF0000u) != 0x94210000u) --start;
+            // The calling function: back to its `stwu r1` (function_start:
+            // a bounded look back, no `blr` between); a call found outside
+            // a framed function isn't the read.
+            const std::uint32_t function = function_start(text, at);
+            if (function < r.address || function >= at) continue;
+            const std::size_t start = (function - r.address) / 4;
             // Its channel blocks: base (lis/addi, or a copy by `addi rD,rA,0`) plus a `mulli` of the channel.
             std::uint32_t high[32] = {}, address[32] = {}, stride_of[32] = {};
             std::uint32_t block_base[32] = {}, block_stride[32] = {};
