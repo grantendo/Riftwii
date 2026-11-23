@@ -489,6 +489,17 @@ void TestWpadConnectLater() {
         u.put(kBctrl);
         u.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_connect_later({u.range()}).table, 0u);
+        // `lmw r3,8(r1)` loads r3 through r31, r4 among them: a write.
+        Section v{0x80218000, {}};
+        put_later_setter(v, 2212);
+        v.put(stwu_r1(0x40));
+        v.put(lwz(12, 29, 2212));
+        v.put(li(4, -1));
+        v.put(0xB8610008u);  // lmw r3,8(r1)
+        v.put(kMtctrR12);
+        v.put(kBctrl);
+        v.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({v.range()}).table, 0u);
     }
     {
         // The -1 belongs to a later call, past a jump: not this slot's.
