@@ -1721,7 +1721,59 @@ bool gc_port_high(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
     return false;
 }
 
+// Whether the base a port read's `lis`/`addis` at `i` loads also reaches
+// something other than the serial interface's registers before the code
+// changes it (`lis r6,0xCD00; lwz r8,0(r6); lwz r9,0x6404(r6)` reads the
+// IPC register at 0xCD000000 through the same r6): pointing that base at the
+// copy would send the other access there too. Straight-line code only: it
+// stops at a branch, a call, a return or anything that may write the
+// register, so a use it can't follow isn't counted.
+bool gc_port_base_shared(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
+    constexpr unsigned kWithin = 24;
+    constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
+    const std::uint32_t reg = (be32(bytes + i * 4) >> 21) & 31u;
+    for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
+        const std::uint32_t insn = be32(bytes + k * 4);
+        const std::uint32_t op = insn >> 26;
+        const std::uint32_t low = insn & 0xFFFFu;
+        const std::uint32_t field_d = (insn >> 21) & 31u;  // rD or rS
+        const std::uint32_t field_a = (insn >> 16) & 31u;  // rA
+        const bool si = low >= kSiFirst && low < kSiEnd;
+        if (op == 18 || op == 19 || op == 16) return false;  // b, bl, blr, bc: the code goes elsewhere
+        const bool load = (op >= 32 && op <= 35) || (op >= 40 && op <= 43) || op == 46;  // lwz..lbzu, lhz..lhau, lmw
+        const bool store = (op >= 36 && op <= 39) || op == 44 || op == 45 || op == 47;  // stw..stbu, sth, sthu, stmw
+        if ((load || store) && field_a == reg) {
+            if (!si) return true;  // an access through the base at another register
+            if (load && field_d == reg) return false;  // the base loaded over
+            continue;
+        }
+        if (op == 14 && field_a == reg) {  // addi rD,rX,low: an address from the base
+            if (!si) return true;
+            if (field_d == reg) return false;
+            continue;
+        }
+        if (op == 24 && field_d == reg) {  // ori rA,rX,low
+            if (!si) return true;
+            if (field_a == reg) return false;
+            continue;
+        }
+        // Anything else that may write the register ends what can be followed.
+        const bool writes_d = op == 7 || op == 8 || op == 12 || op == 13 || op == 14 || op == 15 || load;
+        const bool writes_a = (op >= 20 && op <= 29 && op != 22);  // rlwimi..andis.
+        if ((writes_d && field_d == reg) || (writes_a && field_a == reg)) return false;
+        if (op == 31 && (field_d == reg || field_a == reg)) return false;
+    }
+    return false;
+}
+
 }  // namespace
+
+bool gc_ports_routable(const std::uint8_t* bytes, std::size_t size) {
+    const std::size_t words = size / 4;
+    for (std::size_t i = 0; i < words; ++i)
+        if (gc_port_high(bytes, words, i) && gc_port_base_shared(bytes, words, i)) return false;
+    return true;
+}
 
 bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
     const std::size_t words = size / 4;
@@ -1735,7 +1787,7 @@ unsigned retarget_gc_ports(std::uint8_t* bytes, std::size_t size, std::uint32_t 
     const std::size_t words = size / 4;
     unsigned rewritten = 0;
     for (std::size_t i = 0; i < words; ++i) {
-        if (!gc_port_high(bytes, words, i)) continue;
+        if (!gc_port_high(bytes, words, i) || gc_port_base_shared(bytes, words, i)) continue;
         // Keep the instruction and its register, change only the upper half.
         bytes[i * 4 + 2] = static_cast<std::uint8_t>(copy >> 24);
         bytes[i * 4 + 3] = static_cast<std::uint8_t>(copy >> 16);

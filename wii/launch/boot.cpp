@@ -1622,7 +1622,15 @@ void install_game_extras(GameExtras& extras) {
     }
     if (extras.pad.active) {
         std::string why;
-        if (!install_pad_hook(extras.pad, why)) logf("GameCube adapter: off: %s\n", why.c_str());
+        if (!install_pad_hook(extras.pad, why)) {
+            logf("GameCube adapter: off: %s\n", why.c_str());
+            // Nothing will fill the copy the pack's port reads were pointed
+            // at: they go back to the hardware.
+            if (extras.pad.route_pack) {
+                const unsigned restored = unroute_pack(extras.pad);
+                logf("GameCube adapter: the pack's %u port reads point at the hardware again\n", restored);
+            }
+        }
     }
     if (extras.shot.active) {
         std::string why;
@@ -3063,8 +3071,22 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
     if (extras.pad.active && extras.pad.route_pack && extras.pad.route_si != 0) {
         unsigned rewritten = 0;
         for (MemoryPatch& patch : options.memory_patches) {
-            if (!patch.value.empty())
-                rewritten += retarget_gc_ports(patch.value.data(), patch.value.size(), extras.pad.route_si);
+            if (patch.value.empty()) continue;
+            const std::vector<std::uint8_t> before = patch.value;
+            const unsigned count = retarget_gc_ports(patch.value.data(), patch.value.size(), extras.pad.route_si);
+            rewritten += count;
+            // Where each rewritten word will sit, with its original, so a
+            // hook that fails to go in can undo it (unroute_pack). A search
+            // patch's place isn't known yet: its reads stay rewritten.
+            if (count == 0 || !patch.has_offset || patch.search) continue;
+            const std::uint32_t at = memory_patch_target(patch);
+            for (std::size_t w = 0; w + 4 <= before.size(); w += 4) {
+                if (std::memcmp(before.data() + w, patch.value.data() + w, 4) == 0) continue;
+                const std::uint32_t original = (std::uint32_t(before[w]) << 24) | (std::uint32_t(before[w + 1]) << 16) |
+                                               (std::uint32_t(before[w + 2]) << 8) | before[w + 3];
+                extras.pad.route_restore.push_back(at + static_cast<std::uint32_t>(w));
+                extras.pad.route_restore.push_back(original);
+            }
         }
         logf("GameCube adapter: %u of the pack's port reads now read the adapter's copy at 0x%08x\n", rewritten,
              extras.pad.route_si);

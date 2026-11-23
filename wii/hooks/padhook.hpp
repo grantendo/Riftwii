@@ -150,6 +150,10 @@ struct PadHook {
     // stand-in fills; its hooks run after the stand-in's.
     bool route_pack = false;
     std::uint32_t route_si = 0;
+    // The pack's rewritten port reads, as (address, original word) pairs, so
+    // a hook that then fails to go in can give the pack its hardware back
+    // (unroute_pack).
+    std::vector<std::uint32_t> route_restore;
     // ...or a pointing Wii Remote (RT_PAD_FORM_POINTING).
     bool standin_pointing = false;
     // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on
@@ -324,6 +328,11 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
 
 // After the patches and the cheats, just before the handover.
 bool install_pad_hook(PadHook& hook, std::string& why);
+
+// Routing undone after install_pad_hook failed: the pack's port reads, as
+// written into memory, point back at the hardware (nothing would fill the
+// copy). Returns how many it put back.
+unsigned unroute_pack(PadHook& hook);
 
 // After Return to RiftWii has been patched in for the channel (the Reset
 // leaves through the game's OSReturnToMenu, which starts it): turns the

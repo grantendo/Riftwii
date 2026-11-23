@@ -989,6 +989,19 @@ bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
     return false;
 }
 
+// Whether every port read in the pack's applied memory patches can be pointed
+// at the copy (gc_ports_routable): none shares its base with another
+// hardware register.
+bool pack_ports_routable(const std::vector<MemoryPatch>& patches) {
+    const std::vector<bool> applies = patches_that_apply(patches);
+    for (std::size_t i = 0; i < patches.size(); ++i) {
+        const MemoryPatch& patch = patches[i];
+        if (patch.value.empty() || !applies[i]) continue;
+        if (!gc_ports_routable(patch.value.data(), patch.value.size())) return false;
+    }
+    return true;
+}
+
 // Whether a pack's memory patches take over the game's Wii controller
 // reads: a 4-byte patch whose new word is a `bl` over the game's `bl` (as
 // loaded, before the patches) to WPADProbe or to the KPAD read (or the
@@ -1008,6 +1021,9 @@ PackTakes pack_takes_wii_reads(const std::vector<MemoryPatch>& patches, std::uin
         if (offset & 0x02000000u) offset |= 0xFC000000u;  // a call back: sign-extended
         return at + offset;
     };
+    // Every patch is looked at, so the answer doesn't depend on their order:
+    // a rerouted call wins over a hooked entry (the pack then takes the
+    // reads where the stand-in's hooks can't follow).
     const std::vector<bool> applies = patches_that_apply(patches);
     // The patches the patcher will write at a known place (a low or
     // uncached offset at its cached alias).
@@ -1150,7 +1166,15 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
                                 : PackTakes::None;
     const bool pack_ports = standin && !pack_reads_pad && !program_pad && pack_reads_gc_ports(patches);
     const bool pack_wraps = takes != PackTakes::None;
-    if (pack_ports && takes == PackTakes::HooksEntries && !program_from_pack) {
+    // Routable: the pack's port reads can all point at the copy. If one
+    // shares its base with other hardware, the pack keeps the hardware and
+    // the setting goes off below (it hooks the reads).
+    const bool route_candidate = pack_ports && takes == PackTakes::HooksEntries && !program_from_pack;
+    const bool routable = route_candidate && pack_ports_routable(patches);
+    if (route_candidate && !routable)
+        logf("GameCube adapter: a pack reads the GameCube controller ports itself, but through a base it also uses "
+             "for other hardware, so the adapter can't be routed into it\n");
+    if (routable) {
         logf("GameCube adapter: a pack reads the GameCube controller ports itself and hooks the Wii controller "
              "reads: the adapter is routed into its port reads, and the GameCube controllers' stand-in only reads "
              "the pads for it\n");
@@ -1848,6 +1872,21 @@ void log_pad_diagnostics(std::uint32_t code_base, std::uint32_t print_entry) {
     std::strcpy(ctx->diagnostic_format, "RiftWii USB controller diagnostic");
     ctx->diagnostic_print = print_entry;
     DCFlushRange(ctx, RT_PAD_CONTEXT_BASE_BYTES);  // its words are in either blob's context
+}
+
+unsigned unroute_pack(PadHook& hook) {
+    unsigned restored = 0;
+    for (std::size_t i = 0; i + 1 < hook.route_restore.size(); i += 2) {
+        const std::uint32_t address = hook.route_restore[i];
+        const std::uint32_t original = hook.route_restore[i + 1];
+        store_words(address, &original, 1);
+        sync_code(address, 4);
+        ++restored;
+    }
+    hook.route_restore.clear();
+    hook.route_pack = false;
+    hook.route_si = 0;
+    return restored;
 }
 
 bool install_pad_hook(PadHook& hook, std::string& why) {
