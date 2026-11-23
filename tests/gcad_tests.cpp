@@ -1848,7 +1848,12 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC08000u, 0x81066404u, 0x4E800020u});  // lis r6,0x8000: plain memory
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
-    code = bytes({0x3CC0CD00u, 0x3CC08000u, 0x81066404u});  // lis r6,0xCD00; lis r6,0x8000: plain memory again
+    // Pointed at a copy at 0x90126400: the port reads' `lis` only; the
+    // other hardware register and plain memory stay.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x3CE0CD00u, 0x81070000u, 0x3D008000u, 0x81086404u});
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90126400u), 1u);
+    EXPECT_TRUE(code[2] == 0x90 && code[3] == 0x12 && code[0] == 0x3C && code[1] == 0xC0);  // lis r6,0x9012
+    EXPECT_TRUE(code[10] == 0xCD && code[11] == 0x00);  // lis r7,0xCD00 kept (IPC, not the ports)
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x7C661B78u, 0x81066404u});  // lis r6,0xCD00; mr r6,r3: plain memory
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
@@ -1872,6 +1877,25 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x7CA444AAu, 0x81066404u});  // lis r6,0xCD00; lswi r5,r4,8 (r5 and r6): plain memory
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    // The use ten words after the `lis` (quatric's Kirby patch): still
+    // found; the register loaded anew before its use: not.
+    code = bytes({0x3C80CD00u, 0x60000000u, 0x60000000u, 0x60000000u, 0x60000000u, 0x60000000u, 0x60000000u,
+                  0x60000000u, 0x60000000u, 0x60000000u, 0x60846438u});  // lis r4,0xCD00; ...; ori r4,r4,0x6438
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3C80CD00u, 0x3C808000u, 0x80846404u});  // lis r4,0xCD00; lis r4,0x8000; lwz r4,0x6404(r4)
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    // A port's registers as quatric's Kirby sample and probe code reads
+    // them: the port's offset plus the base (`addis`, not `lis`). Found and
+    // rewritten the same way, the offset register kept.
+    code = bytes({0x1D24000Cu, 0x9421FFC8u, 0x3D29CD00u, 0x93A1002Cu, 0x83A96404u});
+    // mulli r9,r4,12; stwu r1,-56(r1); addis r9,r9,0xCD00; stw r29,44(r1); lwz r29,0x6404(r9)
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90126400u), 1u);
+    EXPECT_TRUE(code[8] == 0x3D && code[9] == 0x29 && code[10] == 0x90 && code[11] == 0x12);  // addis r9,r9,0x9012
+    // A copy that doesn't end in 0x6400: nothing rewritten.
+    code = bytes({0x3CC0CD00u, 0x81066404u});
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90120000u), 0u);
+    EXPECT_TRUE(code[2] == 0xCD);
 }
 
 // KPAD's camera switch, read from KPADEnableDPD's code just after

@@ -997,7 +997,10 @@ bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
 // over the first word of WPADProbe or the KPAD read, where the stand-in's
 // hooks would go and so can't (quatric's Kirby's Return to Dream Land
 // patch hooks both there).
-bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t kpad_read, std::uint32_t wpad_probe) {
+enum class PackTakes { None, Reroutes, HooksEntries };
+
+PackTakes pack_takes_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t kpad_read,
+                               std::uint32_t wpad_probe) {
     constexpr std::uint32_t kReadEntry = 0x20;  // KPADRead's few words ahead of the read itself
     const auto is_bl = [](std::uint32_t w) { return (w & 0xFC000003u) == 0x48000001u; };
     const auto bl_target = [](std::uint32_t at, std::uint32_t w) {
@@ -1035,15 +1038,17 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t
     // Over the function's first few words, changed: the pack's hook is there,
     // at the entry or just past it (a hook that keeps the `stwu` and
     // branches from the next word still runs beside the stand-in's); a
-    // patch writing the same words back hooks nothing.
+    // patch writing the same words back hooks nothing. A rerouted call
+    // below wins over it, wherever it comes.
     constexpr std::uint32_t kEntryWords = 4;
+    bool hooks_entries = false;
     for (const std::uint32_t entry : {wpad_probe, kpad_read}) {
         if (entry == 0 || entry >= 0x81800000u - 4 * kEntryWords) continue;
         for (std::uint32_t w = 0; w < kEntryWords; ++w) {
             const std::uint32_t at = entry + 4 * w;
             bool written = false;
             const std::uint32_t final = final_word(at, written);
-            if (written && final != *reinterpret_cast<const volatile std::uint32_t*>(at)) return true;
+            if (written && final != *reinterpret_cast<const volatile std::uint32_t*>(at)) hooks_entries = true;
         }
     }
     for (std::size_t i = 0; i < patches.size(); ++i) {
@@ -1059,9 +1064,9 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t
         const std::uint32_t target = bl_target(at, old);
         if ((wpad_probe != 0 && target == wpad_probe) ||
             (kpad_read != 0 && target <= kpad_read && kpad_read - target <= kReadEntry))
-            return true;
+            return PackTakes::Reroutes;
     }
-    return false;
+    return hooks_entries ? PackTakes::HooksEntries : PackTakes::None;
 }
 
 void read_patched_code(const std::vector<MemoryPatch>& patches, PatchedCode& out) {
@@ -1130,13 +1135,27 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     // that isn't) or whose code reads the GameCube ports. A port-reading
     // patch over the game's own program (quatric's) isn't one, though the
     // game links a PADRead it never calls (Kirby's Return to Dream Land).
+    //
+    // Routing: a pack over the game's own program that both reads the ports
+    // and hooks the KPAD read or WPADProbe itself (quatric's Kirby's Return
+    // to Dream Land patch: it fakes the Wii Remote's connection and fills
+    // KPAD with the pad it reads) gets the adapter instead: its port reads
+    // point at a copy the stand-in fills (route_pack), and the stand-in
+    // answers nothing itself. Its hooks run after the stand-in's, which
+    // only read the pads (install_pad_hook chains them).
     const bool pack_reads_pad = standin && from_patch;
     const bool program_pad = standin && !pack_reads_pad && program_from_pack && pad.read != 0;
-    const bool pack_wraps = standin && !pack_reads_pad && !program_pad &&
-                            pack_wraps_wii_reads(patches, find_kpad_read(text).address, find_wpad_probe(text));
-    const bool pack_ports =
-        standin && !pack_reads_pad && !program_pad && !pack_wraps && pack_reads_gc_ports(patches);
-    if (pack_reads_pad || program_pad || pack_wraps || (pack_ports && program_from_pack)) {
+    const PackTakes takes = standin && !pack_reads_pad && !program_pad
+                                ? pack_takes_wii_reads(patches, find_kpad_read(text).address, find_wpad_probe(text))
+                                : PackTakes::None;
+    const bool pack_ports = standin && !pack_reads_pad && !program_pad && pack_reads_gc_ports(patches);
+    const bool pack_wraps = takes != PackTakes::None;
+    if (pack_ports && takes == PackTakes::HooksEntries && !program_from_pack) {
+        logf("GameCube adapter: a pack reads the GameCube controller ports itself and hooks the Wii controller "
+             "reads: the adapter is routed into its port reads, and the GameCube controllers' stand-in only reads "
+             "the pads for it\n");
+        out.route_pack = true;
+    } else if (pack_reads_pad || program_pad || pack_wraps || (pack_ports && program_from_pack)) {
         logf("GameCube adapter: a pack brings its own controller code (%s), so the game's GameCube controllers "
              "setting stays off for this launch\n",
              pack_reads_pad ? "its PADRead is in its memory patches"
@@ -1145,7 +1164,7 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
                             : "it reads the GameCube ports, in the program file it brings");
         standin = false;
         out.standin = out.standin_nunchuk = out.standin_sideways = out.standin_pointing = false;
-    } else if (pack_ports) {
+    } else if (pack_ports && !pack_wraps) {
         // A pack that reads the GameCube ports straight from the hardware
         // over the game's own program (quatric's GameCube controller patches)
         // gets nothing there from the adapter, which isn't a port: until
@@ -1659,6 +1678,12 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     const std::uint32_t arena2_end = stage_base != 0 && mem1_veneer != 0
                                        ? std::min(read32(kMem2ArenaEndField), stage_base)
                                        : read32(kMem2ArenaEndField);
+    if (mem1_veneer != 0 && out.route_pack) {
+        // A code build's blob sits at MEM2's top, planned from its size:
+        // no routing there (the pack's hooks keep the stand-in out anyway).
+        logf("GameCube adapter: no routing into the pack's port reads in a code build\n");
+        out.route_pack = false;
+    }
     if (mem1_veneer != 0) {
         const std::uint32_t bytes = out.code_bytes + out.state_bytes;
         const std::uint32_t base = (arena2_end - bytes) & ~31u;
@@ -1682,6 +1707,20 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
     } else {
         out.code_base = (arena1_hi - out.code_bytes) & ~31u;
         out.state_base = align_up(arena2_lo);
+        // Routing: the copy of the serial interface's registers right after
+        // the state, at the first address ending in 0x6400 (the pack's
+        // reads add 0x6400 and on to the upper half its `lis` loads): up to
+        // 64 KB of MEM2 between, kept from the game with the rest.
+        if (out.route_pack) {
+            constexpr std::uint32_t kSiCopyBytes = 0x40;
+            const std::uint32_t after = out.state_base + out.state_bytes;
+            std::uint32_t copy = (after & ~0xFFFFu) | 0x6400u;
+            if (copy < after) copy += 0x10000u;
+            out.route_si = copy;
+            out.state_bytes = copy + kSiCopyBytes - out.state_base;
+            logf("GameCube adapter: the pack's port reads go to 0x%08x (a copy of the serial interface's registers)\n",
+                 copy);
+        }
         const bool fits = arena1_hi >= out.code_bytes && out.code_base >= mem1_floor &&
                           out.state_base + out.state_bytes <= arena2_end;
         if (!fits) {
@@ -1751,6 +1790,14 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->inputless = out.standin_inputless ? 1u : 0u;
         state->wpad_ext_table = out.wpad_ext_table;
         state->wpad_ext_offset = out.wpad_ext_offset;
+        if (out.route_pack && out.route_si != 0) {
+            // Nothing answers until the first PADRead fills it: every port's error.
+            auto* si = reinterpret_cast<std::uint32_t*>(out.route_si);
+            for (unsigned k = 0; k < 16; ++k) si[k] = 0;
+            for (unsigned port = 0; port < 4; ++port) si[port * 3 + 1] = 0x80000000u;
+            DCFlushRange(si, 0x40);
+            state->route_si = out.route_si;
+        }
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;
@@ -1910,6 +1957,24 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
         if (s.function == 0) continue;
         const std::uint32_t first = *reinterpret_cast<const std::uint32_t*>(s.function);
         std::string reason;
+        // Routing: the pack's own hook over the KPAD read's or WPADProbe's
+        // first word (a plain `b`) runs after the stand-in's. Nothing is
+        // replayed: the stand-in's hook goes on to the pack's routine, which
+        // runs the function's first instruction itself and comes back to
+        // its second, as it did before the stand-in was there.
+        const bool shared_entry = &s == &sites[6] || &s == &sites[7];
+        if (hook.route_pack && shared_entry && (first & 0xFC000003u) == 0x48000000u) {
+            std::uint32_t offset = first & 0x03FFFFFCu;
+            if (offset & 0x02000000u) offset |= 0xFC000000u;  // a branch back: sign-extended
+            const std::uint32_t pack_routine = s.function + offset;
+            const std::uint32_t replay[4] = {kNop, kNop, kNop, kNop};
+            store_words(hook.code_base + s.replay, replay, 4);
+            const auto to_pack = encode_absolute_jump(kScratchRegister, pack_routine);
+            store_words(hook.code_base + s.resume, to_pack.data(), 4);
+            logf("GameCube adapter: %s: the stand-in's hook runs first, then the pack's at 0x%08x\n", s.name,
+                 pack_routine);
+            continue;
+        }
         if (!displaceable(first, kScratchRegister, reason)) {
             if (&s == &read_site) {
                 char buf[64];

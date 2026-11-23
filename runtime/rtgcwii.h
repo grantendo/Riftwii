@@ -112,6 +112,14 @@ struct rtgcwii {
      * brings samples (the pack's) is left to the game, and nothing counts
      * as a real Wii Remote taking the channel back. Loader-filled. */
     uint32_t inputless;
+    /* Routing (#587): a pack that reads the GameCube controller ports
+     * itself (quatric's patches) has its reads pointed here, at a copy of
+     * the serial interface's registers (an address ending in 0x6400; each
+     * port's answer at +12 * port + 4 and + 8, as the hardware has them),
+     * and the stand-in fills it from every PADRead it sees, adapter and
+     * all (rtgcwii_route). The stand-in then answers nothing itself: the
+     * pack does. 0: no routing. Loader-filled. */
+    uint32_t route_si;
 };
 
 #define RTGCWII_RETELLS 30u
@@ -122,6 +130,14 @@ struct rtgcwii {
  * for `grace` ticks loses its channel's stand-in. A short gap (a wireless
  * pad's dropped report) never unplugs the player. */
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
+
+/* Routing: the four ports of `status` (one PADRead's, 12 bytes each) into
+ * the copy of the serial interface's registers at w->route_si, as the
+ * hardware answers a poll; a port with no controller answers with its
+ * error bit. Does nothing without route_si. Called by rtgcwii_pads. */
+void rtgcwii_route(const struct rtgcwii* w, const uint8_t* status);
+/* The same into `si` (the copy's first word, SIC0OUTBUF's place). */
+void rtgcwii_route_into(volatile uint32_t* si, const uint8_t* status);
 
 /* WPADProbe(`channel`) answered `result` (0 a controller, -1 none, -2
  * busy) before the blob's own answer: a real controller there wins over

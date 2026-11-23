@@ -186,6 +186,23 @@ void TestConnectedOnly() {
     EXPECT_EQ(leave, 1u);
 }
 
+// Routing: each port's PADStatus as the serial interface answers a poll,
+// in the copy a pack reads; a port with no controller answers its error.
+void TestRoute() {
+    Pads pads;
+    pads.plug(0, kGcA | kGcStart | kGcZ, 72);  // stick right
+    pads.s[3] = static_cast<std::uint8_t>(-16);  // stick a little down
+    pads.s[4] = 10;                               // C-stick right a little
+    pads.s[6] = 200;                              // L pulled
+    std::uint32_t si[16] = {};
+    rtgcwii_route_into(si, pads.s);
+    // Start 0x10 | A 0x01; origin 0x80 | Z 0x10; stick 128+72, 128-16.
+    EXPECT_EQ(si[1], 0x11900000u | (200u << 8) | 112u);
+    EXPECT_EQ(si[2], (138u << 24) | (128u << 16) | (200u << 8) | 0u);
+    EXPECT_EQ(si[4], 0x80000000u);  // port 2: nothing there
+    EXPECT_EQ(si[5], 0u);
+}
+
 // The HOME Menu's stand-in on a port that already has a permanent one
 // takes that port's channel, not a free one.
 void TestHomeOnOwnChannel() {
@@ -457,6 +474,7 @@ int main() {
     TestSkipMissingCallback();
     TestDroppedReportAndHomeKeep();
     TestConnectedOnly();
+    TestRoute();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

@@ -143,6 +143,13 @@ struct PadHook {
     // itself, once RiftWii routes the adapter into it (not yet: until then
     // the stand-in keeps the controls, find_pad_functions).
     bool standin_inputless = false;
+    // Routing (#587): a pack reads the GameCube ports itself and hooks the
+    // Wii controller reads (quatric's patches): its port reads point at a
+    // copy of the serial interface's registers at route_si (an address
+    // ending in 0x6400, planned after the stand-in's state), which the
+    // stand-in fills; its hooks run after the stand-in's.
+    bool route_pack = false;
+    std::uint32_t route_si = 0;
     // ...or a pointing Wii Remote (RT_PAD_FORM_POINTING).
     bool standin_pointing = false;
     // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on

@@ -774,12 +774,9 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
             const std::uint32_t at = r.address + static_cast<std::uint32_t>(4 * call);
             const std::uint32_t insn = be32(r.bytes + 4 * call);
             if (!is_bl(insn) || bl_target(at, insn) != is_dpd) continue;
-            // The calling function: back to its `stwu r1` (function_start:
-            // a bounded look back, no `blr` between); a call found outside
-            // a framed function isn't the read.
-            const std::uint32_t function = function_start(text, at);
-            if (function < r.address || function >= at) continue;
-            const std::size_t start = (function - r.address) / 4;
+            // The calling function: back to its `stwu r1`.
+            std::size_t start = call;
+            while (start > 0 && (be32(r.bytes + 4 * start) & 0xFFFF0000u) != 0x94210000u) --start;
             // Its channel blocks: base (lis/addi, or a copy by `addi rD,rA,0`) plus a `mulli` of the channel.
             std::uint32_t high[32] = {}, address[32] = {}, stride_of[32] = {};
             std::uint32_t block_base[32] = {}, block_stride[32] = {};
@@ -1680,46 +1677,71 @@ bool base_update(std::uint32_t insn, std::uint32_t reg) {
     }
 }
 
+// Whether the word at `i` is a `lis rX,0xCD00` (or 0xCC00), or an
+// `addis rX,rY,0xCD00` that adds it to a port's offset, whose rX is used
+// within the next 24 words, before another `lis`/`addis` sets rX, at the
+// serial interface's registers (0x6400 to 0x64FF): an address or access
+// through it. (quatric's Kirby's Return to Dream Land patch loads it ten
+// words ahead of its `ori rX,rX,0x6438`, and reads a port as
+// `mulli r9,chan,12; addis r9,r9,0xCD00; lwz rD,0x6404(r9)`.)
+bool gc_port_high(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
+    constexpr unsigned kWithin = 24;  // words from the `lis`/`addis` to its use
+    constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
+    const std::uint32_t addis = be32(bytes + i * 4);
+    const std::uint32_t high = addis & 0xFFFFu;
+    if ((addis >> 26) != 15 || (high != 0xCD00u && high != 0xCC00u)) return false;
+    const std::uint32_t reg = (addis >> 21) & 31u;
+    for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
+        const std::uint32_t insn = be32(bytes + k * 4);
+        const std::uint32_t op = insn >> 26;
+        const std::uint32_t low = insn & 0xFFFFu;
+        const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
+        if (low >= kSiFirst && low < kSiEnd) {
+            // ori rA,rS,low takes rX as its source (rS); addi and the loads
+            // and stores as their base (rA), where a base of r0 is the
+            // number 0, not r0 (`li r3,0x6430`).
+            const std::uint32_t source = op == 24 ? rd : ra;
+            const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 || op == 40 ||
+                              op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
+            if (uses && source == reg && (op == 24 || source != 0)) return true;
+        }
+        // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`, `li
+        // r6,0`, a load into it): no longer the hardware's base, so a use
+        // after it reads plain memory. Adding to it keeps it a base (`add
+        // r6,r6,r5`, `addi r6,r6,12`: a port's offset), and so does `ori
+        // rX,rX,0` (`nop` is `ori r0,r0,0`).
+        const std::uint32_t xo = (insn >> 1) & 0x3FFu;
+        // So does an update form's base (`lbzu r8,0(r6)`, `lfsu f0,4(r6)`: the
+        // base plus an offset). `addi r0,0,n` is `li r0,n`.
+        const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) ||
+                           (op == 14 && rd == reg && ra == reg && reg != 0) ||
+                           (op == 24 && rd == reg && ra == reg && low == 0) || base_update(insn, reg);
+        if (writes_gpr(insn, reg) && !keeps) return false;
+    }
+    return false;
+}
+
 }  // namespace
 
 bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
-    constexpr unsigned kWithin = 8;  // words from the `lis` to its use
-    constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
     const std::size_t words = size / 4;
-    for (std::size_t i = 0; i < words; ++i) {
-        const std::uint32_t lis = be32(bytes + i * 4);
-        const std::uint32_t high = lis & 0xFFFFu;
-        if ((lis >> 26) != 15 || ((lis >> 16) & 31u) != 0 || (high != 0xCD00u && high != 0xCC00u)) continue;
-        const std::uint32_t reg = (lis >> 21) & 31u;
-        for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
-            const std::uint32_t insn = be32(bytes + k * 4);
-            const std::uint32_t op = insn >> 26;
-            const std::uint32_t low = insn & 0xFFFFu;
-            const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
-            if (low >= kSiFirst && low < kSiEnd) {
-                // ori rA,rS,low takes rX as its source (rS); addi and the
-                // loads and stores as their base (rA), where a base of r0
-                // is the number 0, not r0 (`li r3,0x6430`).
-                const std::uint32_t source = op == 24 ? rd : ra;
-                const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 ||
-                                  op == 40 || op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
-                if (uses && source == reg && (op == 24 || source != 0)) return true;
-            }
-            // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`,
-            // `li r6,0`, a load into it): no longer the hardware's base, so a
-            // use after it reads plain memory. Adding to it keeps it a base
-            // (`add r6,r6,r5`, `addi r6,r6,12`: a port's offset), and so
-            // does `ori rX,rX,0` (`nop` is `ori r0,r0,0`).
-            const std::uint32_t xo = (insn >> 1) & 0x3FFu;
-            // So does an update form's base (`lbzu r8,0(r6)`, `lfsu f0,4(r6)`:
-            // the base plus an offset). `addi r0,0,n` is `li r0,n`.
-            const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) ||
-                               (op == 14 && rd == reg && ra == reg && reg != 0) ||
-                               (op == 24 && rd == reg && ra == reg && low == 0) || base_update(insn, reg);
-            if (writes_gpr(insn, reg) && !keeps) break;
-        }
-    }
+    for (std::size_t i = 0; i < words; ++i)
+        if (gc_port_high(bytes, words, i)) return true;
     return false;
+}
+
+unsigned retarget_gc_ports(std::uint8_t* bytes, std::size_t size, std::uint32_t copy) {
+    if ((copy & 0xFFFFu) != 0x6400u) return 0;
+    const std::size_t words = size / 4;
+    unsigned rewritten = 0;
+    for (std::size_t i = 0; i < words; ++i) {
+        if (!gc_port_high(bytes, words, i)) continue;
+        // Keep the instruction and its register, change only the upper half.
+        bytes[i * 4 + 2] = static_cast<std::uint8_t>(copy >> 24);
+        bytes[i * 4 + 3] = static_cast<std::uint8_t>(copy >> 16);
+        ++rewritten;
+    }
+    return rewritten;
 }
 
 }  // namespace riftwii
