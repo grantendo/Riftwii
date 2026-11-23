@@ -461,6 +461,29 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
     }
     {
+        // A load off r1 and the frame undone, then a `b` further into the
+        // same function (`lwz r29,8(r1); addi r1,r1,0x20; b +4`): not an
+        // epilogue, so the load overwrites the argument and there's no setter.
+        Section t{0x80218000, {}};
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x803D));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(5, 5, -20720));
+        t.put(mr(29, 4));
+        t.put(lwz(29, 1, 8));
+        t.put(addi(1, 1, 0x20));
+        t.put(0x48000004u);  // b +4
+        t.put(lwzx(31, 5, 3));
+        t.put(lwz(30, 31, 2212));
+        t.put(stw(29, 31, 2212));
+        t.put(kBlr);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
+    }
+    {
         // The copy of r4 overwritten through the stack (`li r0,0; stw r0,8(r1);
         // lwz r29,8(r1)`), no epilogue: it stores 0, so not a setter.
         Section t{0x80218000, {}};
