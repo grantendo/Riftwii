@@ -211,12 +211,15 @@ AdapterSeen ogc_adapter(std::int32_t& dev_id, std::string& devices);
 // <memory> patches (`patches`, not applied yet) is found too, and wins
 // over the game's own. `standin`: the game's GameCube controllers
 // setting is on, as Classic Controllers or as a Wii Remote + Nunchuk (its
-// KPAD hooks are looked for even with Leaving a game on HOME only; the
-// caller sets PadHook::standin_nunchuk for the form); `usb` false: no adapter is wanted and
-// /dev/usb/hid is never opened (the Wii's own ports only). False (with a
-// reason) turns the adapter off.
+// KPAD hooks are looked for even with Leaving a game on HOME only);
+// `nunchuk` and `sideways` its form, as a Wii Remote + Nunchuk or a
+// sideways Wii Remote (PadHook::standin_nunchuk, standin_sideways; only a
+// Wii Remote form takes a 2006 KPAD game, whose KPAD knows no Classic
+// Controller); `usb` false: no adapter is wanted and /dev/usb/hid is never
+// opened (the Wii's own ports only). False (with a reason) turns the
+// adapter off.
 bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<MemoryPatch>& patches, bool standin,
-                        bool usb, PadHook& out, std::string& why);
+                        bool nunchuk, bool sideways, bool usb, PadHook& out, std::string& why);
 
 // Before the <memory> patches, on the game as loaded: what their plain
 // writes will leave (PatchedCode), for a PADRead search. Without memory

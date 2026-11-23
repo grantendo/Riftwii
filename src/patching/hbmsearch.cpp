@@ -359,6 +359,7 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
             if (end - start > kMaxWords) continue;
             std::uint32_t high[32] = {}, address[32] = {};
             std::uint32_t table = 0;
+            std::uint32_t swapped = 0;  // the table whose block's callback was loaded and stored
             int block = -1;
             bool loads = false, stores = false;
             for (std::size_t k = start; k < end; ++k) {
@@ -369,6 +370,8 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
                     address[d] = high[a] + static_cast<std::uint32_t>(simm(insn));
                 const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
                 if (lwzx && address[a] != 0) {
+                    // Another table's block: its loads and stores are its own.
+                    if (address[a] != table) loads = stores = false;
                     table = address[a];
                     block = static_cast<int>(d);
                 }
@@ -376,9 +379,12 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
                     loads = loads || opcode(insn) == 32;   // lwz
                     stores = stores || opcode(insn) == 36;  // stw
                 }
+                // The first table with both keeps them: a later lookup in
+                // another table doesn't take its place.
+                if (swapped == 0 && loads && stores) swapped = table;
             }
-            if (table == 0 || !loads || !stores) continue;
-            found.table = table;
+            if (swapped == 0) continue;
+            found.table = swapped;
             found.offset = static_cast<std::uint32_t>(kConnectCallback);
             ++matches;
         }
