@@ -268,8 +268,32 @@ void TestWpadStatus() {
         rtgcwii_pads(&w2, p2.s, 17);
         rtgcwii_wpad_status(&w2, 0, out, 17, 0);
         EXPECT_EQ((out[0] << 8) | out[1], static_cast<int>(kWrA));
-        rtgcwii_pads(&w2, p2.s, 33);  // a new sample: the KPAD read works its words out again
+        // The same sample: the KPAD read still sees A as new.
         rtgcwii_sideways(&w2, 0, &f);
+        EXPECT_EQ(f.trig, kWrA);
+        // A raw read on a later sample, X still held, then the KPAD read
+        // works its words out again: no new press, nothing lost or doubled.
+        rtgcwii_pads(&w2, p2.s, 33);
+        rtgcwii_wpad_status(&w2, 0, out, 33, 0);
+        rtgcwii_sideways(&w2, 0, &f);
+        EXPECT_EQ(f.hold, kWrA);
+        EXPECT_EQ(f.trig, 0u);
+    }
+    {
+        // X pressed between two KPAD reads, read raw first on its own
+        // sample: still new at the next KPAD read (it works its words out
+        // again from what the game was last given).
+        rtgcwii w3 = fresh();
+        Pads p3;
+        p3.plug(0, 0);
+        rtgcwii_pads(&w3, p3.s, 1);
+        rtgcwii_fs f;
+        rtgcwii_sideways(&w3, 0, &f);
+        p3.plug(0, kGcX);
+        rtgcwii_pads(&w3, p3.s, 17);
+        rtgcwii_wpad_status(&w3, 0, out, 17, 0);
+        rtgcwii_pads(&w3, p3.s, 33);
+        rtgcwii_sideways(&w3, 0, &f);
         EXPECT_EQ(f.trig, kWrA);
     }
 }

@@ -468,11 +468,12 @@ bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end)
         const std::uint32_t w = be32(bytes + 4 * j);
         if (opcode(w) == 14 && reg_d(w) == 1 && reg_a(w) == 1 && simm(w) > 0) {
             // The frame undone, then the function leaves (a return or a
-            // tail call, maybe after mtlr): only then is it an epilogue.
-            for (std::size_t n = j + 1; n < end && n <= j + 2; ++n) {
+            // tail call, maybe after reloading the return address off the
+            // caller's frame and mtlr): only then is it an epilogue.
+            for (std::size_t n = j + 1; n < end && n <= j + 4; ++n) {
                 const std::uint32_t x = be32(bytes + 4 * n);
                 if (x == kBlr || x == 0x4E800420u || (opcode(x) == 18 && (x & 1u) == 0)) return true;
-                if ((x & 0xFC1FFFFFu) != 0x7C0803A6u) return false;
+                if ((x & 0xFC1FFFFFu) != 0x7C0803A6u && !restore_load(x)) return false;
             }
             return false;
         }
