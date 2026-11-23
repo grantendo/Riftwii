@@ -765,10 +765,32 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
             std::uint32_t high[32] = {}, address[32] = {}, stride_of[32] = {};
             std::uint32_t block_base[32] = {}, block_stride[32] = {};
             KpadDpd here;
+            bool two_reads = false;
             for (std::size_t k = start; k < call; ++k) {
                 const std::uint32_t w = be32(r.bytes + 4 * k);
                 const std::uint32_t op = w >> 26, d = (w >> 21) & 31u, a = (w >> 16) & 31u, b = (w >> 11) & 31u;
                 const std::int32_t imm = static_cast<std::int16_t>(w & 0xFFFFu);
+                // A register written here no longer holds a channel block,
+                // unless the cases below say it does: an `addi rD,rA,0` copy
+                // or an `mr` keeps it, any other change (`addi rD,rA,4`, a
+                // load into it) loses it.
+                // The block a load reads through, as it was before this word.
+                const std::uint32_t read_base = block_base[a], read_stride = block_stride[a];
+                const bool mr = op == 31 && ((w >> 1) & 0x3FFu) == 444 && d == b;  // or rA,rS,rS
+                const bool writes_d = op == 7 || op == 12 || op == 13 || op == 14 || op == 15 || (op >= 32 && op <= 35) ||
+                                      op == 40 || op == 41 || op == 42 || op == 43 || (op == 31 && !mr);
+                const std::uint32_t copied = block_base[op == 14 && imm == 0 ? a : 0];
+                const std::uint32_t copied_stride = block_stride[op == 14 && imm == 0 ? a : 0];
+                if (mr) {
+                    block_base[a] = block_base[d];
+                    block_stride[a] = block_stride[d];
+                } else if (writes_d) {
+                    block_base[d] = block_stride[d] = 0;
+                    if (op == 14 && imm == 0 && copied != 0) {
+                        block_base[d] = copied;
+                        block_stride[d] = copied_stride;
+                    }
+                }
                 if (op == 15 && a == 0) {
                     high[d] = (w & 0xFFFFu) << 16;
                     address[d] = stride_of[d] = block_base[d] = 0;
@@ -785,14 +807,19 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
                     }
                 }
                 // The switch, read from the block within the last words before the call.
-                if (op == 34 && call - k <= kReadWithin && block_base[a] != 0 && static_cast<std::uint32_t>(imm) >= kMinOffset &&
+                if (op == 34 && call - k <= kReadWithin && read_base != 0 && static_cast<std::uint32_t>(imm) >= kMinOffset &&
                     static_cast<std::uint32_t>(imm) < kMaxOffset) {
+                    // Two different bytes read before the one call: which is
+                    // the switch can't be told.
+                    if (here.enable != 0 && (here.base != read_base || here.offset != static_cast<std::uint32_t>(imm)))
+                        two_reads = true;
                     here.enable = r.address + static_cast<std::uint32_t>(4 * start);
-                    here.base = block_base[a];
-                    here.stride = block_stride[a];
+                    here.base = read_base;
+                    here.stride = read_stride;
                     here.offset = static_cast<std::uint32_t>(imm);
                 }
             }
+            if (two_reads) return KpadDpd{};
             if (here.enable == 0) continue;
             if (found.enable != 0 && (found.base != here.base || found.stride != here.stride || found.offset != here.offset))
                 return KpadDpd{};  // two different switches: not guessed
