@@ -15,6 +15,31 @@ std::uint32_t opcode(std::uint32_t insn) { return insn >> 26; }
 std::uint32_t reg_d(std::uint32_t insn) { return (insn >> 21) & 31u; }
 std::uint32_t reg_a(std::uint32_t insn) { return (insn >> 16) & 31u; }
 
+// Whether `insn` writes register `reg`, for the common integer instructions:
+// the D-form arithmetic and loads write rD; the logical immediates and the
+// rotates write rA; among the opcode-31 forms, the logical and shift ones
+// write rA, the stores write nothing, and the rest (arithmetic, indexed
+// loads, mfspr) write rD.
+bool writes_register(std::uint32_t insn, std::uint32_t reg) {
+    const std::uint32_t op = opcode(insn);
+    const bool d_form = op == 7 || op == 8 || op == 12 || op == 13 || op == 14 || op == 15 ||
+                        (op >= 32 && op <= 35) || (op >= 40 && op <= 43) || op == 46;  // mulli..addis, loads, lmw
+    if (d_form) return reg_d(insn) == reg;
+    const bool a_form = op == 20 || op == 21 || op == 23 || (op >= 24 && op <= 29);  // rlwimi..andis.
+    if (a_form) return reg_a(insn) == reg;
+    if (op != 31) return false;
+    const std::uint32_t xo = (insn >> 1) & 0x3FFu;
+    switch (xo) {
+        case 28: case 60: case 124: case 284: case 316: case 412: case 444: case 476:  // and..nand
+        case 24: case 536: case 792: case 824: case 26: case 922: case 954:            // shifts, cntlzw, extsh/b
+            return reg_a(insn) == reg;
+        case 151: case 183: case 215: case 247: case 407: case 439: case 662: case 918: case 150:  // stores
+            return false;
+        default:
+            return reg_d(insn) == reg;
+    }
+}
+
 constexpr std::uint32_t kStwuR1Mask = 0xFFFF0000u;
 constexpr std::uint32_t kStwuR1 = 0x94210000u;  // stwu r1,d(r1)
 constexpr std::uint32_t kBlr = 0x4E800020u;
@@ -514,13 +539,7 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                     break;
                 // r4, the callback's argument, as the call will see it: -1
                 // ("no controller") only if its last write was `li r4,-1`.
-                const bool writes_r4 =
-                    ((opcode(next) == 14 || opcode(next) == 15 || opcode(next) == 32 || opcode(next) == 34 ||
-                      opcode(next) == 40 || opcode(next) == 42) &&
-                     reg_d(next) == 4) ||
-                    ((opcode(next) >= 24 && opcode(next) <= 29) && reg_a(next) == 4) ||
-                    (opcode(next) == 31 && (reg_d(next) == 4 || reg_a(next) == 4));
-                if (writes_r4) gone = is_li(next, -1);
+                if (writes_register(next, 4)) gone = is_li(next, -1);
             }
         }
     }
