@@ -452,6 +452,20 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
     }
     {
+        // `li r4,-1` then `li r4,1` before the call: the callback is told 1,
+        // not "no controller", so none.
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(li(4, -1));
+        t.put(li(4, 1));
+        t.put(kMtctrR12);
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).table, 0u);
+    }
+    {
         // The -1 belongs to a later call, past a jump: not this slot's.
         Section t{0x80218000, {}};
         put_later_setter(t, 2212);

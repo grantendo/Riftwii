@@ -368,6 +368,9 @@ int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_
         *reason = (join & bit) ? 0 : -1;
         if (join & bit) {
             w->told |= bit;
+            /* A new "connected": only a read after it says the game heard
+             * it (a WPADRead before the callback was told doesn't). */
+            w->heard &= ~bit;
         } else {
             w->told &= ~bit;
         }

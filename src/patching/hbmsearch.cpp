@@ -512,7 +512,15 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                 if (opcode(next) == 18 || next == kBlr ||
                     ((opcode(next) == 32 || opcode(next) == 14) && reg_d(next) == 12))
                     break;
-                gone = gone || (is_li(next, -1) && reg_d(next) == 4);
+                // r4, the callback's argument, as the call will see it: -1
+                // ("no controller") only if its last write was `li r4,-1`.
+                const bool writes_r4 =
+                    ((opcode(next) == 14 || opcode(next) == 15 || opcode(next) == 32 || opcode(next) == 34 ||
+                      opcode(next) == 40 || opcode(next) == 42) &&
+                     reg_d(next) == 4) ||
+                    ((opcode(next) >= 24 && opcode(next) <= 29) && reg_a(next) == 4) ||
+                    (opcode(next) == 31 && (reg_d(next) == 4 || reg_a(next) == 4));
+                if (writes_r4) gone = is_li(next, -1);
             }
         }
     }

@@ -303,6 +303,17 @@ void TestRetell() {
     rtgcwii_retell(&w, t + kGrace);
     EXPECT_EQ(w.retells[0], 0u);
     EXPECT_EQ(w.heard, 0u);
+    // A read before the callback was told (a WPADRead) doesn't count as
+    // heard once it is: the new "connected" clears it.
+    {
+        rtgcwii w3 = fresh();
+        Pads p3;
+        p3.plug(0);
+        rtgcwii_pads(&w3, p3.s, 1);
+        rtgcwii_heard(&w3, 0);
+        EXPECT_EQ(rtgcwii_next_change(&w3, 0, 0, &chan, &reason), 1);
+        EXPECT_EQ(w3.heard, 0u);
+    }
     // A channel still to be told isn't counted.
     rtgcwii w2 = fresh();
     w2.retell_ticks = 100;
