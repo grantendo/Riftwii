@@ -964,18 +964,46 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, std::uint32_t
         return at + offset;
     };
     const std::vector<bool> applies = patches_that_apply(patches);
-    for (std::size_t i = 0; i < patches.size(); ++i) {
+    // The patches the patcher will write at a known place (a low or
+    // uncached offset at its cached alias).
+    const auto placed = [&](std::size_t i) {
         const MemoryPatch& patch = patches[i];
-        if (!applies[i] || !patch.has_offset || patch.search || patch.ocarina || patch.value.empty()) continue;
-        // Where the patcher writes it (a low or uncached offset at its
-        // cached alias), and only a patch it will write.
-        const std::uint32_t at = memory_patch_target(patch);
-        const std::uint32_t bytes = static_cast<std::uint32_t>(patch.value.size());
-        // Over the function's own first word: the pack's hook is there.
-        const auto covers = [&](std::uint32_t entry) { return entry != 0 && entry >= at && entry - at < bytes; };
-        if (covers(wpad_probe) || covers(kpad_read)) return true;
-        if (bytes != 4 || (at & 3u) != 0 || at >= 0x81800000u) continue;
-        const std::uint32_t now = be32(patch.value.data());
+        return applies[i] && patch.has_offset && !patch.search && !patch.ocarina && !patch.value.empty();
+    };
+    // The word at `address` once every such patch is written, in document
+    // order (a later patch over an earlier one wins), and whether any patch
+    // wrote a byte of it.
+    const auto final_word = [&](std::uint32_t address, bool& written) {
+        std::uint32_t word = *reinterpret_cast<const volatile std::uint32_t*>(address);
+        written = false;
+        for (std::size_t i = 0; i < patches.size(); ++i) {
+            if (!placed(i)) continue;
+            const std::uint32_t at = memory_patch_target(patches[i]);
+            const std::uint32_t bytes = static_cast<std::uint32_t>(patches[i].value.size());
+            for (std::uint32_t b = 0; b < 4; ++b) {
+                const std::uint32_t where = address + b;
+                if (where < at || where - at >= bytes) continue;
+                const unsigned shift = 8u * (3u - b);
+                word = (word & ~(0xFFu << shift)) | (std::uint32_t(patches[i].value[where - at]) << shift);
+                written = true;
+            }
+        }
+        return word;
+    };
+    // Over the function's own first word, changed: the pack's hook is there
+    // (a patch writing the same word back hooks nothing).
+    for (const std::uint32_t entry : {wpad_probe, kpad_read}) {
+        if (entry == 0 || entry >= 0x81800000u) continue;
+        bool written = false;
+        const std::uint32_t final = final_word(entry, written);
+        if (written && final != *reinterpret_cast<const volatile std::uint32_t*>(entry)) return true;
+    }
+    for (std::size_t i = 0; i < patches.size(); ++i) {
+        if (!placed(i)) continue;
+        const std::uint32_t at = memory_patch_target(patches[i]);
+        if (patches[i].value.size() != 4 || (at & 3u) != 0 || at >= 0x81800000u) continue;
+        bool written = false;
+        const std::uint32_t now = final_word(at, written);  // as it ends up, after any later patch
         const std::uint32_t old = *reinterpret_cast<const volatile std::uint32_t*>(at);
         // A call the pack sends somewhere else: the same call written back
         // reroutes nothing.
