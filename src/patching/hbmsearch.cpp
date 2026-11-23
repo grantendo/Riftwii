@@ -23,21 +23,36 @@ constexpr std::uint32_t kMtlrR0 = 0x7C0803A6u;
 
 bool is_stwu_r1(std::uint32_t insn) { return (insn & kStwuR1Mask) == kStwuR1; }
 // Where a framed function that starts at word `start` ends, before word
-// `next` (the next `stwu r1`): after its last `blr` that follows a stack
-// frame's undoing (`addi r1,r1,N` or `lwz r1,...` within the four words
-// before, with no other `blr` between), else after its first `blr`, else
-// at `next`. Leaf code (no frame
-// of its own) between it and the next framed function isn't counted, so its
-// instructions can't lend the function marks it doesn't have.
+// `next` (the next `stwu r1`): after its last `blr`, or tail call (a `b` out
+// of the function or a `bctr`), that follows a stack frame's undoing (`addi
+// r1,r1,N` or `lwz r1,...` within the four words before, with no other
+// return or tail call between), else after its first `blr`, else at `next`.
+// Leaf code (no frame of its own) between it and the next framed function
+// isn't counted, so its instructions can't lend the function marks it
+// doesn't have.
 std::size_t function_end(const std::uint8_t* bytes, std::size_t start, std::size_t next) {
     constexpr std::uint32_t kBlr = 0x4E800020u;
+    constexpr std::uint32_t kBctr = 0x4E800420u;
+    // A tail call: `bctr`, or `b` (no link) to somewhere outside start..next.
+    const auto tail_call = [&](std::size_t k) {
+        const std::uint32_t insn = be32(bytes + 4 * k);
+        if (insn == kBctr) return true;
+        if (opcode(insn) != 18 || (insn & 1u) != 0) return false;
+        if ((insn & 2u) != 0) return true;  // absolute: never this function's own code
+        std::int32_t offset = static_cast<std::int32_t>(insn & 0x03FFFFFCu);
+        if (offset & 0x02000000) offset -= 0x04000000;
+        const std::int64_t target = static_cast<std::int64_t>(k) + offset / 4;
+        return target < static_cast<std::int64_t>(start) || target >= static_cast<std::int64_t>(next);
+    };
     std::size_t last_framed = 0, first = 0;
     for (std::size_t k = start; k < next; ++k) {
-        if (be32(bytes + 4 * k) != kBlr) continue;
-        if (first == 0) first = k + 1;
+        const bool ret = be32(bytes + 4 * k) == kBlr;
+        if (!ret && !tail_call(k)) continue;
+        if (ret && first == 0) first = k + 1;
         for (std::size_t back = 1; back <= 4 && back <= k - start; ++back) {
             const std::uint32_t insn = be32(bytes + 4 * (k - back));
-            if (insn == kBlr) break;  // another function's return: its restore isn't this one's
+            // Another function's return or tail call: its restore isn't this one's.
+            if (insn == kBlr || tail_call(k - back)) break;
             const bool restore = (opcode(insn) == 14 && reg_d(insn) == 1 && reg_a(insn) == 1) ||  // addi r1,r1,N
                                  (opcode(insn) == 32 && reg_d(insn) == 1);                         // lwz r1,...
             if (restore) {

@@ -918,18 +918,6 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     uint32_t msr, t, stand_in;
     if (!c->home_on && !c->gcwii) return result;
     if (chan < 0 || !pad_in_ram(status) || c->kpad_status_bytes < PAD_KPAD_END) return result;
-    if (c->gcwii && (uint32_t)chan < RTGCWII_CHANNELS) {
-        /* A 2006 KPAD game's info request answered for the stand-in
-         * (pad_on_info): its callback is told now, after the game noted it
-         * was waiting. */
-        struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
-        uint32_t callback;
-        msr = interrupts_off();
-        callback = w->info_callback[chan];
-        w->info_callback[chan] = 0;
-        interrupts_restore(msr);
-        if (callback != 0) ((void (*)(int32_t, int32_t))(uintptr_t)callback)(chan, 0);
-    }
     if (c->gcwii) {
         /* What the game's own read found says first (a read that brought
          * samples is a real controller; "no controller" gives the channel
@@ -940,6 +928,19 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         msr = interrupts_off();
         rtgcwii_kpad_read(w, (uint32_t)chan, result, err, now());
         interrupts_restore(msr);
+        if ((uint32_t)chan < RTGCWII_CHANNELS) {
+            /* A 2006 KPAD game's info request answered for the stand-in
+             * (pad_on_info): its callback is told now, after the game noted
+             * it was waiting. After this read's own finding, so a WPADProbe
+             * the callback makes is the newer word; before the blob's
+             * PADRead, so this read's stand-in hears of it. */
+            uint32_t callback;
+            msr = interrupts_off();
+            callback = w->info_callback[chan];
+            w->info_callback[chan] = 0;
+            interrupts_restore(msr);
+            if (callback != 0) ((void (*)(int32_t, int32_t))(uintptr_t)callback)(chan, 0);
+        }
         pad_gcwii_read_pads(c);
     }
     msr = interrupts_off();
