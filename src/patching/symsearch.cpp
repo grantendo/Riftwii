@@ -1789,8 +1789,10 @@ bool base_shared_from(const std::uint8_t* bytes, std::size_t words, std::size_t 
                 break;
             }
             if (op == 19 && (xo == 16 || xo == 528)) {  // bclr, bcctr
-                if (insn & 1u) {                        // blrl, bctrl: a call to code out of the bytes
-                    if (volatile_reg) break;            // not kept across the call
+                if (insn & 1u) {  // blrl, bctrl: a call to code out of the bytes
+                    // Not kept across the call; a conditional one may not be
+                    // taken, and then the base is still there.
+                    if (volatile_reg && (rd & 0x14u) == 0x14u) break;
                     continue;
                 }
                 if ((rd & 0x14u) == 0x14u) break;  // a return or jump out

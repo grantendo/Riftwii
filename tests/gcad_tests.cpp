@@ -1955,6 +1955,9 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x7CA802A6u, 0x81066404u});  // lis r6,0xCD00; mflr r5; lwz r8,0x6404(r6)
     EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    // A conditional call may not be taken: the base in r6 is still there.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x4D820021u, 0x81260000u});  // ...; beqlrl; lwz r9,0(r6)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
     // bctrl is a call, not a return: a base in r31 lives on after it.
     code = bytes({0x3FE0CD00u, 0x813F6404u, 0x4E800421u, 0x813F0000u});  // lis r31; lwz r9,0x6404(r31); bctrl; lwz r9,0(r31)
     EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
