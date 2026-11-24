@@ -611,6 +611,15 @@ static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, 
 #ifdef RT_PAD_FORM_REMOTE
 static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c);
 static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
+/* Whether the HOME Menu's stand-in on `chan` keeps this stand-in's shape:
+ * as it was when the stand-in took the channel (w->home_shaped), not as
+ * the controllers are now, so a GameCube controller plugged into that port
+ * while the HOME Menu is open doesn't turn its Classic Controller into a
+ * Wii Remote with no disconnect between (Cake's review of #610). */
+static int pad_home_keeps_shape(const struct rt_pad_context* c, uint32_t chan) {
+    return c->gcwii && chan < RTGCWII_CHANNELS &&
+           ((((const struct rtgcwii*)(uintptr_t)c->gcwii)->home_shaped >> chan) & 1u);
+}
 #endif
 
 static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t t) {
@@ -621,7 +630,7 @@ static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t 
 #ifdef RT_PAD_FORM_REMOTE
     /* On its own player's channel (rthome_pads_own) the game knows a Wii
      * Remote with a Nunchuk there: the same shape, not a Classic Controller. */
-    if (c->home.channel < RTGCWII_CHANNELS && ((pad_gcwii_shaped(c) >> c->home.channel) & 1u)) {
+    if (pad_home_keeps_shape(c, c->home.channel)) {
         pad_gcwii_home_status(c, status, &p);
         ++c->home_writes;
         return;
@@ -1062,7 +1071,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
 #ifdef RT_PAD_FORM_REMOTE
     /* On a channel the permanent stand-in holds, the HOME Menu's stand-in
      * keeps its shape (pad_home_status). */
-    if (pad_in_ram(type)) *type = ((pad_gcwii_shaped(c) >> (uint32_t)chan) & 1u) ? PAD_DEV_STANDIN : PAD_DEV_CLASSIC;
+    if (pad_in_ram(type)) *type = pad_home_keeps_shape(c, (uint32_t)chan) ? PAD_DEV_STANDIN : PAD_DEV_CLASSIC;
 #else
     if (pad_in_ram(type)) *type = PAD_DEV_CLASSIC;
 #endif
@@ -1127,13 +1136,43 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
  * (the Nunchuk's Z and C among them), the device type at 40, the data
  * format at 54; accelerometers and the stick at rest, as the Classic form's
  * raw status carries buttons only. */
-static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold) {
+static void pad_put_dot(uint8_t* o, int32_t x, int32_t y, uint32_t size, uint32_t trace) {
+    o[0] = (uint8_t)((uint32_t)x >> 8);
+    o[1] = (uint8_t)x;
+    o[2] = (uint8_t)((uint32_t)y >> 8);
+    o[3] = (uint8_t)y;
+    o[4] = (uint8_t)(size >> 8);
+    o[5] = (uint8_t)size;
+    o[6] = (uint8_t)trace;
+    o[7] = 0;
+}
+
+/* The camera's two sensor-bar dots for a pointer (over RTHOME_POINTER_FULL):
+ * centred on (512, 384) when it points at the screen's centre, moving
+ * against it by up to 384 x 288 at the edge, 137 apart, size 3 (Dolphin's
+ * emulated Wii Remote at rest); the other two seen nowhere (size 0). */
+static void pad_put_dots(uint8_t* obj, const int32_t* pointer) {
+    const int32_t mid_x = 512 - pointer[0] * 384 / RTHOME_POINTER_FULL;
+    const int32_t mid_y = 384 - pointer[1] * 288 / RTHOME_POINTER_FULL;
+    pad_put_dot(obj, mid_x + 137 / 2 + 1, mid_y, 3u, 0);
+    pad_put_dot(obj + 8, mid_x - 137 / 2, mid_y, 3u, 1);
+    pad_put_dot(obj + 16, 0, 767, 0u, 2);
+    pad_put_dot(obj + 24, 0, 767, 0u, 3);
+}
+
+static void pad_gcwii_wpad_status(struct rt_pad_context* c, uint32_t chan, uint8_t* entry, uint32_t hold) {
+    const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
+    const int camera = chan < RTGCWII_CHANNELS && ((w->camera >> chan) & 1u);
     uint32_t i;
     for (i = 0; i < RTHOME_WPAD_STATUS_BYTES; ++i) entry[i] = 0;
     entry[0] = (uint8_t)(hold >> 8);
     entry[1] = (uint8_t)hold;
+    /* The same data format the KPAD read reports on this channel (with the
+     * camera on, its camera format), and with it the dots it promises, the
+     * pointer as the KPAD read has it (Cake's review of #610). */
+    if (camera) pad_put_dots(entry + 8, w->pointer[chan]);
     entry[40] = PAD_DEV_STANDIN;
-    entry[54] = PAD_FORMAT_STANDIN;
+    entry[54] = (uint8_t)(camera ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
 }
 #endif
 
@@ -1152,7 +1191,8 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
 #ifdef RT_PAD_FORM_REMOTE
-            for (i = 0; i < count; ++i) pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, hold);
+            for (i = 0; i < count; ++i)
+                pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, hold);
 #else
             for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
 #endif
@@ -1165,8 +1205,9 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 #ifdef RT_PAD_FORM_REMOTE
     /* The HOME Menu's stand-in on a channel the game knows as this one's
      * keeps its shape (pad_home_status). */
-    if ((pad_gcwii_shaped(c) >> (uint32_t)chan) & 1u) {
-        for (i = 0; i < count; ++i) pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold);
+    if (pad_home_keeps_shape(c, (uint32_t)chan)) {
+        for (i = 0; i < count; ++i)
+            pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, remote_hold);
         interrupts_restore(msr);
         return;
     }
