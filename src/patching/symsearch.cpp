@@ -1576,7 +1576,7 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
             }
             const bool update_d = op == 33 || op == 35 || op == 37 || op == 39 || op == 41 || op == 43 || op == 45 ||
                                   op == 49 || op == 51 || op == 53 || op == 55;  // lwzu..sthu, lfsu..stfdu
-            if (update_d && ra == reg && rd != reg) added += static_cast<std::int16_t>(low);
+            if (update_d && base_update(insn, reg)) added += static_cast<std::int16_t>(low);
             if (op == 14 && rd == reg && ra == reg && reg != 0) added += static_cast<std::int16_t>(low);
             // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`,
             // `li r6,0`, a load into it): no longer the hardware's base, so a

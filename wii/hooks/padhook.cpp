@@ -933,7 +933,7 @@ struct PackWrites {
 };
 
 PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::vector<CodeRange>& image) {
-    constexpr std::size_t kMaxMatches = 64;  // per search patch, past which the rest aren't followed
+    constexpr std::size_t kMaxMatches = 65536;  // per search patch, as the patcher (kMaxSearchMatches)
     PackWrites out;
     out.applies.assign(patches.size(), false);
     const auto byte_at = [&](std::uint32_t address, std::uint8_t& value) {
@@ -960,16 +960,34 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
             if (patch.original.empty()) continue;
             const std::uint64_t align = patch.align == 0 ? 1 : patch.align;
             const std::size_t step = std::max(patch.original.size(), patch.value.size());
+            // Starts whose pattern reaches into an earlier write: the bytes
+            // there may be the write's, not the game's, so those are checked
+            // whatever the game's byte (as disjoint ranges, in order).
+            std::vector<std::pair<std::uint64_t, std::uint64_t>> near;
+            for (const PackWrite& w : out.writes) {
+                const std::uint64_t lo = w.at >= patch.original.size() ? w.at - patch.original.size() + 1 : 0;
+                near.push_back({lo, std::uint64_t(w.at) + patches[w.patch].value.size()});
+            }
+            std::sort(near.begin(), near.end());
+            std::size_t next = 0;
+            const auto near_write = [&](std::uint64_t pos) {
+                while (next < near.size() && near[next].second <= pos) ++next;
+                for (std::size_t n = next; n < near.size() && near[n].first <= pos; ++n) {
+                    if (pos < near[n].second) return true;
+                }
+                return false;
+            };
             std::size_t found = 0;
             for (const CodeRange& r : image) {
                 if (r.size < patch.original.size()) continue;
+                next = 0;  // sections aren't in address order
                 std::uint64_t pos = r.address;
                 if (pos % align != 0) pos += align - pos % align;
                 const std::uint64_t last = std::uint64_t(r.address) + r.size - patch.original.size();
                 while (pos <= last && found < kMaxMatches) {
                     // The first byte as loaded first (cheap), then the whole
                     // pattern with the earlier writes over it.
-                    if (r.bytes[pos - r.address] == patch.original[0] &&
+                    if ((r.bytes[pos - r.address] == patch.original[0] || near_write(pos)) &&
                         matches_at(static_cast<std::uint32_t>(pos), patch.original)) {
                         out.writes.push_back({static_cast<std::uint32_t>(pos), i});
                         out.applies[i] = true;
