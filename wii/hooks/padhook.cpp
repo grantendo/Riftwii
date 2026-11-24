@@ -1283,23 +1283,40 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
 
 // Whether a pack's search patches write a PADRead (or one the search can't
 // be sure of): their writes, as they end up, aren't in PatchedCode's view
-// (plain patches only), so they're searched here on their own.
-bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackWrites& plan) {
-    std::vector<std::vector<std::uint8_t>> bytes;
-    std::vector<std::uint32_t> at;
+// (plain patches only), so they're searched here on their own, writes that
+// touch or overlap joined into one span (a PADRead split across two
+// writes is still one: CodeRabbit CLI, fork #16). `found`: what was found
+// (its `read` 0 when unsure).
+bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackWrites& plan, PadSymbols& found) {
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> writes;
     for (std::size_t n = 0; n < plan.writes.size(); ++n) {
         if (!patches[plan.writes[n].patch].search) continue;
-        bytes.push_back(write_as_left(patches, plan, n));
-        at.push_back(plan.writes[n].at);
+        writes.push_back({plan.writes[n].at, write_as_left(patches, plan, n)});
     }
-    if (bytes.empty()) return false;
+    found = PadSymbols{};
+    if (writes.empty()) return false;
+    // Each write's bytes are as they end up (write_as_left), so where two
+    // overlap they agree.
+    std::stable_sort(writes.begin(), writes.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> spans;
+    for (auto& w : writes) {
+        if (!spans.empty()) {
+            auto& last = spans.back();
+            const std::uint64_t end = std::uint64_t(last.first) + last.second.size();
+            if (w.first <= end) {
+                const std::uint64_t w_end = std::uint64_t(w.first) + w.second.size();
+                if (w_end > end) last.second.resize(static_cast<std::size_t>(w_end - last.first));
+                std::copy(w.second.begin(), w.second.end(), last.second.begin() + (w.first - last.first));
+                continue;
+            }
+        }
+        spans.push_back(std::move(w));
+    }
     std::vector<CodeRange> ranges;
-    for (std::size_t n = 0; n < bytes.size(); ++n) ranges.push_back({at[n], bytes[n].data(), bytes[n].size()});
-    std::sort(ranges.begin(), ranges.end(),
-              [](const CodeRange& a, const CodeRange& b) { return a.address < b.address; });
-    PadSymbols found;
+    for (const auto& span : spans) ranges.push_back({span.first, span.second.data(), span.second.size()});
     std::string error;
     const bool sure = find_pad_symbols(ranges, found, error);
+    if (!sure) found.read = 0;
     return found.read != 0 || (!sure && error.find("PADRead") != std::string::npos);
 }
 
@@ -1382,8 +1399,19 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     }
     const PackWrites plan = standin ? plan_pack_writes(patches, image) : PackWrites{};
     // Its PADRead in a plain patch (found above) or written by a search patch.
+    PadSymbols searched;
     const bool pack_reads_pad =
-        standin && (from_patch || (!plan.incomplete && search_writes_pad_read(patches, plan)));
+        standin && (from_patch || (!plan.incomplete && search_writes_pad_read(patches, plan, searched)));
+    // A game with no PADRead of its own whose pack's search patch adds one:
+    // that one is hooked for the adapter, as a plain patch's would be (its
+    // place is checked again once the patches are in, pad_read_in_place:
+    // CodeRabbit CLI, fork #16).
+    if (pad.read == 0 && searched.read != 0) {
+        pad.read = searched.read;
+        pad.read_sites = searched.read_sites;
+        out.read = pad.read;
+        out.read_in_patch = true;
+    }
     const bool program_pad = standin && !pack_reads_pad && program_from_pack && pad.read != 0;
     // (Below: a pack with more memory writes than the checks follow counts
     // as bringing its own controller code: they can't vouch that it doesn't.)
