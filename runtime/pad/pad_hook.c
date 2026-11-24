@@ -1057,6 +1057,12 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
                     int32_t count) {
     uint32_t msr, t;
     enum rtslot_owner owner;
+#ifdef RT_PAD_FORM_REMOTE
+    /* The slots the game had been told of before this read: a read
+     * acknowledges only a connection told before it, not one the poll
+     * below tells (connected only's samples are the pack's). */
+    uint32_t told_before = 0;
+#endif
     if (!c->home_on && !c->gcwii) return result;
     if (chan < 0 || !pad_in_ram(status) || c->kpad_status_bytes < PAD_KPAD_END) return result;
     /* A read asking for no samples (`count`, the caller's room for them)
@@ -1070,6 +1076,9 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
         const int32_t err = c->kpad_takes_error && pad_in_ram(error) ? *error : RTGCWII_NO_ERROR;
         msr = interrupts_off();
+#ifdef RT_PAD_FORM_REMOTE
+        told_before = w->slot.told;
+#endif
         rtgcwii_kpad_read(w, (uint32_t)chan, result, err, now());
         interrupts_restore(msr);
         if ((uint32_t)chan < RTGCWII_CHANNELS) {
@@ -1091,12 +1100,13 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
          * go back as they are, even if the refresh just saw it leave (the
          * next read finds the new owner; CodeRabbit on #609). Connected
          * only, they are the pack's on the stand-in's own slot, which the
-         * game has now heard of. */
+         * game has now heard of if it was told before this read. */
         if (result > 0) {
 #ifdef RT_PAD_FORM_REMOTE
             if (w->slot.inputless && (uint32_t)chan < RTGCWII_CHANNELS) {
                 msr = interrupts_off();
-                if (rtslot_on(&w->slot, (uint32_t)chan)) rtgcwii_heard(w, (uint32_t)chan);
+                if (rtslot_on(&w->slot, (uint32_t)chan) && ((told_before >> chan) & 1u))
+                    rtgcwii_heard(w, (uint32_t)chan);
                 interrupts_restore(msr);
             }
 #endif
@@ -1527,13 +1537,14 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
         return;
     pad_gcwii_wii_read(c);
     /* Connected only: a report with no error is the pack's own, left as it
-     * is, never taken for a real Wii Remote; the game has heard of the
-     * stand-in there. */
+     * is, never taken for a real Wii Remote. It was read before the poll
+     * below, so it acknowledges what was told before; the poll may tell
+     * something newer, which then waits for the next read. */
     if (w->slot.inputless && (int8_t)status[RTGCWII_WPAD_ERR] == 0) {
-        pad_gcwii_read_pads(c);
         msr = interrupts_off();
         if (rtslot_on(&w->slot, (uint32_t)chan)) rtgcwii_heard(w, (uint32_t)chan);
         interrupts_restore(msr);
+        pad_gcwii_read_pads(c);
         return;
     }
     /* The report's answer is noted before the pads are polled (as at a KPAD
