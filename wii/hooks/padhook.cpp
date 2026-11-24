@@ -930,10 +930,16 @@ struct PackWrite {
 struct PackWrites {
     std::vector<bool> applies;
     std::vector<PackWrite> writes;
+    bool incomplete = false;  // more writes than the planning follows (plan_pack_writes)
 };
 
 PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::vector<CodeRange>& image) {
-    constexpr std::size_t kMaxMatches = 65536;  // per search patch, as the patcher (kMaxSearchMatches)
+    // Past these the planning would hold the launch up (each byte it checks
+    // looks through the earlier writes): the plan is then incomplete, and
+    // the checks can't vouch for the pack (as PatchedCode gives up past
+    // kMaxPreviewedPatches).
+    constexpr std::size_t kMaxMatches = 1024;  // per search patch
+    constexpr std::size_t kMaxWrites = PatchedCode::kMaxPreviewedPatches;
     PackWrites out;
     out.applies.assign(patches.size(), false);
     const auto byte_at = [&](std::uint32_t address, std::uint8_t& value) {
@@ -984,7 +990,7 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
                 std::uint64_t pos = r.address;
                 if (pos % align != 0) pos += align - pos % align;
                 const std::uint64_t last = std::uint64_t(r.address) + r.size - patch.original.size();
-                while (pos <= last && found < kMaxMatches) {
+                while (pos <= last && found < kMaxMatches && out.writes.size() < kMaxWrites) {
                     // The first byte as loaded first (cheap), then the whole
                     // pattern with the earlier writes over it.
                     if ((r.bytes[pos - r.address] == patch.original[0] || near_write(pos)) &&
@@ -999,11 +1005,19 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
                     pos += align;
                 }
             }
+            if (found >= kMaxMatches || out.writes.size() >= kMaxWrites) {
+                out.incomplete = true;
+                return out;
+            }
             continue;
         }
         if (!patch.has_offset) continue;
         const std::uint32_t at = memory_patch_target(patch);
         if (!matches_at(at, patch.original)) continue;
+        if (out.writes.size() >= kMaxWrites) {
+            out.incomplete = true;
+            return out;
+        }
         out.applies[i] = true;
         out.writes.push_back({at, i});
     }
@@ -1189,6 +1203,8 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     // game links a PADRead it never calls (Kirby's Return to Dream Land).
     const bool pack_reads_pad = standin && from_patch;
     const bool program_pad = standin && !pack_reads_pad && program_from_pack && pad.read != 0;
+    // (Below: a pack with more memory writes than the checks follow counts
+    // as bringing its own controller code: they can't vouch that it doesn't.)
     // What the packs' memory patches will write, with search patches found
     // in the game's program as loaded (its code and data sections).
     std::vector<CodeRange> image;
@@ -1197,16 +1213,18 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         if (s.used()) image.push_back({s.address, reinterpret_cast<const std::uint8_t*>(s.address), s.size});
     }
     const PackWrites plan = standin ? plan_pack_writes(patches, image) : PackWrites{};
+    const bool too_many = standin && !pack_reads_pad && !program_pad && plan.incomplete;
     const bool pack_wraps =
-        standin && !pack_reads_pad && !program_pad &&
+        standin && !pack_reads_pad && !program_pad && !too_many &&
         pack_wraps_wii_reads(patches, plan, find_kpad_read(text).address, find_wpad_probe(text), program_from_pack);
-    const bool pack_ports =
-        standin && !pack_reads_pad && !program_pad && !pack_wraps && pack_reads_gc_ports(patches, plan);
-    if (pack_reads_pad || program_pad || pack_wraps || (pack_ports && program_from_pack)) {
+    const bool pack_ports = standin && !pack_reads_pad && !program_pad && !too_many && !pack_wraps &&
+                            pack_reads_gc_ports(patches, plan);
+    if (pack_reads_pad || program_pad || too_many || pack_wraps || (pack_ports && program_from_pack)) {
         logf("GameCube adapter: a pack brings its own controller code (%s), so the game's GameCube controllers "
              "setting stays off for this launch\n",
              pack_reads_pad ? "its PADRead is in its memory patches"
              : program_pad  ? "the program file it brings has a PADRead"
+             : too_many     ? "its memory patches write more than the checks follow"
              : pack_wraps   ? "it hooks or reroutes the game's Wii controller reads"
                             : "it reads the GameCube ports, in the program file it brings");
         standin = false;
