@@ -1680,16 +1680,34 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
             const std::uint32_t insn = be32(bytes + k * 4);
             const std::uint32_t op = insn >> 26;
             const std::uint32_t low = insn & 0xFFFFu;
-            // rX loaded anew (`lis r6,0x8000` after it): no longer the
-            // hardware's base, so a use after it reads plain memory.
-            if (op == 15 && ((insn >> 21) & 31u) == reg) break;
-            if (low < kSiFirst || low >= kSiEnd) continue;
-            // ori rA,rS,low takes rX as its source (rS); addi and the
-            // loads and stores as their base (rA).
-            const std::uint32_t source = op == 24 ? (insn >> 21) & 31u : (insn >> 16) & 31u;
-            const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 || op == 40 ||
-                              op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
-            if (uses && source == reg) return true;
+            const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
+            if (low >= kSiFirst && low < kSiEnd) {
+                // ori rA,rS,low takes rX as its source (rS); addi and the
+                // loads and stores as their base (rA).
+                const std::uint32_t source = op == 24 ? rd : ra;
+                const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 ||
+                                  op == 40 || op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
+                if (uses && source == reg) return true;
+            }
+            // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`,
+            // `li r6,0`, a load into it): no longer the hardware's base, so a
+            // use after it reads plain memory. Adding to it keeps it a base
+            // (`add r6,r6,r5`, `addi r6,r6,12`: a port's offset).
+            const std::uint32_t xo = (insn >> 1) & 0x3FFu;
+            const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) ||
+                               (op == 14 && rd == reg && ra == reg);
+            const bool writes_d = op == 7 || op == 8 || op == 12 || op == 13 || op == 14 || op == 15 ||
+                                  (op >= 32 && op <= 35) || (op >= 40 && op <= 43) || op == 46;
+            const bool writes_a = op == 20 || op == 21 || op == 23 || (op >= 24 && op <= 29);
+            const bool store_x = op == 31 && (xo == 151 || xo == 183 || xo == 215 || xo == 247 || xo == 407 ||
+                                              xo == 439 || xo == 662 || xo == 918 || xo == 150);
+            const bool compare_x = op == 31 && (xo == 0 || xo == 32);
+            const bool logical_x = op == 31 && (xo == 28 || xo == 60 || xo == 124 || xo == 284 || xo == 316 ||
+                                                xo == 412 || xo == 444 || xo == 476 || xo == 24 || xo == 536 ||
+                                                xo == 792 || xo == 824 || xo == 26 || xo == 922 || xo == 954);
+            const bool writes = (writes_d && rd == reg) || (writes_a && ra == reg) ||
+                                (op == 31 && !store_x && !compare_x && (logical_x ? ra == reg : rd == reg));
+            if (writes && !keeps) break;
         }
     }
     return false;

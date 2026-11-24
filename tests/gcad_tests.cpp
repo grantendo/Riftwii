@@ -1872,6 +1872,10 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x3CC08000u, 0x81066404u});  // lis r6,0xCD00; lis r6,0x8000: plain memory again
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x7C661B78u, 0x81066404u});  // lis r6,0xCD00; mr r6,r3: plain memory
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x7CC62A14u, 0x81066404u});  // lis r6,0xCD00; add r6,r6,r5 (a port's offset): still a port read
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
 }
 
 // KPAD's camera switch, read from KPADEnableDPD's code just after
