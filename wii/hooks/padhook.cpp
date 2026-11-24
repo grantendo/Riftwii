@@ -931,6 +931,7 @@ struct PackWrites {
     std::vector<bool> applies;
     std::vector<PackWrite> writes;
     bool incomplete = false;  // more writes than the planning follows (plan_pack_writes)
+    std::vector<CodeRange> program;  // the game's program as loaded (its DOL's sections)
 };
 
 PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::vector<CodeRange>& image) {
@@ -942,6 +943,7 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
     constexpr std::size_t kMaxWrites = PatchedCode::kMaxPreviewedPatches;
     PackWrites out;
     out.applies.assign(patches.size(), false);
+    out.program = image;
     const auto byte_at = [&](std::uint32_t address, std::uint8_t& value) {
         const std::uint32_t ram_end = address < 0x90000000u ? 0x81800000u : 0x94000000u;
         if (address < 0x80000000u || address >= ram_end) return false;
@@ -1093,10 +1095,14 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
         }
         return word;
     };
-    // The pack's own code: bytes one of its writes put there, or anywhere in
-    // a program file it brings.
+    // The pack's own code: bytes one of its writes put there, or in a
+    // program file it brings (its loaded sections).
     const auto pack_code = [&](std::uint32_t address) {
-        if (program_from_pack) return true;
+        if (program_from_pack) {
+            for (const CodeRange& r : plan.program) {
+                if (address >= r.address && address - r.address < r.size) return true;
+            }
+        }
         for (const PackWrite& w : plan.writes) {
             if (address >= w.at && address - w.at < patches[w.patch].value.size()) return true;
         }
