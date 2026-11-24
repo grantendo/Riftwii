@@ -460,8 +460,26 @@ void TestHomeKeepsShapeAcrossPlug() {
     EXPECT_EQ(rtgcwii_home_keeps_shape(&w, 0), 0);
 }
 
+// A game whose connect callback is the later WPAD's has its sleeps read
+// the pads only while it is quiet (rtgcwii_quiet_due): none until 5 s after
+// the first sleep that asks, if it never reads a Wii controller itself;
+// none within 3 s of its last read of one.
+void TestQuietDue() {
+    rtgcwii w = fresh();
+    const std::uint32_t ms = 1;  // ticks a millisecond here
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 1000, ms), 0);  // notes when
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 1000 + 4999, ms), 0);
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 1000 + 5000, ms), 1);
+    rtgcwii_wii_read(&w, 7000);
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 7000 + 2999, ms), 0);
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 7000 + 3000, ms), 1);
+    rtgcwii_wii_read(&w, 11000);  // reading again: quiet again only after 3 s
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 12000, ms), 0);
+}
+
 int main() {
     TestComesAndGoes();
+    TestQuietDue();
     TestHomeKeepsShapeAcrossPlug();
     TestRealControllerWins();
     TestButtonsAndSticks();

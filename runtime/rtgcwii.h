@@ -99,9 +99,14 @@ struct rtgcwii {
      * before the telling is still told it's gone. */
     uint32_t retell;
     /* wpad_connect_table is the later WPAD's (find_wpad_connect_later): the
-     * game's sleeps don't read the pads for the stand-in (pad_hook.c's
-     * pad_reads_at_sleep). Loader-filled. */
+     * game's sleeps read the pads for the stand-in only while the game
+     * itself is quiet (rtgcwii_quiet_due, pad_hook.c's pad_reads_at_sleep).
+     * Loader-filled. */
     uint32_t wpad_connect_later;
+    /* When the game last read a Wii controller through a hook (its KPAD
+     * read, WPADProbe or WPADRead; low bit set), 0: never; and when the
+     * first sleep that asked was (low bit set), 0: none yet. */
+    uint32_t wii_read, quiet_from;
     /* WPAD's extension callbacks (the game's, WPADSetExtensionCallback):
      * the table of the channels' control blocks and the callback's place in
      * one (just before the connect callback's), 0: none. Told the stand-in's
@@ -288,6 +293,20 @@ void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own);
 /* The game read the stand-in on `channel` (a KPAD read or WPADRead gave it):
  * it has heard of it, and isn't told again. */
 void rtgcwii_heard(struct rtgcwii* w, uint32_t channel);
+
+/* The game read a Wii controller through a hook (its KPAD read, WPADProbe
+ * or WPADRead) at `now`. */
+void rtgcwii_wii_read(struct rtgcwii* w, uint32_t now);
+
+/* Whether a sleep should read the pads in a game whose connect callback is
+ * the later WPAD's: only while the game itself is quiet, so one that reads
+ * nothing until its callback hears of a controller (Mario Strikers
+ * Charged) gets the read that announces the stand-in, and one that reads
+ * WPAD every frame (LEGO Star Wars: The Complete Saga, which stopped at
+ * start-up when its sleeps read the pads) never does. Quiet: no Wii
+ * controller read in 3 s since its last, or none at all 5 s after the
+ * first sleep that asked. */
+int rtgcwii_quiet_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
 
 /* At each PADRead: a channel the game was told of and hasn't read since,
  * retell_ticks after the telling, is due to be told again (`retell`), so the

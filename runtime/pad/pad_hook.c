@@ -343,12 +343,31 @@ static int pad_can_tell(const struct rt_pad_context* c) {
            (c->gcwii != 0 && ((const struct rtgcwii*)(uintptr_t)c->gcwii)->wpad_connect_table != 0);
 }
 /* Whether the game's sleeps read the pads for it (pad_on_sleep): where its
- * callback is KPAD's or the 2006 WPAD's, not the later WPAD's (a game that
- * reads WPAD itself reads every frame, and LEGO Star Wars: The Complete
- * Saga stops at start-up when its sleeps read them, Dolphin 22 Nov). */
-static int pad_reads_at_sleep(const struct rt_pad_context* c) {
-    return c->kpad_connect != 0 || (c->gcwii != 0 && pad_can_tell(c) &&
-                                    !((const struct rtgcwii*)(uintptr_t)c->gcwii)->wpad_connect_later);
+ * callback is KPAD's or the 2006 WPAD's; where it's the later WPAD's, only
+ * while the game is quiet (rtgcwii_quiet_due: a game that reads WPAD every
+ * frame never is, and LEGO Star Wars: The Complete Saga stopped at start-up
+ * when its sleeps read them, Dolphin 22 Nov; Mario Strikers Charged reads
+ * nothing until its callback hears of a controller). */
+static int pad_reads_at_sleep(struct rt_pad_context* c) {
+    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
+    uint32_t msr;
+    int due;
+    if (c->kpad_connect != 0) return 1;
+    if (c->gcwii == 0 || !pad_can_tell(c)) return 0;
+    if (!w->wpad_connect_later) return 1;
+    msr = interrupts_off();
+    due = rtgcwii_quiet_due(w, now(), c->ticks_per_ms);
+    interrupts_restore(msr);
+    return due;
+}
+/* The game read a Wii controller itself (a hooked KPAD read, WPADProbe or
+ * WPADRead): its sleeps needn't (pad_reads_at_sleep). */
+static void pad_gcwii_wii_read(struct rt_pad_context* c) {
+    uint32_t msr;
+    if (!c->gcwii) return;
+    msr = interrupts_off();
+    rtgcwii_wii_read((struct rtgcwii*)(uintptr_t)c->gcwii, now());
+    interrupts_restore(msr);
 }
 #endif
 
@@ -1020,6 +1039,7 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
             interrupts_restore(msr);
             if (callback != 0) ((void (*)(int32_t, int32_t))(uintptr_t)callback)(chan, 0);
         }
+        pad_gcwii_wii_read(c);
         pad_gcwii_read_pads(c);
     }
     msr = interrupts_off();
@@ -1113,6 +1133,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
         msr = interrupts_off();
         rtgcwii_probed(w, (uint32_t)chan, result);
         interrupts_restore(msr);
+        pad_gcwii_wii_read(c);
         pad_gcwii_read_pads(c);
     }
     if (!c->home_on) {
@@ -1386,6 +1407,7 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
         return;
     /* The pads first, whatever the report: a game that reads only WPAD
      * (Punch-Out!!) polls the adapter through here for every channel. */
+    pad_gcwii_wii_read(c);
     pad_gcwii_read_pads(c);
     if ((int8_t)status[RTGCWII_WPAD_ERR] == 0) {
         /* The game's own read found a real Wii Remote there: its report

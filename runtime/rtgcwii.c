@@ -209,6 +209,17 @@ void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join) 
     w->told = (w->told | *join) & ~*leave;
 }
 
+void rtgcwii_wii_read(struct rtgcwii* w, uint32_t now) { w->wii_read = now | 1u; }
+
+int rtgcwii_quiet_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
+    if (w->wii_read != 0) return rtgcwii_elapsed(now, w->wii_read) >= 3000u * ticks_per_ms;
+    if (w->quiet_from == 0) {
+        w->quiet_from = now | 1u;
+        return 0;
+    }
+    return rtgcwii_elapsed(now, w->quiet_from) >= 5000u * ticks_per_ms;
+}
+
 int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
     if (w->real == 0) return 0;
     if (w->real_checked != 0 && rtgcwii_elapsed(now, w->real_checked) < 250u * ticks_per_ms) return 0;
