@@ -383,7 +383,12 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
                          (w->pointer_moved[channel] != 0 && rtgcwii_elapsed(now, w->pointer_moved[channel]) < w->pointer_show);
     shake = w->shake[channel];
     if (shake != 0) {
-        rtgcwii_shake(shake, (int)((w->shake_jump >> channel) & 1u), out->acc, &out->acc_value, &out->acc_speed);
+        const int jump = (int)((w->shake_jump >> channel) & 1u);
+        /* Both hands: Donkey Kong Country Returns' Nunchuk play starts a
+         * level only when the Nunchuk shakes too (Dolphin, a real Wii Remote
+         * and Nunchuk shaken together). */
+        rtgcwii_shake(shake, jump, out->acc, &out->acc_value, &out->acc_speed);
+        rtgcwii_shake(shake, jump, out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
         w->shake_jump &= ~(1u << channel);  /* this read took the step's jump */
     }
 }
@@ -660,6 +665,9 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
                 acc[2] = 0;
             }
             rtgcwii_put_acc(e + 2, acc);
+            /* The Nunchuk's too, where the sample has its part (it shakes
+             * with the Wii Remote, rtgcwii_nunchuk), from the shake's start. */
+            if (n == RTGCWII_WPAD_FS_BYTES && i * sample_ticks <= since) rtgcwii_put_acc(e + 42, acc);
         }
     }
     return count;

@@ -241,7 +241,8 @@ void TestShake() {
             EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_VALUE);
         }
         last = f.acc[0];
-        EXPECT_EQ(f.fs_acc_value, RTHOME_AXIS_FULL);  // the Nunchuk stays still
+        EXPECT_EQ(f.fs_acc_value, f.acc_value);  // the Nunchuk shakes with it
+        EXPECT_EQ(f.fs_acc[0], f.acc[0]);
     }
     EXPECT_EQ(flips, 4);  // at samples 4, 8, 12 and 16
     EXPECT_EQ(f.hold, 0u);  // X itself presses nothing
@@ -343,6 +344,8 @@ void TestUnified() {
         const std::int16_t x = static_cast<std::int16_t>((e[2] << 8) | e[3]);
         if (x > 0) ++plus;
         if (x < 0) ++minus;
+        // The Nunchuk's part swings with it (a Nunchuk format).
+        EXPECT_EQ(static_cast<std::int16_t>((e[42] << 8) | e[43]), x);
         EXPECT_EQ(e[40], 1);  // a Wii Remote with a Nunchuk
         EXPECT_EQ(e[kBytes - 2], 3);
     }

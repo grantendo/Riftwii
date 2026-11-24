@@ -251,7 +251,7 @@ uint32_t rtgcwii_float_bits(int32_t numerator);
 /* The stand-in's Wii Remote + Nunchuk on `channel` (RT_PAD_FORM_NUNCHUK),
  * for the game's KPAD read at `now`: the same words for every read until
  * the next sample, as rtgcwii_classic gives. Holding X shakes the Wii
- * Remote's accelerometer; the Nunchuk's stays at rest. Where the stand-in
+ * Remote's accelerometer and the Nunchuk's together. Where the stand-in
  * isn't on, the buttons, stick and pointer are 0 (pointer hidden), and both
  * accelerometers read a still controller: 1 g along -Y. */
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out);
