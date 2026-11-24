@@ -33,7 +33,7 @@ CXX     := $(PREFIX)g++
 PYTHON  ?= python3
 LIBOGC_INC ?= $(DEVKITPRO)/libogc/include
 
-PLUGINS := selftest gamecube ctgpr pads
+PLUGINS := selftest gamecube ctgpr pads appstore
 .DEFAULT_GOAL := all
 OUT     := build-plugins
 SDDIR   := $(OUT)/plugins
@@ -69,6 +69,13 @@ ctgpr_LIBSTDCXX := hash_bytes.o hashtable_c++0x.o
 # The in-game pad code's six builds (docs/PLUGINS.md, "The pads plugin"):
 # plain C and the builds by .incbin (plugins/pads/padsblobs.S), from
 # Makefile.runtime's folder like the gamecube plugin's blobs.
+
+# The app store (docs/APPSTORE.md): its pages and downloads, the list's
+# reader and the store's rules, the zip and PNG readers and SHA-256. zlib's
+# header for the inflater, which is the loader's (rwp_host's zlib_*).
+appstore_SRC := src/net/applist.cpp src/net/appcatalog.cpp src/fs/zipread.cpp src/art/themepack.cpp src/art/pngdecode.cpp src/art/canvas.cpp src/art/storeicons.cpp                 src/data/sha256.cpp src/data/textlines.cpp
+appstore_CXX := yes
+appstore_CXXFLAGS := -I$(DEVKITPRO)/portlibs/ppc/include
 
 # What libstdc++'s headers leave out of line for std::map and no plugin
 # source defines: the red-black tree's balancing, libstdc++'s tree.o, taken
@@ -131,17 +138,17 @@ STAMP_FILE := $(OUT)/build-stamp.txt
 $(shell mkdir -p $(OUT) && [ "$$(cat $(STAMP_FILE) 2>/dev/null)" = "$(RIFTWII_BUILD_STAMP)" ] || echo "$(RIFTWII_BUILD_STAMP)" > $(STAMP_FILE))
 
 define plugin_rules
-$(OUT)/$(1)/%.o: plugins/$(1)/%.c include/riftwii/plugin_api.h
+$(OUT)/$(1)/%.o: plugins/$(1)/%.c include/riftwii/plugin_api.h Makefile.plugin
 	@mkdir -p $$(dir $$@)
-	$$(CC) $$(CFLAGS) -c -o $$@ $$<
+	$$(CC) $$(CFLAGS) -MMD -MP -c -o $$@ $$<
 
 $(OUT)/$(1)/%.o: plugins/$(1)/%.cpp include/riftwii/plugin_api.h
 	@mkdir -p $$(dir $$@)
 	$$(CXX) $$(CXXFLAGS) $$($(1)_CXXFLAGS) -MMD -MP -c -o $$@ $$<
 
-$(OUT)/$(1)/%.o: plugins/$(1)/%.S $(wildcard $(RUNTIME_OUT)/*)
+$(OUT)/$(1)/%.o: plugins/$(1)/%.S $(wildcard $(RUNTIME_OUT)/*) Makefile.plugin
 	@mkdir -p $$(dir $$@)
-	$$(CC) $$(ASFLAGS) -x assembler-with-cpp -c -o $$@ $$<
+	$$(CC) $$(ASFLAGS) -x assembler-with-cpp -MMD -MP -c -o $$@ $$<
 
 # The C++ runtime and the src/ copies, under the plugin's own folder.
 $(OUT)/$(1)/common/%.o: plugins/common/%.cpp include/riftwii/plugin_api.h
