@@ -720,20 +720,36 @@ std::uint32_t find_wpad_is_dpd_enabled(const std::vector<CodeRange>& text) {
             bool indexed[32] = {};
             int block = -1, camera = -1;
             bool returns = false;
+            bool r3_camera = false;  // r3 holds the camera word now
             for (std::size_t k = start + 1; k < words && k <= start + kMaxWords; ++k) {
                 const std::uint32_t insn = be32(r.bytes + 4 * k);
                 const std::uint32_t op = insn >> 26, d = (insn >> 21) & 31u, a = (insn >> 16) & 31u;
-                if ((insn & 0xFFFF0000u) == 0x94210000u || insn == 0x4E800020u) break;  // the next function, or blr
+                if (insn == 0x4E800020u) {  // blr: it returns the camera word only if r3 still holds it
+                    returns = r3_camera;
+                    break;
+                }
+                if ((insn & 0xFFFF0000u) == 0x94210000u) break;  // the next function
                 if (op == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;
                 if (op == 14 && a != 0 && high[a] != 0) address[d] = high[a] + static_cast<std::uint32_t>(static_cast<std::int16_t>(insn & 0xFFFFu));
                 if ((insn & 0xFC00FFFFu) == 0x5400103Au && ((insn >> 21) & 31u) == 3) indexed[a] = true;  // slwi rA,r3,2
                 const bool lwzx = op == 31 && ((insn >> 1) & 0x3FFu) == 23;
                 if (lwzx && address[a] != 0 && indexed[(insn >> 11) & 31u]) block = static_cast<int>(d);
                 const std::uint32_t disp = insn & 0xFFFFu;
-                if (op == 32 && block >= 0 && static_cast<int>(a) == block && (disp == 2104 || disp == 1912))
-                    camera = static_cast<int>(d);
+                const bool camera_load =
+                    op == 32 && block >= 0 && static_cast<int>(a) == block && (disp == 2104 || disp == 1912);
+                if (camera_load) camera = static_cast<int>(d);
                 const bool mr = op == 31 && ((insn >> 1) & 0x3FFu) == 444 && d == ((insn >> 11) & 31u);
-                if (camera >= 0 && (camera == 3 || (mr && a == 3 && static_cast<int>(d) == camera))) returns = true;
+                // r3 as the return value: the camera word loaded into it or
+                // copied into it; any other write to r3 replaces it.
+                const bool to_r3 = (camera_load && d == 3) || (mr && a == 3 && camera >= 0 && static_cast<int>(d) == camera);
+                const bool d_form_r3 = (op == 7 || op == 12 || op == 13 || op == 14 || op == 15 || (op >= 32 && op <= 35) ||
+                                        (op >= 40 && op <= 43)) && d == 3;
+                const bool a_form_r3 = ((op >= 20 && op <= 29 && op != 22) || op == 31) && a == 3;
+                if (to_r3) {
+                    r3_camera = true;
+                } else if (d_form_r3 || a_form_r3 || (op == 31 && d == 3 && !mr)) {
+                    r3_camera = false;
+                }
             }
             if (!returns) continue;
             found = r.address + static_cast<std::uint32_t>(4 * start);
@@ -784,11 +800,19 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
                                       op == 40 || op == 41 || op == 42 || op == 43 || (op == 31 && !mr);
                 const std::uint32_t copied = block_base[op == 14 && imm == 0 ? a : 0];
                 const std::uint32_t copied_stride = block_stride[op == 14 && imm == 0 ? a : 0];
+                // What the sources held, before this word's destination
+                // loses what it held (a source may be the destination).
+                const std::uint32_t high_a = high[a], address_a = address[a], address_b = address[b];
+                const std::uint32_t stride_a = stride_of[a], stride_b = stride_of[b];
                 if (mr) {
                     block_base[a] = block_base[d];
                     block_stride[a] = block_stride[d];
+                    high[a] = high[d];
+                    address[a] = address[d];
+                    stride_of[a] = stride_of[d];
                 } else if (writes_d) {
                     block_base[d] = block_stride[d] = 0;
+                    high[d] = address[d] = stride_of[d] = 0;  // `li r6,0` after a `mulli r6`: no stride any more
                     if (op == 14 && imm == 0 && copied != 0) {
                         block_base[d] = copied;
                         block_stride[d] = copied_stride;
@@ -796,14 +820,13 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
                 }
                 if (op == 15 && a == 0) {
                     high[d] = (w & 0xFFFFu) << 16;
-                    address[d] = stride_of[d] = block_base[d] = 0;
-                } else if (op == 14 && a != 0 && (high[a] != 0 || address[a] != 0)) {
-                    address[d] = (address[a] != 0 ? address[a] : high[a]) + static_cast<std::uint32_t>(imm);
+                } else if (op == 14 && a != 0 && (high_a != 0 || address_a != 0)) {
+                    address[d] = (address_a != 0 ? address_a : high_a) + static_cast<std::uint32_t>(imm);
                 } else if (op == 7 && imm > 0 && static_cast<std::uint32_t>(imm) <= kMaxStride) {
                     stride_of[d] = static_cast<std::uint32_t>(imm);  // mulli rD,rA,stride
                 } else if (op == 31 && ((w >> 1) & 0x1FFu) == 266) {  // add rD,rA,rB
-                    const std::uint32_t base = address[a] != 0 ? address[a] : address[b];
-                    const std::uint32_t stride = stride_of[a] != 0 ? stride_of[a] : stride_of[b];
+                    const std::uint32_t base = address_a != 0 ? address_a : address_b;
+                    const std::uint32_t stride = stride_a != 0 ? stride_a : stride_b;
                     if (base != 0 && stride != 0) {
                         block_base[d] = base;
                         block_stride[d] = stride;
