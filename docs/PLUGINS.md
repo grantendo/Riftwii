@@ -452,9 +452,11 @@ adapter and USB controllers: the game can't start without the pad code
 from RiftWii's pads plugin in <folder>: ...`. Starting the game without
 the adapter instead would leave a player whose only controllers are
 GameCube or USB ones unable to play, or to leave. Only launches that
-would put the pad code in are stopped: with Settings > GameCube adapter
-Off and no USB pad plugged in, or Automatic with no adapter or USB pad
-plugged in, it is never needed. A plugged-in USB pad with a layout turns
+would put the pad code in are stopped: with the game's GameCube
+controllers setting Off, and Settings > GameCube adapter Off and no USB
+pad plugged in, or Automatic with no adapter or USB pad plugged in, it
+is never needed (with that setting on, the stand-in's build is always
+needed). A plugged-in USB pad with a layout turns
 Off into Automatic for that launch (settle_gc_adapter), so then the pad
 code goes in and a missing plugin stops the launch too; with USB pads
 only set up, not plugged in, the plugin is loaded early in case one is

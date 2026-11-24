@@ -1756,6 +1756,15 @@ static void TestRemotesIdleReset() {
     code = far.bytes();
     text = {{far.base, code.data(), code.size()}};
     EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe4), 0u);
+    // The lis-form reset split across two touching ranges (a pack's patch
+    // over its middle with the same bytes, as code_with_patches gives it):
+    // still found (CodeRabbit on #610); with a gap between, not.
+    code = lis_only.bytes();
+    const std::uint32_t split = lone - lis_only.base + 8;  // after its first two words
+    text = {{lis_only.base, code.data(), split}, {lis_only.base + split, code.data() + split, code.size() - split}};
+    EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe2), lone);
+    text = {{lis_only.base, code.data(), split}, {lis_only.base + split + 4, code.data() + split + 4, code.size() - split - 4}};
+    EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe2), 0u);
     (void)other;
 }
 

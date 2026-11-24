@@ -624,10 +624,17 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
         for (i = 0; i < RTGCWII_CHANNELS; ++i) {
             uint32_t type = 0;
             int32_t result;
+            uint32_t before;
             if (!((w->real >> i) & 1u)) continue;
+            /* Interrupts are on through the replay: a hooked probe in that
+             * time may note something newer, which this older answer then
+             * mustn't undo (CodeRabbit on #610). */
+            msr = interrupts_off();
+            before = rtgcwii_probe_count(w, i);
+            interrupts_restore(msr);
             result = pad_replay_probe((int32_t)i, &type);
             msr = interrupts_off();
-            rtgcwii_probed(w, i, result);
+            if (rtgcwii_probe_count(w, i) == before) rtgcwii_probed(w, i, result);
             interrupts_restore(msr);
         }
     }

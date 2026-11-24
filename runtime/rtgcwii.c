@@ -45,9 +45,14 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     }
 }
 
+uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel) {
+    return channel < RTGCWII_CHANNELS ? w->probe_counts[channel] : 0u;
+}
+
 void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result) {
     uint32_t bit;
     if (channel >= RTGCWII_CHANNELS || result == -2) return;  /* busy: no answer either way */
+    ++w->probe_counts[channel];
     bit = 1u << channel;
     if (result == 0) {
         w->real |= bit;
