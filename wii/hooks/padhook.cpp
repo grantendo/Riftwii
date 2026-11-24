@@ -1939,8 +1939,18 @@ unsigned unroute_pack(PadHook& hook) {
     // originals, the one written is what was meant (the other record then no
     // longer matches and is left be); a patch the check didn't expect but
     // that was written anyway (low memory, cleared after the check) still
-    // has its reads put back by the second pass.
+    // has its reads put back by the second pass. Two records with the same
+    // rewritten word and different originals can only differ in the upper
+    // half (routing keeps the instruction and its registers): 0xCD00 or
+    // 0xCC00, the same serial interface either way, so either put back
+    // reads the same hardware.
     constexpr std::size_t kRecord = 4;
+    // A record outside RAM (a patch whose guard failed there, never
+    // written) is never read.
+    const auto in_ram = [](std::uint32_t address) {
+        return (address >= 0x80000000u && address <= 0x81800000u - 4u) ||
+               (address >= 0x90000000u && address <= 0x94000000u - 4u);
+    };
     for (int pass = 0; pass < 2; ++pass) {
         for (std::size_t n = hook.route_restore.size() / kRecord; n-- > 0;) {
             const std::size_t i = n * kRecord;
@@ -1948,7 +1958,7 @@ unsigned unroute_pack(PadHook& hook) {
             const std::uint32_t original = hook.route_restore[i + 1];
             const std::uint32_t routed = hook.route_restore[i + 2];
             const bool expected = hook.route_restore[i + 3] != 0;
-            if (expected != (pass == 0)) continue;
+            if (expected != (pass == 0) || !in_ram(address)) continue;
             // Only a word still as rewritten: one written over since, or
             // never written, is left be.
             if (*reinterpret_cast<const volatile std::uint32_t*>(address) != routed) continue;
