@@ -775,14 +775,23 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     out.kpad_status_bytes = kpad.status_bytes;
     out.kpad_takes_error = kpad.takes_error;
     out.wpad_probe = probe;
-    if (old_kpad) {
-        out.wpad_info = find_wpad_get_info(text);
+    // WPADGetInfoAsync for every stand-in launch: a 2006 KPAD game waits on
+    // its answer (the stand-in gives one); a later game's blocking
+    // WPADGetInfo would sleep for a real Wii Remote's reply (Mario Strikers
+    // Charged after its title), so there it's busy and returns at once.
+    out.wpad_info = out.standin ? find_wpad_get_info(text) : 0;
+    out.info_answers = old_kpad;
+    if (out.standin) {
         if (out.wpad_info != 0)
-            logf("GameCube adapter: WPADGetInfoAsync at 0x%08x (the 2006 KPAD game waits on its answer; the stand-in "
-                 "gives one)\n",
-                 out.wpad_info);
+            logf("GameCube adapter: WPADGetInfoAsync at 0x%08x (%s)\n", out.wpad_info,
+                 old_kpad ? "the 2006 KPAD game waits on its answer; the stand-in gives one"
+                          : "busy on the stand-in's channel, so a blocking WPADGetInfo doesn't sleep");
         else
-            logf("GameCube adapter: WPADGetInfoAsync not found: a 2006 KPAD game may not take the stand-in\n");
+            logf("GameCube adapter: WPADGetInfoAsync not found: %s\n",
+                 old_kpad ? "a 2006 KPAD game may not take the stand-in"
+                          : "a game that waits on a Wii Remote's info may stop there");
+    }
+    if (old_kpad) {
         const WpadConnect2006 connect06 = find_wpad_connect_2006(text);
         out.wpad_connect_table = connect06.table;
         out.wpad_connect_offset = connect06.offset;
@@ -1553,6 +1562,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->wpad_connect_later = out.wpad_connect_later ? 1u : 0u;
         state->wpad_ext_table = out.wpad_ext_table;
         state->wpad_ext_offset = out.wpad_ext_offset;
+        state->info_answers = out.info_answers ? 1u : 0u;
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;

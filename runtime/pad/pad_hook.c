@@ -1374,6 +1374,9 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
     msr = interrupts_off();
     on = rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
     pending = ((const struct rtgcwii*)(uintptr_t)c->gcwii)->info_callback[chan] != 0;
+    /* A later game: busy, never an answer whose callback would have to wake
+     * a WPADGetInfo already asleep (rtgcwii.info_answers). */
+    if (!((const struct rtgcwii*)(uintptr_t)c->gcwii)->info_answers) pending = 1;
     if (!on || pending) {
         interrupts_restore(msr);
         return on ? PAD_INFO_BUSY : result;

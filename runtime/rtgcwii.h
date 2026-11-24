@@ -75,6 +75,12 @@ struct rtgcwii {
      * stand-in and told at the game's next KPAD read on that channel (as a
      * real Wii Remote's answer comes later), 0: none waiting. */
     uint32_t info_callback[RTGCWII_CHANNELS];
+    /* 1: a 2006 KPAD game, whose WPADGetInfoAsync on the stand-in's channel
+     * gets the stand-in's info (pad_on_info); 0: a later game, where it is
+     * busy (-2), so a blocking WPADGetInfo (Mario Strikers Charged's, after
+     * its title) returns at once instead of sleeping for a reply only a real
+     * Wii Remote sends; the game skips its battery check. Loader-filled. */
+    uint32_t info_answers;
     /* The 2006 WPAD's connect callbacks (its games have no KPAD-level
      * one): the table of the channels' control blocks and the callback's
      * place in one, 0: none. Loader-filled. */
