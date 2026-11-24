@@ -1548,6 +1548,9 @@ msgstr "Controller GameCube"
 msgid "Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one."
 msgstr "Ogni controller GameCube gioca come un controller tradizionale (la porta 1 come il telecomando Wii 1 e così via), nei giochi che lo supportano."
 
+msgid "A code build doesn't use it."
+msgstr "Una build di codice non lo usa."
+
 msgid "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."
 msgstr "I controller GameCube funzionano solo nei giochi pensati per loro. Le altre scelte li fanno giocare come un controller Wii."
 

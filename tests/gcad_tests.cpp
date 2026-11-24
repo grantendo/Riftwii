@@ -1725,10 +1725,37 @@ static void TestRemotesIdleReset() {
     const std::uint32_t probe2 = lis_only.here();
     lis_only.prologue();
     lis_only.bl(lone);
+    lis_only.op(0x60000000u);
+    lis_only.bl(lone);  // the library's two calls, as in every dumped game
     lis_only.blr();
     code = lis_only.bytes();
     text = {{lis_only.base, code.data(), code.size()}};
     EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe2), lone);
+    // Called only once near WPADProbe: not the library's (CodeRabbit on #609).
+    Asm once{0x80200000u, {}};
+    const std::uint32_t once_reset = idle_reset_function(once, -0x6034, false);
+    const std::uint32_t probe3 = once.here();
+    once.prologue();
+    once.bl(once_reset);
+    once.blr();
+    code = once.bytes();
+    text = {{once.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe3), 0u);
+    // Called twice near WPADProbe and also from the game's own code far
+    // from it: a game helper of the same shape, not taken.
+    Asm far{0x80200000u, {}};
+    const std::uint32_t far_reset = idle_reset_function(far, -0x6034, false);
+    const std::uint32_t probe4 = far.here();
+    far.prologue();
+    far.bl(far_reset);
+    far.op(0x60000000u);
+    far.bl(far_reset);
+    far.blr();
+    while (far.here() < probe4 + 0x10010) far.op(0x60000000u);
+    far.bl(far_reset);  // the game's own call, out of WPAD's reach
+    code = far.bytes();
+    text = {{far.base, code.data(), code.size()}};
+    EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe4), 0u);
     (void)other;
 }
 

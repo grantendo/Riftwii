@@ -1576,6 +1576,8 @@ T = {
         "各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。",
         "Cada controle de GameCube joga como um Classic Controller (a porta 1 como o Wii Remote 1 e assim por diante), nos jogos que aceitam um.",
         "Ogni controller GameCube gioca come un controller tradizionale (la porta 1 come il telecomando Wii 1 e così via), nei giochi che lo supportano."),
+    "A code build doesn't use it.": ("Una compilación de código no lo usa.", "コードビルドでは使われません。", "Uma build de código não o usa.",
+        "Una build di codice non lo usa."),
     "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.": (
         "Los mandos de GameCube solo funcionan en los juegos hechos para ellos. Las otras opciones los hacen jugar como un mando de Wii.",
         "ゲームキューブコントローラーは対応するゲームでのみ使えます。ほかの選択肢では、Wiiのコントローラーとして動きます。",
@@ -3427,6 +3429,8 @@ KO = {
         "각 게임큐브 컨트롤러가 클래식 컨트롤러로 작동합니다(포트 1은 Wii 리모컨 1 등). 지원하는 게임용입니다.",
     "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.":
         "게임큐브 컨트롤러는 전용 게임에서만 작동합니다. 다른 선택지에서는 Wii 컨트롤러로 작동합니다.",
+    "A code build doesn't use it.":
+        "코드 빌드에서는 사용되지 않습니다.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "타 지역 게임(수입판)의 경우: 해당 게임은 콘솔의 지역 정보를 확인해야 할 위치에서 자사 지역의 국가명을 인식합니다.",
     "Don't show again":
@@ -5295,6 +5299,8 @@ FR = {
         "Chaque manette GameCube joue comme une manette Classic (le port 1 comme la Télécommande Wii 1, et ainsi de suite), dans les jeux qui l'acceptent.",
     "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.":
         "Les manettes GameCube ne fonctionnent que dans les jeux faits pour elles. Les autres choix les font jouer comme une manette Wii.",
+    "A code build doesn't use it.":
+        "Une build de code ne l'utilise pas.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine.",
     "Don't show again":
