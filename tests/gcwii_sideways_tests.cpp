@@ -319,7 +319,8 @@ void TestRetell() {
     rtgcwii_retell(&w, 299);
     EXPECT_EQ(w.told, 1u);
     rtgcwii_retell(&w, 300);
-    EXPECT_EQ(w.told, 0u);
+    EXPECT_EQ(w.told, 1u);  // still told...
+    EXPECT_EQ(w.retell, 1u);  // ...and due to be told again
     EXPECT_EQ(w.retells[0], 1u);
     EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(reason, 0);
@@ -354,6 +355,29 @@ void TestRetell() {
         rtgcwii_heard(&w3, 0);
         EXPECT_EQ(rtgcwii_next_change(&w3, 0, 0, &chan, &reason), 1);
         EXPECT_EQ(w3.heard, 0u);
+    }
+    // Due to be told again, but unplugged first: told it's gone, not left
+    // connected in the game (CodeRabbit CLI, #15).
+    {
+        rtgcwii w4 = fresh();
+        Pads p4;
+        p4.plug(0);
+        rtgcwii_pads(&w4, p4.s, 1);
+        EXPECT_EQ(rtgcwii_next_change(&w4, 0, 0, &chan, &reason), 1);
+        w4.retell_ticks = 100;
+        rtgcwii_retell(&w4, 200);
+        rtgcwii_retell(&w4, 300);
+        EXPECT_EQ(w4.retell, 1u);
+        Pads none4;
+        rtgcwii_pads(&w4, none4.s, 300 + 2 * kGrace);
+        EXPECT_EQ(rtgcwii_on(&w4, 0), 0);
+        chan = 9;
+        reason = 9;
+        EXPECT_EQ(rtgcwii_next_change(&w4, 0, 0, &chan, &reason), 1);
+        EXPECT_EQ(chan, 0u);
+        EXPECT_EQ(reason, -1);
+        EXPECT_EQ(w4.told, 0u);
+        EXPECT_EQ(w4.retell, 0u);
     }
     // A channel still to be told isn't counted.
     rtgcwii w2 = fresh();

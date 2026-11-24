@@ -94,6 +94,10 @@ struct rtgcwii {
     uint32_t heard;                         /* channels read since they were told, one bit each */
     uint32_t told_at[RTGCWII_CHANNELS];     /* when each was told (low bit set), 0: not noted yet */
     uint32_t retells[RTGCWII_CHANNELS];     /* times told again since its controller came */
+    /* Channels due to be told "connected" again (rtgcwii_retell), one bit
+     * each: apart from `told`, which stays set, so a controller unplugged
+     * before the telling is still told it's gone. */
+    uint32_t retell;
     /* wpad_connect_table is the later WPAD's (find_wpad_connect_later): the
      * game's sleeps don't read the pads for the stand-in (pad_hook.c's
      * pad_reads_at_sleep). Loader-filled. */
@@ -286,9 +290,10 @@ void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own);
 void rtgcwii_heard(struct rtgcwii* w, uint32_t channel);
 
 /* At each PADRead: a channel the game was told of and hasn't read since,
- * retell_ticks after the telling, counts as not told, so the connect
- * callback hears "connected" again (rtgcwii_next_change), at most
- * RTGCWII_RETELLS times while its controller stays. */
+ * retell_ticks after the telling, is due to be told again (`retell`), so the
+ * connect callback hears "connected" again (rtgcwii_next_change), at most
+ * RTGCWII_RETELLS times while its controller stays. It still counts as
+ * told: one that leaves first is told it's gone. */
 void rtgcwii_retell(struct rtgcwii* w, uint32_t now);
 
 /* WPADStatus, as WPADRead gives it: the buttons (big-endian) at 0, the

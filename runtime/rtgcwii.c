@@ -377,8 +377,11 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
 int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason) {
     uint32_t leave = 0, join = 0, i;
     const uint32_t now_on = w->present & ~w->real;
-    join = now_on & ~w->told & ~skip;
+    /* A channel due to be told again is told "connected" once more; one
+     * that left before that is told it's gone (it still counts as told). */
+    join = now_on & (~w->told | w->retell) & ~skip;
     leave = w->told & ~now_on & ~w->real & ~skip & ~keep;
+    w->retell &= now_on;
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
         const uint32_t bit = 1u << i;
         if (!((join | leave) & bit)) continue;
@@ -386,6 +389,7 @@ int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_
         *reason = (join & bit) ? 0 : -1;
         if (join & bit) {
             w->told |= bit;
+            w->retell &= ~bit;
             /* A new "connected": only a read after it says the game heard
              * it (a WPADRead before the callback was told doesn't). */
             w->heard &= ~bit;
@@ -445,17 +449,18 @@ void rtgcwii_retell(struct rtgcwii* w, uint32_t now) {
         if (!rtgcwii_on(w, i)) {
             /* Gone (or a real controller's): the next controller starts afresh. */
             w->heard &= ~bit;
+            w->retell &= ~bit;
             w->told_at[i] = 0;
             w->retells[i] = 0;
             continue;
         }
-        if (!(w->told & bit) || (w->heard & bit)) continue;  /* still to tell, or heard */
+        if (!(w->told & bit) || (w->heard & bit) || (w->retell & bit)) continue;  /* still to tell, heard, or due */
         if (w->told_at[i] == 0) {
             w->told_at[i] = now | 1u;
             continue;
         }
         if (rtgcwii_elapsed(now, w->told_at[i]) < w->retell_ticks || w->retells[i] >= RTGCWII_RETELLS) continue;
-        w->told &= ~bit;
+        w->retell |= bit;
         w->told_at[i] = 0;
         ++w->retells[i];
     }

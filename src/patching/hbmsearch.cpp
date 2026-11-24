@@ -554,6 +554,32 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
                 loaded = -1;  // a load from another block isn't this one's
                 continue;
             }
+            // The block register written with anything else (a reload from
+            // the stack, another value): a load and a store through it after
+            // this aren't the table's block (CodeRabbit CLI, #15). A load into
+            // it from the block itself ends it too.
+            if (block >= 0 && writes_register(insn, static_cast<std::uint32_t>(block))) {
+                // An epilogue's restore (`lmw`, `lwz` off r1) on a path that
+                // returns before it uses the register again doesn't end it:
+                // an early error return branched around leaves the block as
+                // it was for the swap after it.
+                bool returns = false;
+                for (std::size_t n = k + 1; n < end && n <= k + 6; ++n) {
+                    const std::uint32_t next = be32(r.bytes + 4 * n);
+                    if (next == kBlr) {
+                        returns = true;
+                        break;
+                    }
+                    if (opcode(next) == 16 || opcode(next) == 18 ||
+                        reg_a(next) == static_cast<std::uint32_t>(block))
+                        break;
+                }
+                if (!returns) {
+                    block = -1;
+                    loaded = -1;
+                }
+                continue;
+            }
             if (block < 0 || static_cast<int>(a) != block || simm(insn) < kBlockFields) continue;
             if (opcode(insn) == 32) loaded = simm(insn);  // lwz: the old callback
             if (opcode(insn) != 36 || simm(insn) != loaded || !((r4_here >> d) & 1u)) continue;
@@ -586,14 +612,19 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
             const auto setter = std::find_if(setters.begin(), setters.end(),
                                              [&](const auto& s) { return s.second == simm(insn); });
             if (setter == setters.end()) continue;
-            bool gone = false;
+            bool gone = false, ctr_from_slot = false;
             for (std::size_t k = i + 1; k < words && k <= i + kCallWindow; ++k) {
                 const std::uint32_t next = be32(r.bytes + 4 * k);
                 if (next == kBctrl) {
-                    if (gone && std::find(told_gone.begin(), told_gone.end(), setter->second) == told_gone.end())
+                    // The call goes through CTR: only a call whose CTR came
+                    // from the loaded slot is the slot's (CodeRabbit CLI, #15).
+                    if (gone && ctr_from_slot &&
+                        std::find(told_gone.begin(), told_gone.end(), setter->second) == told_gone.end())
                         told_gone.push_back(setter->second);
                     break;
                 }
+                // mtctr rS: from r12 (the slot) or from anything else.
+                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) ctr_from_slot = reg_d(next) == 12;
                 // A jump or return, or r12 loaded again: not this slot's call
                 // (the `beq` past it when the slot is empty is fine).
                 if (opcode(next) == 18 || next == kBlr ||
