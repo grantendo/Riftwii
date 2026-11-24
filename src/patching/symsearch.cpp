@@ -1698,8 +1698,12 @@ bool writes_gpr(std::uint32_t insn, std::uint32_t reg) {
             return ra == reg;
         case 55: case 119: case 311: case 375:  // lwzux, lbzux, lhzux, lhaux: rD and their base
             return rd == reg || ra == reg;
-        case 533: case 597:  // lswx, lswi: rD and on
-            return reg >= rd;
+        case 597: {  // lswi: as many registers as its byte count needs, from rD, wrapping past r31
+            const std::uint32_t bytes = ((insn >> 11) & 31u) != 0 ? (insn >> 11) & 31u : 32u;
+            return ((reg - rd) & 31u) < (bytes + 3u) / 4u;
+        }
+        case 533:  // lswx: its count is known only when it runs
+            return true;
         case 150: case 151: case 215: case 407: case 662: case 918:  // the other integer stores
         case 661: case 725: case 438:                                // stswx, stswi, ecowx
         case 535: case 599: case 663: case 727: case 983:            // lfsx, lfdx, stfsx, stfdx, stfiwx
@@ -1710,6 +1714,25 @@ bool writes_gpr(std::uint32_t insn, std::uint32_t reg) {
             return false;
         default:
             return rd == reg;
+    }
+}
+
+// Whether `insn` is an update form whose base is `reg` and that leaves it
+// the address it used (the base plus an offset, as an add does), with no
+// load into it: lwzu..sthu, lfsu..stfdu and their indexed forms.
+bool base_update(std::uint32_t insn, std::uint32_t reg) {
+    const std::uint32_t op = insn >> 26, rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u;
+    if (ra != reg) return false;
+    if (op == 33 || op == 35 || op == 41 || op == 43) return rd != reg;  // lwzu, lbzu, lhzu, lhau
+    if (op == 37 || op == 39 || op == 45 || op == 49 || op == 51 || op == 53 || op == 55) return true;
+    if (op != 31) return false;
+    switch ((insn >> 1) & 0x3FFu) {
+        case 55: case 119: case 311: case 375:  // lwzux, lbzux, lhzux, lhaux
+            return rd != reg;
+        case 183: case 247: case 439: case 567: case 631: case 695: case 759:  // stwux..sthux, lfsux..stfdux
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -1731,11 +1754,12 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
             const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
             if (low >= kSiFirst && low < kSiEnd) {
                 // ori rA,rS,low takes rX as its source (rS); addi and the
-                // loads and stores as their base (rA).
+                // loads and stores as their base (rA), where a base of r0
+                // is the number 0, not r0 (`li r3,0x6430`).
                 const std::uint32_t source = op == 24 ? rd : ra;
                 const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 ||
                                   op == 40 || op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
-                if (uses && source == reg) return true;
+                if (uses && source == reg && (op == 24 || source != 0)) return true;
             }
             // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`,
             // `li r6,0`, a load into it): no longer the hardware's base, so a
@@ -1743,8 +1767,11 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
             // (`add r6,r6,r5`, `addi r6,r6,12`: a port's offset), and so
             // does `ori rX,rX,0` (`nop` is `ori r0,r0,0`).
             const std::uint32_t xo = (insn >> 1) & 0x3FFu;
+            // So does an update form's base (`lbzu r8,0(r6)`, `lfsu f0,4(r6)`:
+            // the base plus an offset). `addi r0,0,n` is `li r0,n`.
             const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) ||
-                               (op == 14 && rd == reg && ra == reg) || (op == 24 && rd == reg && ra == reg && low == 0);
+                               (op == 14 && rd == reg && ra == reg && reg != 0) ||
+                               (op == 24 && rd == reg && ra == reg && low == 0) || base_update(insn, reg);
             if (writes_gpr(insn, reg) && !keeps) break;
         }
     }

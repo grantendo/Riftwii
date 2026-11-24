@@ -1882,7 +1882,17 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0xC4C30004u, 0x81066404u});  // lis r6,0xCD00; lfsu f6,4(r3) (r3 is its base): still one
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
-    code = bytes({0x3CC0CD00u, 0xC4060004u, 0x81066404u});  // lis r6,0xCD00; lfsu f0,4(r6): r6 moved on, plain memory
+    code = bytes({0x3CC0CD00u, 0xC4060004u, 0x81066404u});  // lis r6,0xCD00; lfsu f0,4(r6): r6 = base + 4, still one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x8D060000u, 0x81066404u});  // lis r6,0xCD00; lbzu r8,0(r6): r6 kept, still one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3C00CD00u, 0x60000000u, 0x38606430u});  // lis r0,0xCD00; nop; li r3,0x6430 (zero, not r0): none
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3C00CD00u, 0x38000005u, 0x60006430u});  // lis r0,0xCD00; li r0,5; ori r0,r0,0x6430: none
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x7C6424AAu, 0x81066404u});  // lis r6,0xCD00; lswi r3,r4,4 (r3 only): still one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x7CA444AAu, 0x81066404u});  // lis r6,0xCD00; lswi r5,r4,8 (r5 and r6): plain memory
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
 }
 
