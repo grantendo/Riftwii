@@ -1884,6 +1884,8 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3C80CD00u, 0x3C808000u, 0x80846404u});  // lis r4,0xCD00; lis r4,0x8000; lwz r4,0x6404(r4)
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x3CC08000u, 0x81066404u});  // lis r6,0xCD00; lis r6,0x8000: plain memory again
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     // A port's registers as quatric's Kirby sample and probe code reads
     // them: the port's offset plus the base (`addis`, not `lis`). Found and
     // rewritten the same way, the offset register kept.
