@@ -966,6 +966,13 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
     for (std::size_t i = 0; i < patches.size(); ++i) {
         const MemoryPatch& patch = patches[i];
         // A file patch: its guard judged like any other's, its place noted.
+        // A file-backed search can't be planned (its bytes aren't read yet
+        // and its places are wherever its pattern matches): the checks
+        // can't vouch for such a pack.
+        if (!patch.valuefile.empty() && patch.value.empty() && patch.search) {
+            out.incomplete = true;
+            return out;
+        }
         if (!patch.valuefile.empty() && patch.value.empty()) {
             if (patch.has_offset && !patch.search && !patch.ocarina &&
                 matches_at(memory_patch_target(patch), patch.original)) {
