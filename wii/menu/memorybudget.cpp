@@ -123,8 +123,8 @@ ExtrasBudget EstimateExtras(const FrontendState& state) {
     const bool plugged = GcAdapterMenuLastView(view) && view.open && view.link != GCAD_LINK_NONE;
     const bool adapter = settings.gc_adapter == "on" || (settings.gc_adapter == "auto" && plugged) ||
                          (settings.usb_input != "off" && view.hid_pads != 0);
-    // The game's GameCube controllers setting (As Classic Controllers, As
-    // Wii Remote + Nunchuk, As a sideways Wii Remote) puts the hook in for
+    // The game's GameCube controllers setting (Classic Controller, Wii
+    // Remote + Nunchuk, Sideways Wii Remote) puts the hook in for
     // the Wii's own GameCube ports even with no adapter or USB pads, and
     // takes the chosen stand-in's build and its state.
     const std::string& gc_controllers = state.model.game.gc_controllers;
