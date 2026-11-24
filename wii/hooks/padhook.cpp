@@ -1149,13 +1149,20 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
         }
         return word;
     };
-    // The pack's own code: bytes one of its writes put there, or in a
-    // program file it brings (its loaded sections).
+    // The pack's own code: bytes one of its writes put there, in a program
+    // file it brings (its loaded sections), or where a patch whose value is
+    // in a file goes (not loaded yet here, so up to the largest such file:
+    // our LEGO Star Wars III pack's code blob).
     const auto pack_code = [&](std::uint32_t address) {
         if (program_from_pack) {
             for (const CodeRange& r : plan.program) {
                 if (address >= r.address && address - r.address < r.size) return true;
             }
+        }
+        for (const MemoryPatch& p : patches) {
+            if (!p.has_offset || p.search || p.ocarina || !p.value.empty()) continue;
+            const std::uint32_t at = memory_patch_target(p);
+            if (address >= at && address - at < kMaxMemoryValueBytes) return true;
         }
         for (const PackWrite& w : plan.writes) {
             if (address >= w.at && address - w.at < patches[w.patch].value.size()) return true;
