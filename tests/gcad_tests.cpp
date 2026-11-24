@@ -1715,6 +1715,14 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x7CC62A14u, 0x81066404u});  // lis r6,0xCD00; add r6,r6,r5 (a port's offset): still a port read
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3C00CD00u, 0x60000000u, 0x60006430u});  // lis r0,0xCD00; nop; ori r0,r0,0x6430: still a port read
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x7CC3252Eu, 0x81066404u});  // lis r6,0xCD00; stfsx f6,r3,r4 (no GPR written): still one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0xC4C30004u, 0x81066404u});  // lis r6,0xCD00; lfsu f6,4(r3) (r3 is its base): still one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0xC4060004u, 0x81066404u});  // lis r6,0xCD00; lfsu f0,4(r6): r6 moved on, plain memory
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
 }
 
 // KPAD's camera switch, read from KPADEnableDPD's code just after

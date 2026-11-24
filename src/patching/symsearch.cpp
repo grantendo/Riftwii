@@ -1457,6 +1457,54 @@ std::int32_t find_gc_pad_enabled_offset(const std::vector<CodeRange>& text, std:
     return 0;
 }
 
+namespace {
+
+// Whether `insn` writes general register `reg`. The D-form arithmetic and
+// integer loads write rD (lmw: rD through r31); the logical immediates and
+// rotates write rA; every update form (integer and floating-point loads and
+// stores) writes its base, rA. Among the opcode-31 forms, the logical and
+// shift ones write rA; the stores, the floating-point loads and stores, the
+// compares, traps, cache, sync and move-to ones write no general register
+// (beyond an update form's base); the rest (arithmetic, indexed integer
+// loads, mfspr and the like) write rD.
+bool writes_gpr(std::uint32_t insn, std::uint32_t reg) {
+    const std::uint32_t op = insn >> 26, rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u;
+    const bool update = op == 33 || op == 35 || op == 37 || op == 39 || op == 41 || op == 43 || op == 45 ||
+                        op == 49 || op == 51 || op == 53 || op == 55;  // lwzu..sthu, lfsu..stfdu
+    if (update && ra == reg) return true;
+    if (op == 46) return reg >= rd;  // lmw
+    if (op == 7 || op == 8 || op == 12 || op == 13 || op == 14 || op == 15 || (op >= 32 && op <= 35) ||
+        (op >= 40 && op <= 43)) {
+        return rd == reg;  // mulli..addis, the integer loads
+    }
+    if (op == 20 || op == 21 || op == 23 || (op >= 24 && op <= 29)) return ra == reg;  // rlwimi..andis.
+    if (op != 31) return false;
+    switch ((insn >> 1) & 0x3FFu) {
+        case 28: case 60: case 124: case 284: case 316: case 412: case 444: case 476:  // and..nand
+        case 24: case 536: case 792: case 824: case 26: case 922: case 954:            // shifts, cntlzw, extsh/b
+            return ra == reg;
+        case 183: case 247: case 439:            // stwux, stbux, sthux: their base
+        case 567: case 631: case 695: case 759:  // lfsux, lfdux, stfsux, stfdux: their base
+            return ra == reg;
+        case 55: case 119: case 311: case 375:  // lwzux, lbzux, lhzux, lhaux: rD and their base
+            return rd == reg || ra == reg;
+        case 533: case 597:  // lswx, lswi: rD and on
+            return reg >= rd;
+        case 150: case 151: case 215: case 407: case 662: case 918:  // the other integer stores
+        case 661: case 725: case 438:                                // stswx, stswi, ecowx
+        case 535: case 599: case 663: case 727: case 983:            // lfsx, lfdx, stfsx, stfdx, stfiwx
+        case 0: case 32: case 4: case 512:                           // cmp, cmpl, tw, mcrxr
+        case 144: case 146: case 210: case 242: case 467:            // mtcrf, mtmsr, mtsr, mtsrin, mtspr
+        case 54: case 86: case 246: case 278: case 470: case 982: case 1014:  // dcbst, dcbf, dcbtst, dcbt, dcbi, icbi, dcbz
+        case 306: case 566: case 598: case 854:                               // tlbie, tlbsync, sync, eieio
+            return false;
+        default:
+            return rd == reg;
+    }
+}
+
+}  // namespace
+
 bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
     constexpr unsigned kWithin = 8;  // words from the `lis` to its use
     constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
@@ -1482,22 +1530,12 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
             // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`,
             // `li r6,0`, a load into it): no longer the hardware's base, so a
             // use after it reads plain memory. Adding to it keeps it a base
-            // (`add r6,r6,r5`, `addi r6,r6,12`: a port's offset).
+            // (`add r6,r6,r5`, `addi r6,r6,12`: a port's offset), and so
+            // does `ori rX,rX,0` (`nop` is `ori r0,r0,0`).
             const std::uint32_t xo = (insn >> 1) & 0x3FFu;
             const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) ||
-                               (op == 14 && rd == reg && ra == reg);
-            const bool writes_d = op == 7 || op == 8 || op == 12 || op == 13 || op == 14 || op == 15 ||
-                                  (op >= 32 && op <= 35) || (op >= 40 && op <= 43) || op == 46;
-            const bool writes_a = op == 20 || op == 21 || op == 23 || (op >= 24 && op <= 29);
-            const bool store_x = op == 31 && (xo == 151 || xo == 183 || xo == 215 || xo == 247 || xo == 407 ||
-                                              xo == 439 || xo == 662 || xo == 918 || xo == 150);
-            const bool compare_x = op == 31 && (xo == 0 || xo == 32);
-            const bool logical_x = op == 31 && (xo == 28 || xo == 60 || xo == 124 || xo == 284 || xo == 316 ||
-                                                xo == 412 || xo == 444 || xo == 476 || xo == 24 || xo == 536 ||
-                                                xo == 792 || xo == 824 || xo == 26 || xo == 922 || xo == 954);
-            const bool writes = (writes_d && rd == reg) || (writes_a && ra == reg) ||
-                                (op == 31 && !store_x && !compare_x && (logical_x ? ra == reg : rd == reg));
-            if (writes && !keeps) break;
+                               (op == 14 && rd == reg && ra == reg) || (op == 24 && rd == reg && ra == reg && low == 0);
+            if (writes_gpr(insn, reg) && !keeps) break;
         }
     }
     return false;
