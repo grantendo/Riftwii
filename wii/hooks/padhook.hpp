@@ -340,6 +340,13 @@ unsigned unroute_pack(PadHook& hook);
 // pack checks judge them.
 std::vector<bool> memory_patches_that_apply(const std::vector<MemoryPatch>& patches);
 
+// Memory patch `i`'s bytes as they end up: every later patch the patcher
+// writes at a known place (`applies`, from memory_patches_that_apply)
+// written over it where they overlap. A search or ocarina patch's own place
+// isn't known, so its bytes come back as written.
+std::vector<std::uint8_t> memory_patch_as_left(const std::vector<MemoryPatch>& patches,
+                                               const std::vector<bool>& applies, std::size_t i);
+
 // After Return to RiftWii has been patched in for the channel (the Reset
 // leaves through the game's OSReturnToMenu, which starts it): turns the
 // Reset on, in the words install_pad_hook left off. False when the hook

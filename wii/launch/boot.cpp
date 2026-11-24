@@ -3078,16 +3078,29 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
         const std::vector<bool> applies = memory_patches_that_apply(options.memory_patches);
         for (std::size_t p = 0; p < options.memory_patches.size(); ++p) {
             MemoryPatch& patch = options.memory_patches[p];
-            if (patch.value.empty()) continue;
+            // Routing leaves out a pack with port reads in a search or ocarina
+            // patch (pack_ports_routable): their places aren't known, and an
+            // ocarina patch's value is the pattern it looks for.
+            if (patch.value.empty() || !patch.has_offset || patch.search || patch.ocarina) continue;
+            // The port reads as the patch ends up, with later patches written
+            // over it (as pack_ports_routable judged them); the words routing
+            // changes there are changed in the patch.
+            const std::vector<std::uint8_t> left =
+                memory_patch_as_left(options.memory_patches, applies, p);
+            std::vector<std::uint8_t> routed = left;
+            if (retarget_gc_ports(routed.data(), routed.size(), extras.pad.route_si) == 0) continue;
             const std::vector<std::uint8_t> before = patch.value;
-            const unsigned count = retarget_gc_ports(patch.value.data(), patch.value.size(), extras.pad.route_si);
+            unsigned count = 0;
+            for (std::size_t w = 0; w + 4 <= routed.size(); w += 4) {
+                if (std::memcmp(routed.data() + w, left.data() + w, 4) == 0) continue;
+                std::memcpy(patch.value.data() + w, routed.data() + w, 4);
+                ++count;
+            }
             rewritten += count;
             // Where each rewritten word will sit, with its original and
             // rewritten forms, so a hook that fails to go in can undo it
             // (unroute_pack, which only puts back a word still as
-            // rewritten). Routing leaves out a pack with port reads in a
-            // search patch (pack_ports_routable), whose place isn't known.
-            if (count == 0 || !patch.has_offset || patch.search) continue;
+            // rewritten).
             const std::uint32_t at = memory_patch_target(patch);
             const auto word_at = [](const std::uint8_t* b) {
                 return (std::uint32_t(b[0]) << 24) | (std::uint32_t(b[1]) << 16) | (std::uint32_t(b[2]) << 8) | b[3];

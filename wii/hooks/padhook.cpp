@@ -956,34 +956,43 @@ std::vector<bool> patches_that_apply(const std::vector<MemoryPatch>& patches) {
 // around them: a game's SI library reads the same registers) read the
 // GameCube controller ports straight from the hardware (reads_gc_ports).
 // A value kept in a file isn't loaded yet here, so isn't looked at.
+namespace {
+
+// A memory patch the patcher writes at a known place: plain, with an
+// offset (a search patch's place is found as it's written; an ocarina
+// patch's value is the pattern it looks for, placed as a branch).
+bool placed_patch(const MemoryPatch& patch) {
+    return patch.has_offset && !patch.search && !patch.ocarina && !patch.value.empty();
+}
+
+}  // namespace
+
+std::vector<std::uint8_t> memory_patch_as_left(const std::vector<MemoryPatch>& patches,
+                                               const std::vector<bool>& applies, std::size_t i) {
+    std::vector<std::uint8_t> bytes = patches[i].value;
+    if (!placed_patch(patches[i])) return bytes;
+    const std::uint32_t at = memory_patch_target(patches[i]);
+    for (std::size_t j = i + 1; j < patches.size(); ++j) {
+        if (!applies[j] || !placed_patch(patches[j])) continue;
+        // Only where the two overlap.
+        const std::uint64_t later = memory_patch_target(patches[j]);
+        const std::uint64_t from = std::max<std::uint64_t>(at, later);
+        const std::uint64_t to =
+            std::min<std::uint64_t>(std::uint64_t(at) + bytes.size(), later + patches[j].value.size());
+        for (std::uint64_t where = from; where < to; ++where) bytes[where - at] = patches[j].value[where - later];
+    }
+    return bytes;
+}
+
 bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
     const std::vector<bool> applies = patches_that_apply(patches);
-    const auto placed = [&](std::size_t i) {
-        const MemoryPatch& patch = patches[i];
-        return applies[i] && patch.has_offset && !patch.search && !patch.ocarina && !patch.value.empty();
-    };
     for (std::size_t i = 0; i < patches.size(); ++i) {
-        const MemoryPatch& patch = patches[i];
-        if (patch.value.empty() || !applies[i]) continue;
+        if (patches[i].value.empty() || !applies[i]) continue;
         // A patch at a known place is judged as it ends up, with any later
         // patch written over part of it (one that replaces its port reads
         // leaves none); a search or ocarina patch's place isn't known (an
         // ocarina one goes where its bytes match, as a branch), so as written.
-        std::vector<std::uint8_t> bytes = patch.value;
-        if (placed(i)) {
-            const std::uint32_t at = memory_patch_target(patch);
-            for (std::size_t j = i + 1; j < patches.size(); ++j) {
-                if (!placed(j)) continue;
-                // Only where the two overlap.
-                const std::uint64_t later = memory_patch_target(patches[j]);
-                const std::uint64_t from = std::max<std::uint64_t>(at, later);
-                const std::uint64_t to = std::min<std::uint64_t>(std::uint64_t(at) + bytes.size(),
-                                                                 later + patches[j].value.size());
-                for (std::uint64_t where = from; where < to; ++where) {
-                    bytes[where - at] = patches[j].value[where - later];
-                }
-            }
-        }
+        const std::vector<std::uint8_t> bytes = memory_patch_as_left(patches, applies, i);
         if (reads_gc_ports(bytes.data(), bytes.size())) return true;
     }
     return false;
@@ -1025,16 +1034,40 @@ bool pack_patches_kpad_read(const std::vector<MemoryPatch>& patches, const std::
 // at the copy (gc_ports_routable): none shares its base with another
 // hardware register.
 bool pack_ports_routable(const std::vector<MemoryPatch>& patches) {
+    constexpr std::uint32_t kAnyCopy = 0x90006400u;  // where the rewritten words would differ, any copy will do
     const std::vector<bool> applies = patches_that_apply(patches);
     for (std::size_t i = 0; i < patches.size(); ++i) {
         const MemoryPatch& patch = patches[i];
         if (patch.value.empty() || !applies[i]) continue;
-        if (!gc_ports_routable(patch.value.data(), patch.value.size())) return false;
         // A search patch's place is found only as it's written, so its
         // rewritten reads couldn't be put back if the adapter's hook then
-        // failed to go in: such a pack isn't routed.
-        const bool placed = patch.has_offset && !patch.search;
-        if (!placed && reads_gc_ports(patch.value.data(), patch.value.size())) return false;
+        // failed to go in; an ocarina patch's value is the pattern it looks
+        // for, not code: a pack with port reads in either isn't routed.
+        if (!placed_patch(patch)) {
+            if (reads_gc_ports(patch.value.data(), patch.value.size())) return false;
+            continue;
+        }
+        // Judged as it ends up, with later patches written over it (a later
+        // patch could add an access through a base routing would point at
+        // the copy), as boot.cpp rewrites it.
+        const std::vector<std::uint8_t> left = memory_patch_as_left(patches, applies, i);
+        if (!gc_ports_routable(left.data(), left.size())) return false;
+        // A later patch's guard over a word routing rewrites would no longer
+        // match the bytes it was written for: such a pack isn't routed.
+        std::vector<std::uint8_t> routed = left;
+        if (retarget_gc_ports(routed.data(), routed.size(), kAnyCopy) == 0) continue;
+        const std::uint32_t at = memory_patch_target(patch);
+        for (std::size_t j = i + 1; j < patches.size(); ++j) {
+            const MemoryPatch& later = patches[j];
+            if (later.original.empty() || !later.has_offset || later.search || later.ocarina) continue;
+            const std::uint64_t from = memory_patch_target(later);
+            const std::uint64_t to = from + later.original.size();
+            for (std::size_t w = 0; w + 4 <= routed.size(); w += 4) {
+                if (std::memcmp(routed.data() + w, left.data() + w, 4) == 0) continue;
+                const std::uint64_t word = std::uint64_t(at) + w;
+                if (word < to && word + 4 > from) return false;
+            }
+        }
     }
     return true;
 }

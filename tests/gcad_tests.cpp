@@ -1920,6 +1920,41 @@ static void TestReadsGcPorts() {
     code = bytes({0x3CC0CD00u, 0x81066404u});
     EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90120000u), 0u);
     EXPECT_TRUE(code[2] == 0xCD);
+    // Whether routing may point a base at the copy: every path is followed
+    // while the register holds it. A write a branch can skip doesn't end
+    // it; a use 25 words on still counts; an add keeps it the base.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x41820008u, 0x3CC08000u, 0x81260000u});
+    // lis r6,0xCD00; lwz r8,0x6404(r6); beq +8; lis r6,0x8000; lwz r9,0(r6)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x60000000u, 0x3CC08000u, 0x81260000u});  // no branch: set anew
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    {
+        std::vector<std::uint32_t> far = {0x3CC0CD00u, 0x81066404u};
+        for (int n = 0; n < 25; ++n) far.push_back(0x60000000u);
+        far.push_back(0x81260000u);  // lwz r9,0(r6), 27 words on
+        code.clear();
+        for (const std::uint32_t w : far) {
+            code.push_back(static_cast<std::uint8_t>(w >> 24));
+            code.push_back(static_cast<std::uint8_t>(w >> 16));
+            code.push_back(static_cast<std::uint8_t>(w >> 8));
+            code.push_back(static_cast<std::uint8_t>(w));
+        }
+        EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    }
+    code = bytes({0x3CC0CD00u, 0x7CC62A14u, 0x81066404u, 0x81260000u});  // add r6,r6,r5 keeps it; then 0(r6)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    // A port's address built in another register is followed as a base of
+    // its own.
+    code = bytes({0x3D20CD00u, 0x7D495214u, 0x810A6404u});  // lis r9,0xCD00; add r10,r9,r10; lwz r8,0x6404(r10)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3D20CD00u, 0x81096404u, 0x7D495214u, 0x810A0000u});  // ...; add r10,r9,r10; lwz r8,0(r10)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    // The base passed in r3 to a call out of the bytes: shared. mflr reads
+    // no register.
+    code = bytes({0x3C60CD00u, 0x80836404u, 0x48001001u});  // lis r3,0xCD00; lwz r4,0x6404(r3); bl out
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x7CA802A6u, 0x81066404u});  // lis r6,0xCD00; mflr r5; lwz r8,0x6404(r6)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
 }
 
 // KPAD's camera switch, read from KPADEnableDPD's code just after
