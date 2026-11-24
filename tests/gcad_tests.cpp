@@ -1904,7 +1904,11 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x4E800020u, 0x81066404u});  // lis r6,0xCD00; blr; then the next function's 0x6404(r6)
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
-    code = bytes({0x3CC0CD00u, 0x48000008u, 0x81066404u});  // lis r6,0xCD00; b (away); the word after isn't its own
+    code = bytes({0x3CC0CD00u, 0x48000008u, 0x60000000u, 0x81066404u, 0x4E800020u});  // b +8 over a word: still one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x48001000u, 0x81066404u});  // lis r6,0xCD00; b far away: the word after isn't its own
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x4BFFFFFCu, 0x81066404u});  // b back: not followed, nor the word after
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
 }
 

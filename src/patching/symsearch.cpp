@@ -1754,10 +1754,21 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
         for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
             const std::uint32_t insn = be32(bytes + k * 4);
             const std::uint32_t op = insn >> 26;
-            // A return (`blr`, `bctr`) or a plain `b` ends the `lis`'s
-            // function: the next one's `lwz r8,0x6404(r6)` is its own (its
-            // callers may pass any address in r6).
-            if (insn == 0x4E800020u || insn == 0x4E800420u || (op == 18 && (insn & 1u) == 0)) break;
+            // A return (`blr`, `bctr`) ends the `lis`'s function: the next
+            // one's `lwz r8,0x6404(r6)` is its own (its callers may pass any
+            // address in r6). A plain `b` forward within the window is
+            // followed (`b +8` over a word still reaches a use with r6 kept:
+            // CodeRabbit CLI, fork #16); any other `b` leaves the function.
+            if (insn == 0x4E800020u || insn == 0x4E800420u) break;
+            if (op == 18 && (insn & 3u) == 0) {
+                std::int32_t offset = static_cast<std::int32_t>(insn & 0x03FFFFFCu);
+                if (offset & 0x02000000) offset -= 0x04000000;
+                const std::size_t ahead = offset > 0 ? static_cast<std::size_t>(offset / 4) : 0;
+                if (ahead == 0 || k + ahead >= words || k + ahead > i + kWithin) break;
+                k += ahead - 1;  // the loop's ++k lands on the target
+                continue;
+            }
+            if (op == 18 && (insn & 1u) == 0) break;  // an absolute `ba`
             const std::uint32_t low = insn & 0xFFFFu;
             const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
             // ori rA,rS,low takes rX as its source (rS); addi and the loads
