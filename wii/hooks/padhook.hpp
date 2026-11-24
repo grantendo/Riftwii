@@ -151,8 +151,9 @@ struct PadHook {
     bool route_pack = false;
     std::uint32_t route_si = 0;
     // The pack's rewritten port reads, as (address, original word, rewritten
-    // word) triples, so a hook that then fails to go in can give the pack its
-    // hardware back (unroute_pack).
+    // word, expected) records, expected 1 where the planning check expected
+    // the patch to be written, so a hook that then fails to go in can give
+    // the pack its hardware back (unroute_pack).
     std::vector<std::uint32_t> route_restore;
     // ...or a pointing Wii Remote (RT_PAD_FORM_POINTING).
     bool standin_pointing = false;

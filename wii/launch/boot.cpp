@@ -3070,9 +3070,11 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
     // copy the stand-in fills from the adapter.
     if (extras.pad.active && extras.pad.route_pack && extras.pad.route_si != 0) {
         unsigned rewritten = 0;
-        // Only patches that will be written get an undo record: two patches
-        // can rewrite one word to the same routed form, and the one whose
-        // guard fails must never have its original put back.
+        // Each record says whether the planning check expects its patch to be
+        // written (unroute_pack puts those back first): two patches can
+        // rewrite one word to the same routed form, and the one whose guard
+        // fails mustn't win; but a guard on low memory, cleared after this
+        // check, can still pass when the patch is written.
         const std::vector<bool> applies = memory_patches_that_apply(options.memory_patches);
         for (std::size_t p = 0; p < options.memory_patches.size(); ++p) {
             MemoryPatch& patch = options.memory_patches[p];
@@ -3085,7 +3087,7 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
             // (unroute_pack, which only puts back a word still as
             // rewritten). Routing leaves out a pack with port reads in a
             // search patch (pack_ports_routable), whose place isn't known.
-            if (count == 0 || !patch.has_offset || patch.search || !applies[p]) continue;
+            if (count == 0 || !patch.has_offset || patch.search) continue;
             const std::uint32_t at = memory_patch_target(patch);
             const auto word_at = [](const std::uint8_t* b) {
                 return (std::uint32_t(b[0]) << 24) | (std::uint32_t(b[1]) << 16) | (std::uint32_t(b[2]) << 8) | b[3];
@@ -3095,6 +3097,7 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
                 extras.pad.route_restore.push_back(at + static_cast<std::uint32_t>(w));
                 extras.pad.route_restore.push_back(word_at(before.data() + w));
                 extras.pad.route_restore.push_back(word_at(patch.value.data() + w));
+                extras.pad.route_restore.push_back(applies[p] ? 1u : 0u);
             }
         }
         logf("GameCube adapter: %u of the pack's port reads now read the adapter's copy at 0x%08x\n", rewritten,

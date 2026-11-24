@@ -1932,20 +1932,30 @@ std::vector<bool> memory_patches_that_apply(const std::vector<MemoryPatch>& patc
 
 unsigned unroute_pack(PadHook& hook) {
     unsigned restored = 0;
-    // Newest record first: where two patches wrote the same word, the one
-    // written last is what's in memory, and its original is what belongs
-    // there (the first record then no longer matches and is left be).
-    for (std::size_t n = hook.route_restore.size() / 3; n-- > 0;) {
-        const std::size_t i = n * 3;
-        const std::uint32_t address = hook.route_restore[i];
-        const std::uint32_t original = hook.route_restore[i + 1];
-        const std::uint32_t routed = hook.route_restore[i + 2];
-        // Only a word the pack's patch did write, still as rewritten: a
-        // patch whose guard failed, or one written over since, is left be.
-        if (*reinterpret_cast<const volatile std::uint32_t*>(address) != routed) continue;
-        store_words(address, &original, 1);
-        sync_code(address, 4);
-        ++restored;
+    // Records are (address, original, rewritten, expected): `expected` says
+    // whether the planning check (memory_patches_that_apply) expected that
+    // patch to be written. Newest first, and the expected patches before the
+    // others: where two patches wrote the same rewritten word with different
+    // originals, the one written is what was meant (the other record then no
+    // longer matches and is left be); a patch the check didn't expect but
+    // that was written anyway (low memory, cleared after the check) still
+    // has its reads put back by the second pass.
+    constexpr std::size_t kRecord = 4;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (std::size_t n = hook.route_restore.size() / kRecord; n-- > 0;) {
+            const std::size_t i = n * kRecord;
+            const std::uint32_t address = hook.route_restore[i];
+            const std::uint32_t original = hook.route_restore[i + 1];
+            const std::uint32_t routed = hook.route_restore[i + 2];
+            const bool expected = hook.route_restore[i + 3] != 0;
+            if (expected != (pass == 0)) continue;
+            // Only a word still as rewritten: one written over since, or
+            // never written, is left be.
+            if (*reinterpret_cast<const volatile std::uint32_t*>(address) != routed) continue;
+            store_words(address, &original, 1);
+            sync_code(address, 4);
+            ++restored;
+        }
     }
     hook.route_restore.clear();
     hook.route_pack = false;
