@@ -970,8 +970,35 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
         // and its places are wherever its pattern matches): the checks
         // can't vouch for such a pack.
         if (!patch.valuefile.empty() && patch.value.empty() && patch.search) {
-            out.incomplete = true;
-            return out;
+            // ...when its pattern is there: one that matches nowhere
+            // writes nothing.
+            // The game's own bytes first (a plain compare), then only the
+            // places an earlier write reaches, with the writes over them.
+            const std::uint64_t align = patch.align == 0 ? 1 : patch.align;
+            const std::size_t n = patch.original.size();
+            bool found = false;
+            for (const CodeRange& r : image) {
+                if (found || n == 0 || r.size < n) continue;
+                std::uint64_t pos = r.address;
+                if (pos % align != 0) pos += align - pos % align;
+                const std::uint64_t last = std::uint64_t(r.address) + r.size - n;
+                for (; pos <= last && !found; pos += align) {
+                    const std::uint8_t* raw = r.bytes + (pos - r.address);
+                    found = raw[0] == patch.original[0] && std::memcmp(raw, patch.original.data(), n) == 0;
+                }
+            }
+            for (std::size_t w = 0; !found && n != 0 && w < out.writes.size(); ++w) {
+                const std::uint64_t at = out.writes[w].at;
+                const std::uint64_t end = at + patches[out.writes[w].patch].value.size();
+                std::uint64_t pos = at >= n ? at - n + 1 : 0;
+                if (pos % align != 0) pos += align - pos % align;
+                for (; pos < end && !found; pos += align) found = matches_at(static_cast<std::uint32_t>(pos), patch.original);
+            }
+            if (found) {
+                out.incomplete = true;
+                return out;
+            }
+            continue;
         }
         if (!patch.valuefile.empty() && patch.value.empty()) {
             if (patch.has_offset && !patch.search && !patch.ocarina &&
