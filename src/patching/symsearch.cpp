@@ -1562,6 +1562,10 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
         for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
             const std::uint32_t insn = be32(bytes + k * 4);
             const std::uint32_t op = insn >> 26;
+            // A return (`blr`, `bctr`) or a plain `b` ends the `lis`'s
+            // function: the next one's `lwz r8,0x6404(r6)` is its own (its
+            // callers may pass any address in r6).
+            if (insn == 0x4E800020u || insn == 0x4E800420u || (op == 18 && (insn & 1u) == 0)) break;
             const std::uint32_t low = insn & 0xFFFFu;
             const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
             // ori rA,rS,low takes rX as its source (rS); addi and the loads
