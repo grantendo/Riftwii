@@ -1248,13 +1248,41 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
     // branches from the next word still runs beside the stand-in's); a
     // write putting the same words back hooks nothing.
     constexpr std::uint32_t kEntryWords = 4;
+    // Where a file patch that applies may write (its bytes not read yet
+    // here, up to the largest a file may be): what it puts there can't be
+    // known, so over those words, or over a call to them, it may be a hook.
+    const auto in_file = [&](std::uint32_t address) {
+        for (const std::uint32_t at : plan.files) {
+            if (address >= at && address - at < kMaxMemoryValueBytes) return true;
+        }
+        return false;
+    };
     for (const std::uint32_t entry : {wpad_probe, kpad_read}) {
         if (entry == 0 || entry >= 0x81800000u - 4 * kEntryWords) continue;
+        for (std::uint32_t w = 0; w < kEntryWords; ++w) {
+            if (in_file(entry + 4 * w)) return true;
+        }
         for (std::uint32_t w = 0; w < kEntryWords; ++w) {
             const std::uint32_t at = entry + 4 * w;
             bool written = false;
             const std::uint32_t final = final_word(at, written);
             if (written && final != *reinterpret_cast<const volatile std::uint32_t*>(at)) return true;
+        }
+    }
+    // A call to either in the game's program where a file patch may write.
+    for (const std::uint32_t file : plan.files) {
+        for (const CodeRange& r : plan.program) {
+            const std::uint64_t from = std::max<std::uint64_t>(file, r.address) & ~std::uint64_t(3);
+            const std::uint64_t to = std::min<std::uint64_t>(std::uint64_t(file) + kMaxMemoryValueBytes,
+                                                             std::uint64_t(r.address) + r.size);
+            for (std::uint64_t at = from; at + 4 <= to; at += 4) {
+                const std::uint32_t old = *reinterpret_cast<const volatile std::uint32_t*>(static_cast<std::uint32_t>(at));
+                if (!is_bl(old)) continue;
+                const std::uint32_t target = bl_target(static_cast<std::uint32_t>(at), old);
+                if ((wpad_probe != 0 && target == wpad_probe) ||
+                    (kpad_read != 0 && target <= kpad_read && kpad_read - target <= kReadEntry))
+                    return true;
+            }
         }
     }
     // Every word a write touches (a call rerouted inside a longer write
