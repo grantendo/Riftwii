@@ -1926,6 +1926,10 @@ void log_pad_diagnostics(std::uint32_t code_base, std::uint32_t print_entry) {
     DCFlushRange(ctx, RT_PAD_CONTEXT_BASE_BYTES);  // its words are in either blob's context
 }
 
+std::vector<bool> memory_patches_that_apply(const std::vector<MemoryPatch>& patches) {
+    return patches_that_apply(patches);
+}
+
 unsigned unroute_pack(PadHook& hook) {
     unsigned restored = 0;
     // Newest record first: where two patches wrote the same word, the one

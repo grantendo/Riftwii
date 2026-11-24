@@ -334,6 +334,11 @@ bool install_pad_hook(PadHook& hook, std::string& why);
 // copy). Returns how many it put back.
 unsigned unroute_pack(PadHook& hook);
 
+// Which memory patches the patcher will write (a plain patch's original
+// guard checked against the game as loaded, in document order), as the
+// pack checks judge them.
+std::vector<bool> memory_patches_that_apply(const std::vector<MemoryPatch>& patches);
+
 // After Return to RiftWii has been patched in for the channel (the Reset
 // leaves through the game's OSReturnToMenu, which starts it): turns the
 // Reset on, in the words install_pad_hook left off. False when the hook

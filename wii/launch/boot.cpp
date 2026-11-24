@@ -3070,7 +3070,12 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
     // copy the stand-in fills from the adapter.
     if (extras.pad.active && extras.pad.route_pack && extras.pad.route_si != 0) {
         unsigned rewritten = 0;
-        for (MemoryPatch& patch : options.memory_patches) {
+        // Only patches that will be written get an undo record: two patches
+        // can rewrite one word to the same routed form, and the one whose
+        // guard fails must never have its original put back.
+        const std::vector<bool> applies = memory_patches_that_apply(options.memory_patches);
+        for (std::size_t p = 0; p < options.memory_patches.size(); ++p) {
+            MemoryPatch& patch = options.memory_patches[p];
             if (patch.value.empty()) continue;
             const std::vector<std::uint8_t> before = patch.value;
             const unsigned count = retarget_gc_ports(patch.value.data(), patch.value.size(), extras.pad.route_si);
@@ -3080,7 +3085,7 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
             // (unroute_pack, which only puts back a word still as
             // rewritten). Routing leaves out a pack with port reads in a
             // search patch (pack_ports_routable), whose place isn't known.
-            if (count == 0 || !patch.has_offset || patch.search) continue;
+            if (count == 0 || !patch.has_offset || patch.search || !applies[p]) continue;
             const std::uint32_t at = memory_patch_target(patch);
             const auto word_at = [](const std::uint8_t* b) {
                 return (std::uint32_t(b[0]) << 24) | (std::uint32_t(b[1]) << 16) | (std::uint32_t(b[2]) << 8) | b[3];
