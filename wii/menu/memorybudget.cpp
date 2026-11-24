@@ -127,7 +127,7 @@ ExtrasBudget EstimateExtras(const FrontendState& state) {
     // Remote + Nunchuk, Sideways Wii Remote) puts the hook in for
     // the Wii's own GameCube ports even with no adapter or USB pads, and
     // takes the chosen stand-in's build and its state.
-    const std::string& gc_controllers = state.model.game.gc_controllers;
+    const std::string gc_controllers = state.model.effective_gc_controllers();  // a pack's form too
     const bool standin = gc_controllers == "classic" || gc_controllers == "nunchuk" || gc_controllers == "sideways";
     if (!protected_game && !whole_mem1) {
         b.add(tr("crash recorder"), blob_bytes<rt_fault_header>(riftwii_fault_bin), align(sizeof(rt_fault_state)));

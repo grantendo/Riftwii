@@ -15834,8 +15834,6 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 			else if (ref.what == RowRef::What::Speaker)
 				say(tr("Off: no sound from the Wii Remotes' speakers in this game."));
 			else if (ref.what == RowRef::What::GcControllers)
-				// The chosen one's help only (all of them together ran past the
-				// help's lines).
 				// The chosen one's help only; a code build never takes the
 				// stand-in (it needs every byte): said with any choice but Off
 				// (CodeRabbit on #609).
@@ -15847,6 +15845,13 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 					                    ? tr("Each GameCube controller plays as a Wii Remote held sideways (port 1 as Wii Remote 1 and so on): A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it.")
 					                    : tr("Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.")) +
 					    " " + tr("A code build doesn't use it."));
+				else if (const std::string from_pack = state.model.pack_gc_controllers(); !from_pack.empty())
+					// Off, with a pack that asks for a form (riftwii-gc-controllers).
+					say(std::string(tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.")) +
+					    " " +
+					    tr("An enabled pack turns it on as {1} while this is Off.", {from_pack == "nunchuk"    ? tr("Wii Remote + Nunchuk")
+					                         : from_pack == "sideways" ? tr("Sideways Wii Remote")
+					                                                   : tr("Classic Controller")}));
 				else
 					say(tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."));
 			else if (ref.what == RowRef::What::RegionStrings)

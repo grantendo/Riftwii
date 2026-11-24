@@ -1576,6 +1576,11 @@ T = {
         "各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。",
         "Cada controle de GameCube joga como um Classic Controller (a porta 1 como o Wii Remote 1 e assim por diante), nos jogos que aceitam um.",
         "Ogni controller GameCube gioca come un controller tradizionale (la porta 1 come il telecomando Wii 1 e così via), nei giochi che lo supportano."),
+    "An enabled pack turns it on as {1} while this is Off.": (
+        "Un paquete activado lo enciende como {1} mientras esto esté desactivado.",
+        "有効なパックが、ここがオフの間は{1}としてオンにします。",
+        "Um pacote ativado o liga como {1} enquanto isto estiver desligado.",
+        "Un pacchetto attivo lo accende come {1} finché questo è disattivato."),
     "A code build doesn't use it.": ("Una compilación de código no lo usa.", "コードビルドでは使われません。", "Uma build de código não o usa.",
         "Una build di codice non lo usa."),
     "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.": (
@@ -3453,6 +3458,8 @@ KO = {
         "각 게임큐브 컨트롤러가 가로로 든 Wii 리모컨으로 작동합니다(포트 1은 Wii 리모컨 1 등). A는 2, B는 1, 컨트롤 스틱은 십자 버튼, C 스틱으로 기울이고 R로 흔듭니다.",
     "A code build doesn't use it.":
         "코드 빌드에서는 사용되지 않습니다.",
+    "An enabled pack turns it on as {1} while this is Off.":
+        "켜진 팩이 이 설정이 꺼져 있는 동안 {1}(으)로 켭니다.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "타 지역 게임(수입판)의 경우: 해당 게임은 콘솔의 지역 정보를 확인해야 할 위치에서 자사 지역의 국가명을 인식합니다.",
     "Don't show again":
@@ -5331,6 +5338,8 @@ FR = {
         "Chaque manette GameCube joue comme une Télécommande Wii tenue à l'horizontale (le port 1 comme la Télécommande Wii 1, et ainsi de suite) : A est le 2, B est le 1, le stick de contrôle est sa croix directionnelle, le stick C l'incline, R la secoue.",
     "A code build doesn't use it.":
         "Une build de code ne l'utilise pas.",
+    "An enabled pack turns it on as {1} while this is Off.":
+        "Un pack activé l'allume comme {1} tant que ceci est désactivé.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine.",
     "Don't show again":
