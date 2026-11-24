@@ -71,6 +71,7 @@ struct rtgcwii {
      * It keeps that shape until the next time it takes a channel, though
      * the controller unplugs under the menu (the Wii Remote forms only). */
     uint32_t home_shaped;
+    uint32_t probe_counts[RTGCWII_CHANNELS];  /* rtgcwii_probe_count */
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -85,6 +86,11 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
  * the stand-in. When it goes again, the stand-in is announced afresh (the
  * game's library told the game that channel's controller left). */
 void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result);
+
+/* How many probe results `channel` has had (rtgcwii_probed counts them):
+ * taken before a probe whose answer is applied later, so a newer result in
+ * between isn't undone by the older one. */
+uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel);
 
 /* Whether the channels a real controller holds are due a check of their
  * own (the game's WPADProbe, answered through rtgcwii_probed): some games
