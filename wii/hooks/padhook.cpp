@@ -963,12 +963,31 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
         }
         return true;
     };
+    // Where an earlier file patch that applies may have written: its bytes
+    // aren't read yet here, nor its length (up to the largest a file may
+    // be), so a guard or a search that reads there can't be judged.
+    const auto in_files = [&](std::uint64_t from, std::uint64_t to) {  // [from, to)
+        for (const std::uint32_t at : out.files) {
+            if (from < std::uint64_t(at) + kMaxMemoryValueBytes && at < to) return true;
+        }
+        return false;
+    };
+    const auto program_in_files = [&]() {
+        for (const CodeRange& r : image) {
+            if (in_files(r.address, std::uint64_t(r.address) + r.size)) return true;
+        }
+        return false;
+    };
     for (std::size_t i = 0; i < patches.size(); ++i) {
         const MemoryPatch& patch = patches[i];
         // A file patch: its guard judged like any other's, its place noted.
         // A file-backed search can't be planned (its bytes aren't read yet
         // and its places are wherever its pattern matches): the checks
         // can't vouch for such a pack.
+        if (patch.search && !patch.ocarina && !patch.original.empty() && program_in_files()) {
+            out.incomplete = true;
+            return out;
+        }
         if (!patch.valuefile.empty() && patch.value.empty() && patch.search) {
             // ...when its pattern is there: one that matches nowhere
             // writes nothing.
@@ -1001,6 +1020,11 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
             continue;
         }
         if (!patch.valuefile.empty() && patch.value.empty()) {
+            if (patch.has_offset && !patch.search && !patch.ocarina &&
+                in_files(memory_patch_target(patch), std::uint64_t(memory_patch_target(patch)) + patch.original.size())) {
+                out.incomplete = true;
+                return out;
+            }
             if (patch.has_offset && !patch.search && !patch.ocarina &&
                 matches_at(memory_patch_target(patch), patch.original)) {
                 out.applies[i] = true;
@@ -1066,6 +1090,10 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
         }
         if (!patch.has_offset) continue;
         const std::uint32_t at = memory_patch_target(patch);
+        if (in_files(at, std::uint64_t(at) + patch.original.size())) {
+            out.incomplete = true;
+            return out;
+        }
         if (!matches_at(at, patch.original)) continue;
         if (out.writes.size() >= kMaxWrites) {
             out.incomplete = true;
