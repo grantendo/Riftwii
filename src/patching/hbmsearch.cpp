@@ -593,7 +593,7 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
     bool two = false;
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
         std::uint32_t high[32] = {};
-        bool table = false;
+        bool table = false, several = false;
         std::uint32_t target = 0;
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
@@ -620,12 +620,14 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
                 const std::uint32_t here = r.address + static_cast<std::uint32_t>(4 * k) + offset;
                 // Two different busy-checked calls in one function: not
                 // guessed (CodeRabbit CLI, #616); the same one twice is fine.
-                if (target != 0 && target != here) two = true;
+                if (target != 0 && target != here) several = true;
                 target = here;
             }
         }
         if (!table || target == 0) return;
-        if (found != 0 && found != target) two = true;
+        // Only a function that makes the table counts, and its own
+        // ambiguity with it (CodeRabbit CLI, #616).
+        if (several || (found != 0 && found != target)) two = true;
         found = target;
     });
     return two ? 0 : found;

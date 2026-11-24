@@ -429,6 +429,21 @@ void TestWpadGetInfoLater() {
         wrapper(t, 0, 0x80100100u);
         EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), 0u);
     }
+    {
+        // An unrelated function with two busy-checked calls and no table
+        // doesn't stop the real wrapper being found (CodeRabbit CLI, #616).
+        Section t{0x803CD000, {}};
+        t.put(stwu_r1(0x10));
+        t.put(kMflrR0);
+        t.put(bl(t.here(), 0x80100200u));
+        t.put(0x2C03FFFEu);
+        t.put(bl(t.here(), 0x80100300u));
+        t.put(0x2C03FFFEu);
+        t.put(addi(1, 1, 0x10));
+        t.put(kBlr);
+        wrapper(t, 0, 0);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), async);
+    }
 }
 
 void TestWpadConnectLater() {
