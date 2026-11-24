@@ -1177,19 +1177,24 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     // layout and their own stand-in code), so the setting stays off for
     // this launch, when it has its own PADRead in its memory patches, when
     // it reroutes the game's calls to its Wii controller reads into its own
-    // code (Kamen Rider: Dragon Knight's), or when its code reads the
-    // GameCube ports and it replaced the game's program file (the LEGO Star
-    // Wars packs: a PADRead added to their own main.dol). A port-reading
+    // code (Kamen Rider: Dragon Knight's), or when it replaced the game's
+    // program file with one that has a PADRead (our LEGO Star Wars and
+    // Batman: The Brave and the Bold packs: a PADRead added to their own
+    // main.dol, already loaded here; their code beside it is in a file
+    // that isn't) or whose code reads the GameCube ports. A port-reading
     // patch over the game's own program (quatric's) isn't one, though the
     // game links a PADRead it never calls (Kirby's Return to Dream Land).
     const bool pack_reads_pad = standin && from_patch;
-    const bool pack_wraps = standin && !pack_reads_pad &&
+    const bool program_pad = standin && !pack_reads_pad && program_from_pack && pad.read != 0;
+    const bool pack_wraps = standin && !pack_reads_pad && !program_pad &&
                             pack_wraps_wii_reads(patches, find_kpad_read(text).address, find_wpad_probe(text));
-    const bool pack_ports = standin && !pack_reads_pad && !pack_wraps && pack_reads_gc_ports(patches);
-    if (pack_reads_pad || pack_wraps || (pack_ports && program_from_pack)) {
+    const bool pack_ports =
+        standin && !pack_reads_pad && !program_pad && !pack_wraps && pack_reads_gc_ports(patches);
+    if (pack_reads_pad || program_pad || pack_wraps || (pack_ports && program_from_pack)) {
         logf("GameCube adapter: a pack brings its own controller code (%s), so the game's GameCube controllers "
              "setting stays off for this launch\n",
              pack_reads_pad ? "its PADRead is in its memory patches"
+             : program_pad  ? "the program file it brings has a PADRead"
              : pack_wraps   ? "it hooks or reroutes the game's Wii controller reads"
                             : "it reads the GameCube ports, in the program file it brings");
         standin = false;
