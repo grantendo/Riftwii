@@ -44,7 +44,7 @@ struct rtgcwii {
     uint32_t game_read;  /* when the game itself last called PADRead (low bit set), 0: never */
     uint32_t own_read;   /* when the blob last called it (low bit set), 0: never */
     uint32_t reading;    /* the blob's own PADRead call is under way */
-    uint32_t telling;    /* the game's connect callback is being told (nested PADReads leave it to that) */
+    uint32_t telling;    /* how many tellings of the game's connect callback are under way (PADReads meanwhile leave it to them) */
     /* A real controller's KPAD reads with no error output that brought no
      * samples: since when (low bit set; 0: the last read brought some) and
      * how many in a row. */

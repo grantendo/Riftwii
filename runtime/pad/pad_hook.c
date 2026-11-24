@@ -1030,7 +1030,7 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
         interrupts_restore(msr);
         return;
     }
-    w->telling = 1;
+    w->telling += 1;
     /* The HOME Menu's stand-in's channel stays connected while it is up
      * (a GameCube controller unplugged with its HOME Menu open); the gone
      * comes once the stand-in has ended. */
@@ -1069,7 +1069,7 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
         }
         skip |= 1u << chan;
     }
-    w->telling = 0;
+    w->telling -= 1;
     interrupts_restore(msr);
 }
 #endif
@@ -1193,20 +1193,21 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
          * GameCube controller taking the channel the HOME Menu's stand-in
          * held is told connected only once the gone has returned, so the
          * game's disconnect callback can't finish after it and leave the
-         * channel marked disconnected (Cake's review). */
+         * channel marked disconnected (Cake's review). A count, not a
+         * flag: with a PADRead on another thread telling at the same time,
+         * whichever ends first takes off only its own share. */
         struct rtgcwii* gw = c->gcwii ? (struct rtgcwii*)(uintptr_t)c->gcwii : 0;
-        uint32_t was = 0, flags;
+        uint32_t flags;
         if (gw) {
             flags = interrupts_off();
-            was = gw->telling;
-            gw->telling = 1;
+            gw->telling += 1;
             interrupts_restore(flags);
         }
         if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
         if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
         if (gw) {
             flags = interrupts_off();
-            gw->telling = was;
+            gw->telling -= 1;
             interrupts_restore(flags);
         }
     }
