@@ -164,12 +164,14 @@ static void rtgcwii_pointing_motion(struct rtgcwii* w, uint32_t i, const uint8_t
         return;
     }
     rthome_classic_axes(s, axes);  /* the control stick is axes 0 and 1 */
-    /* The time to count: since the motion was last counted up to, or for
-     * the first sample since the sample before (a frame if none). */
+    /* The time to count: since the motion was last counted up to, or a
+     * frame for the first sample since the camera came on. */
     at = w->pointer_at[i];
     if (at == 0) {
-        dt = last != 0 ? rtgcwii_elapsed(now, last) : RTGCWII_TICKS_PER_FRAME;
-        if (dt > gap) dt = gap;
+        /* The first sample since the camera came on (or since plugged in):
+         * a frame's worth, never the time before. */
+        (void)last;
+        dt = RTGCWII_TICKS_PER_FRAME;
         at = now - dt;
     } else {
         dt = rtgcwii_elapsed(now, at);
@@ -475,6 +477,14 @@ void rtgcwii_pointing(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* ou
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) {
     if (channel >= RTGCWII_CHANNELS) return;
     if (mode != 0) {
+#ifdef RT_PAD_FORM_POINTING
+        /* Turned on: the pointer's motion is counted from here, not over
+         * the time the camera was off. */
+        if (!((w->camera >> channel) & 1u)) {
+            w->pointer_at[channel] = 0;
+            w->pointer_rest[channel][0] = w->pointer_rest[channel][1] = 0;
+        }
+#endif
         w->camera |= 1u << channel;
     } else {
         w->camera &= ~(1u << channel);
