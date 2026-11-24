@@ -1427,7 +1427,9 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
     /* Connected only: a report with no error is the pack's own, left as it
      * is, and never taken for a real Wii Remote. */
     if (w->inputless && (int8_t)status[RTGCWII_WPAD_ERR] == 0) {
+        msr = interrupts_off();
         rtgcwii_heard(w, (uint32_t)chan);
+        interrupts_restore(msr);
         return;
     }
     if ((int8_t)status[RTGCWII_WPAD_ERR] == 0) {
