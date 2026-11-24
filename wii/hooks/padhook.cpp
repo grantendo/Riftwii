@@ -939,10 +939,29 @@ std::vector<bool> patches_that_apply(const std::vector<MemoryPatch>& patches) {
 // A value kept in a file isn't loaded yet here, so isn't looked at.
 bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
     const std::vector<bool> applies = patches_that_apply(patches);
+    const auto placed = [&](std::size_t i) {
+        const MemoryPatch& patch = patches[i];
+        return applies[i] && patch.has_offset && !patch.search && !patch.value.empty();
+    };
     for (std::size_t i = 0; i < patches.size(); ++i) {
         const MemoryPatch& patch = patches[i];
         if (patch.value.empty() || !applies[i]) continue;
-        if (reads_gc_ports(patch.value.data(), patch.value.size())) return true;
+        // A patch at a known place is judged as it ends up, with any later
+        // patch written over part of it (one that replaces its port reads
+        // leaves none); a search patch's place isn't known, so as written.
+        std::vector<std::uint8_t> bytes = patch.value;
+        if (placed(i)) {
+            const std::uint32_t at = memory_patch_target(patch);
+            for (std::size_t j = i + 1; j < patches.size(); ++j) {
+                if (!placed(j)) continue;
+                const std::uint32_t later = memory_patch_target(patches[j]);
+                for (std::size_t b = 0; b < patches[j].value.size(); ++b) {
+                    const std::uint32_t where = later + static_cast<std::uint32_t>(b);
+                    if (where >= at && where - at < bytes.size()) bytes[where - at] = patches[j].value[b];
+                }
+            }
+        }
+        if (reads_gc_ports(bytes.data(), bytes.size())) return true;
     }
     return false;
 }
