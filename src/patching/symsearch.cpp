@@ -652,7 +652,25 @@ std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std
             found = target;
         }
     }
-    return found;
+    if (found == 0) return 0;
+    // It must be the Wii Remote library's own: called from inside it (near
+    // WPADProbe) at least twice, and from nowhere else, as in every one of
+    // 32 dumped games that have it (two calls each, both there). A game
+    // helper of the same shape that the window happens to reach is called
+    // from the game's own code too (CodeRabbit on #609).
+    unsigned near = 0;
+    for (const CodeRange& r : text) {
+        const std::size_t words = r.size / 4;
+        for (std::size_t i = 0; i < words; ++i) {
+            const std::uint32_t w = be32(r.bytes + i * 4);
+            if (!is_bl(w)) continue;
+            const std::uint32_t at = r.address + static_cast<std::uint32_t>(i * 4);
+            if (bl_target(at, w) != found) continue;
+            if (at + kWpadReach < wpad_probe || at > wpad_probe + kWpadReach) return 0;
+            ++near;
+        }
+    }
+    return near >= 2 ? found : 0;
 }
 
 namespace {

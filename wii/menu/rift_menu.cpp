@@ -15836,13 +15836,19 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 			else if (ref.what == RowRef::What::GcControllers)
 				// The chosen one's help only (all of them together ran past the
 				// help's lines).
-				say(gameSettings.gc_controllers == "nunchuk"
-				        ? tr("Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.")
-				    : gameSettings.gc_controllers == "sideways"
-				        ? tr("Each GameCube controller plays as a Wii Remote held sideways (port 1 as Wii Remote 1 and so on): A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it.")
-				    : gameSettings.gc_controllers == "classic"
-				        ? tr("Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.")
-				        : tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."));
+				// The chosen one's help only; a code build never takes the
+				// stand-in (it needs every byte): said with any choice but Off
+				// (CodeRabbit on #609).
+				if (gameSettings.gc_controllers == "nunchuk" || gameSettings.gc_controllers == "sideways" ||
+				    gameSettings.gc_controllers == "classic")
+					say(std::string(gameSettings.gc_controllers == "nunchuk"
+					                    ? tr("Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.")
+					                : gameSettings.gc_controllers == "sideways"
+					                    ? tr("Each GameCube controller plays as a Wii Remote held sideways (port 1 as Wii Remote 1 and so on): A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it.")
+					                    : tr("Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.")) +
+					    " " + tr("A code build doesn't use it."));
+				else
+					say(tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."));
 			else if (ref.what == RowRef::What::RegionStrings)
 				say(tr("For a game from another region (an import): the game sees its own region's country names where it looks for the console's."));
 			else if (ref.what == RowRef::What::Language)
