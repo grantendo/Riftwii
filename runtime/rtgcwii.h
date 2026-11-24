@@ -59,7 +59,14 @@ struct rtgcwii {
     uint32_t pointer_show;                     /* ticks the pointer stays shown after the C-stick (loader-filled) */
     int32_t pointer[RTGCWII_CHANNELS][2];      /* each channel's pointer, x and y over RTHOME_POINTER_FULL */
     uint32_t pointer_moved[RTGCWII_CHANNELS];  /* when the C-stick last moved it (low bit set), 0: never */
-    uint32_t shake[RTGCWII_CHANNELS];          /* samples the shake button has been held, 0: not held */
+    uint32_t shake[RTGCWII_CHANNELS];          /* the shake's count while its button is held (rtgcwii_shake), 0: not held */
+    /* The shake's rhythm by time, not by samples (a game that reads more
+     * often would shake faster): when its button went down (low bit set),
+     * which channels flipped at their last sample, and the ticks between
+     * flips (loader-filled; 0: every RTGCWII_SHAKE_FLIP samples). */
+    uint32_t shake_from[RTGCWII_CHANNELS];
+    uint32_t shake_jump;
+    uint32_t shake_flip;
     uint32_t camera;  /* channels whose Wii Remote camera the game wants on (KPAD's switch), one bit each */
     /* Where KPAD keeps each channel's camera switch (KPADEnableDPD's
      * code): the byte at kpad_dpd + channel * kpad_dpd_stride +
@@ -153,8 +160,11 @@ struct rtgcwii_fs {
 };
 
 /* The shake: all three axes swing between +RTGCWII_SHAKE_G and -SHAKE_G,
- * flipping every RTGCWII_SHAKE_FLIP samples while X is held, as Dolphin's
- * emulated shake does; 3.4 g is past the threshold Batman: The Brave and
+ * flipping every `shake_flip` ticks while X is held (the loader's 33 ms:
+ * a 15 Hz shake, as Dolphin's emulated one at that speed; Donkey Kong
+ * Country Returns takes nothing slower than that for its "shake to start",
+ * and it read the old flip every few samples as too fast; with no
+ * shake_flip, every RTGCWII_SHAKE_FLIP samples); 3.4 g is past the threshold Batman: The Brave and
  * the Bold checks for its heavy attacks (3.2 g for the Wii Remote, 2.0 g
  * for the Nunchuk). Numerators over RTHOME_AXIS_FULL (256: 1 g). */
 #define RTGCWII_SHAKE_G 870

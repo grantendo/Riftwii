@@ -168,6 +168,31 @@ void TestPointer() {
     EXPECT_EQ(f.pointer[0], RTGCWII_POINTER_EDGE);  // still where it was left
 }
 
+// With shake_flip (the loader's 33 ms), the shake keeps time, not samples:
+// read every 4 ms or every 16 ms, it flips every shake_flip ticks, and only
+// the sample a flip lands on has the jump in speed (Donkey Kong Country
+// Returns' shake to start took nothing faster than a 15 Hz shake).
+void TestShakeKeepsTime() {
+    for (std::uint32_t step : {4u, 16u}) {
+        rtgcwii w = fresh();
+        w.shake_flip = 33;
+        Pads p;
+        p.plug(0, kGcX);
+        rtgcwii_fs f;
+        int flips = 0, jumps = 0;
+        std::int32_t last = 0;
+        for (std::uint32_t t = 1000; t < 1000 + 330; t += step) {
+            rtgcwii_pads(&w, p.s, t);
+            rtgcwii_nunchuk(&w, 0, t, &f);
+            if (t > 1000 && f.acc[0] != last) ++flips;
+            if (f.acc_speed != 0) ++jumps;
+            last = f.acc[0];
+        }
+        EXPECT_TRUE(flips >= 9 && flips <= 10);  // 330 ms / 33 ms, whatever the step
+        EXPECT_EQ(jumps, flips);
+    }
+}
+
 // X held shakes the Wii Remote: the axes swing past 3 g and flip every
 // RTGCWII_SHAKE_FLIP samples, a flip a jump in speed; let go, it's still.
 void TestShake() {
@@ -245,6 +270,7 @@ void TestFloatBits() {
 }  // namespace
 
 int main() {
+    TestShakeKeepsTime();
     TestMapping();
     TestWords();
     TestStickAndRest();
