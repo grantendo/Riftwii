@@ -979,6 +979,16 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     return 1;
 }
 #else
+/* The HOME Menu's stand-in's channel, unless a real Wii Remote holds it:
+ * there the real one's samples stay, as PADRead's pad_on_read leaves such a
+ * channel to it (CodeRabbit on #609). */
+static uint32_t pad_home_unless_real(const struct rt_pad_context* c, uint32_t stand_in) {
+    if (stand_in != RTHOME_NO_CHANNEL && c->gcwii && stand_in < RTGCWII_CHANNELS &&
+        ((((const struct rtgcwii*)(uintptr_t)c->gcwii)->real >> stand_in) & 1u))
+        return RTHOME_NO_CHANNEL;
+    return stand_in;
+}
+
 int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error,
                     int32_t count) {
     uint32_t msr, t, stand_in;
@@ -1014,7 +1024,7 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     }
     msr = interrupts_off();
     t = now();
-    stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
+    stand_in = pad_home_unless_real(c, c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL);
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
         /* The permanent stand-in's channel, where no real controller is. */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
@@ -1141,7 +1151,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
     }
     msr = interrupts_off();
     t = now();  /* again: that PADRead may have noted a later time */
-    stand_in = rthome_stand_in(&c->home, t);
+    stand_in = pad_home_unless_real(c, rthome_stand_in(&c->home, t));
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
         if (chan >= 0) rthome_probed(&c->home, (uint32_t)chan, result);
         if (c->gcwii && chan >= 0 && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
@@ -1273,7 +1283,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     if (!pad_in_ram(status) || !pad_in_ram(status + (uint32_t)count * c->kpad_unified_bytes - 1)) return;
     msr = interrupts_off();
     t = now();
-    stand_in = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
+    stand_in = pad_home_unless_real(c, c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL);
     if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
         /* The permanent stand-in's raw status, in its form's shape. */
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
@@ -1679,6 +1689,14 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         const uint32_t next = rthome_connect_change(told, now_channel, &leave, &join);
         c->kpad_connect_info = (c->kpad_connect_info & 0xFFFFu) |
                                ((next == RTHOME_NO_CHANNEL ? 0u : next + 1u) << 16);
+#ifdef RT_PAD_STANDIN
+        /* The telling count taken now, with the change, so a PADRead nested
+         * in an SI callback as interrupts come back can't tell the
+         * permanent stand-in's news before the HOME Menu's (CodeRabbit on
+         * #609); given back once both are told, below. */
+        if ((leave != RTHOME_NO_CHANNEL || join != RTHOME_NO_CHANNEL) && c->gcwii)
+            ((struct rtgcwii*)(uintptr_t)c->gcwii)->telling += 1;
+#endif
     }
 #endif
     interrupts_restore(msr);
@@ -1696,11 +1714,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
          * whichever ends first takes off only its own share. */
         struct rtgcwii* gw = c->gcwii ? (struct rtgcwii*)(uintptr_t)c->gcwii : 0;
         uint32_t flags;
-        if (gw) {
-            flags = interrupts_off();
-            gw->telling += 1;
-            interrupts_restore(flags);
-        }
+        /* (The count was taken with the change, above.) */
         if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
         if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
         if (gw) {
