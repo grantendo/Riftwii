@@ -405,6 +405,10 @@ uint32_t pad_on_kpad_enter(struct rt_pad_context* c) {
     int resident_wrote, quiet;
     uint32_t resident_last_write, msr, t;
     if (c->leave_asked != RT_PAD_LEAVE_ASKED) return 0;  /* every read: the quick way out */
+    /* A fresh sample first, when one is due: a combo let go while the game
+     * wasn't polling cancels the ask there (pad_leave_check) before this
+     * takes it; one still held leaves as before (CodeRabbit on #616). */
+    if (c->gcwii) pad_gcwii_read_pads(c);
     msr = interrupts_off();
     t = now();
     if (c->leave_asked != RT_PAD_LEAVE_ASKED ||
