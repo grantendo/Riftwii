@@ -536,8 +536,13 @@ uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, 
         rtgcwii_sideways(w, channel, &f);
 #else
         rtgcwii_nunchuk(w, channel, now, &f);
-        if (format >= RTGCWII_FMT_FS_FIRST && format <= RTGCWII_FMT_FS_ACC_DPD) bytes = RTGCWII_WPAD_FS_BYTES;
 #endif
+        /* A format with an extension's part gets a report that long; on the
+         * sideways Wii Remote, which has none, that part stays zeros with
+         * the device type a bare Wii Remote (as WPAD gives a Wii Remote
+         * with nothing in its port), so the success it was told matches
+         * the report (CodeRabbit on #616). */
+        if (format >= RTGCWII_FMT_FS_FIRST && format <= RTGCWII_FMT_FS_ACC_DPD) bytes = RTGCWII_WPAD_FS_BYTES;
         w->worked[channel] = worked;
         w->delivered[channel] = delivered;
         w->trig[channel] = trig;

@@ -1404,14 +1404,14 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
 void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     uint32_t msr;
-    int camera = 0;
+    int camera = 0, real = 0;
     if (!c->gcwii || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS || !pad_in_ram(status) ||
         !pad_in_ram(status + RTGCWII_WPAD_FS_BYTES - 1))
         return;
-    /* The pads first, whatever the report: a game that reads only WPAD
-     * (Punch-Out!!) polls the adapter through here for every channel. */
     pad_gcwii_wii_read(c);
-    pad_gcwii_read_pads(c);
+    /* The report's answer is noted before the pads are polled (as at a KPAD
+     * read), so whatever the poll then learns is newer than this report and
+     * stands (CodeRabbit on #616). */
     if ((int8_t)status[RTGCWII_WPAD_ERR] == 0) {
         /* The game's own read found a real Wii Remote there: its report
          * stays, and the stand-in steps aside as it does when WPADProbe
@@ -1425,12 +1425,10 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
         msr = interrupts_off();
         if (any != 0 || ((w->real >> (uint32_t)chan) & 1u)) {
             rtgcwii_probed(w, (uint32_t)chan, 0);
-            interrupts_restore(msr);
-            return;
+            real = 1;
         }
         interrupts_restore(msr);
-    }
-    if ((int8_t)status[RTGCWII_WPAD_ERR] == -1) {
+    } else if ((int8_t)status[RTGCWII_WPAD_ERR] == -1) {
         /* "No controller": a real Wii Remote that was there has left, which
          * a game reading only WPAD tells no other way; the stand-in can
          * come back. */
@@ -1438,6 +1436,13 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
         rtgcwii_probed(w, (uint32_t)chan, -1);
         interrupts_restore(msr);
     }
+    /* The pads, whatever the report: a game that reads only WPAD
+     * (Punch-Out!!) polls the adapter through here for every channel. */
+    pad_gcwii_read_pads(c);
+    /* A real Wii Remote's report stays (the stand-in steps aside, as when
+     * WPADProbe finds one); otherwise the stand-in's report goes in only
+     * if the channel is still its after the poll (rtgcwii_wpad_status). */
+    if (real) return;
     if (w->kpad_dpd != 0) {
         /* KPAD's camera switch for this channel, as at a KPAD read. */
         const uint8_t* wants =

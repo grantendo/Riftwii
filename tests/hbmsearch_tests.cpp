@@ -91,6 +91,37 @@ void put_2006_read(Section& t, bool stores = true) {
 
 void TestKpadRead() {
     {
+        // A 2006 read that branches round a framed early return, makes its
+        // stores, undoes its frame and tail-calls a leaf placed after it
+        // (CodeRabbit on #616): it ends at that tail call, not at the early
+        // return, so its stores count.
+        Section t{0x80010000, {}};
+        const std::uint32_t read = t.here();
+        t.put(stwu_r1(0x40));
+        t.put(kMflrR0);
+        t.put(mr(27, 3));
+        t.put(mulli(0, 27, 136));
+        for (int i = 0; i < 4; ++i) t.put(addi(31, 31, -136));
+        t.put(0x40820014u);  // bne +20: round the early return
+        t.put(lwz(0, 1, 0x44));
+        t.put(0x7C0803A6u);  // mtlr r0
+        t.put(addi(1, 1, 0x40));
+        t.put(kBlr);
+        t.put(lwz(0, 29, 0x5C));
+        t.put(stw(0, 3, 0x5C));
+        t.put(stb(0, 29, 0x85));
+        t.put(lwz(0, 1, 0x44));
+        t.put(0x7C0803A6u);  // mtlr r0
+        t.put(addi(1, 1, 0x40));
+        t.put(0x48000008u);  // b +8: the leaf
+        t.put(0x60000000u);
+        for (int i = 0; i < 5; ++i) t.put(0x60000000u);  // the leaf, its blr far from the restore
+        t.put(kBlr);
+        const riftwii::KpadRead found = riftwii::find_kpad_read({t.range()});
+        EXPECT_EQ(found.address, read);
+        EXPECT_EQ(found.status_bytes, 136u);
+    }
+    {
         // The newer read, with a decoy walker (Brawl's 144-byte one) next to it.
         Section t{0x80010000, {}};
         put_ring_walker(t, 144, false, false);
@@ -269,6 +300,23 @@ void TestWpadGetInfo() {
         t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
     }
+    {
+        // r27 and r28 saved by the prologue before the copies, never the
+        // copies themselves (CodeRabbit on #616): not it.
+        Section t{0x80030000, {}};
+        t.put(stwu_r1(0x80));
+        t.put(kMflrR0);
+        t.put(stw(27, 1, 0x6C));
+        t.put(stw(28, 1, 0x70));
+        t.put(kSlwiR0R3By2);
+        t.put(mr(27, 4));
+        t.put(mr(28, 5));
+        t.put(li(30, -2));
+        t.put(li(4, 0x15));
+        t.put(mulli(0, 0, 48));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
+    }
 }
 
 // The 2006 WPADSetConnectCallback: the channel's control block from a table
@@ -287,6 +335,23 @@ void put_connect_setter(Section& t, std::int32_t slot) {
 }
 
 void TestWpadConnect2006() {
+    {
+        // The block register replaced (`lwz r4,8(r1)`) between the old
+        // callback's load and the store: the store isn't through the table's
+        // block, so no swap (CodeRabbit on #616).
+        Section t{0x80040000, {}};
+        t.put(stwu_r1(0x10));
+        t.put(kMflrR0);
+        t.put(mr(30, 4));
+        t.put(lis(4, 0x8039));
+        t.put(addi(4, 4, -2832));
+        t.put(lwzx(4, 4, 0));
+        t.put(lwz(31, 4, 2020));
+        t.put(lwz(4, 1, 8));
+        t.put(stw(30, 4, 2020));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_2006({t.range()}).table, 0u);
+    }
     {
         Section t{0x80040000, {}};
         put_connect_setter(t, 2024);  // another callback's setter
@@ -363,7 +428,10 @@ std::uint32_t cmpwi(std::uint32_t a, std::int32_t v) { return d_form(11, 0, a, v
 std::uint32_t cmplw(std::uint32_t a, std::uint32_t b) { return (31u << 26) | (a << 16) | (b << 11) | (32u << 1); }
 constexpr std::uint32_t kMtctrR12 = 0x7D8903A6u;
 constexpr std::uint32_t kBctrl = 0x4E800421u;
-constexpr std::uint32_t kBeqPlus8 = 0x41820008u;
+// `beq` over the next `words` words: past the call when the slot is empty
+// (CodeRabbit on #616: the guard skips the call, never lands before it).
+std::uint32_t beq_over(std::uint32_t words) { return 0x41820000u | (4u * (words + 1u)); }
+constexpr std::uint32_t kBeqPlus8Skip = 0x41820008u;  // over one word only
 
 // A 2008 WPAD setter (Punch-Out!!'s shape): the channel's control block from
 // the table at 0x803CAF10, the slot at `slot` swapped for the second argument.
@@ -385,7 +453,7 @@ void put_later_setter(Section& t, std::int32_t slot) {
 void put_slot_call(Section& t, std::int32_t slot, std::int32_t reason) {
     t.put(lwz(12, 29, slot));
     t.put(cmpwi(12, 0));
-    t.put(kBeqPlus8);
+    t.put(beq_over(reason != 1 ? 4u : 3u));
     t.put(mr(3, 30));
     if (reason != 1) t.put(li(4, reason));
     t.put(kMtctrR12);
@@ -448,6 +516,28 @@ void TestWpadGetInfoLater() {
 
 void TestWpadConnectLater() {
     {
+        // The setter's table register replaced (`mr r5,r6`) before its
+        // lookup: the block isn't the table's, so no setter for 2212 and no
+        // slot (CodeRabbit on #616).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x803D));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(5, 5, -20720));
+        t.put(mr(29, 4));
+        t.put(mr(5, 6));
+        t.put(lwzx(31, 5, 3));
+        t.put(lwz(30, 31, 2212));
+        t.put(stw(29, 31, 2212));
+        t.put(kBlr);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
+    }
+    {
         // The extension, connect and sampling setters side by side; WPAD
         // calls the connect slot with "no controller" as a Wii Remote leaves.
         Section t{0x80218000, {}};
@@ -495,7 +585,7 @@ void TestWpadConnectLater() {
         t.put(stwu_r1(0x40));
         t.put(lwz(12, 29, 2212));
         t.put(cmpwi(12, 0));
-        t.put(kBeqPlus8);
+        t.put(beq_over(4));
         t.put(mr(3, 30));
         t.put(li(4, -1));
         t.put(0x7D6903A6u);  // mtctr r11
@@ -512,7 +602,7 @@ void TestWpadConnectLater() {
         t.put(stwu_r1(0x40));
         t.put(lwz(12, 29, 2212));
         t.put(cmpwi(12, 0));
-        t.put(kBeqPlus8);
+        t.put(beq_over(5));
         t.put(mr(11, 12));
         t.put(mr(3, 30));
         t.put(li(4, -1));
@@ -520,6 +610,23 @@ void TestWpadConnectLater() {
         t.put(kBctrl);
         t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
+    }
+    {
+        // A branch that skips `li r4,-1` and still reaches the call (r4 0
+        // there): not a "no controller" call (CodeRabbit on #616).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(li(4, 0));
+        t.put(cmpwi(4, 0));
+        t.put(kBeqPlus8Skip);
+        t.put(li(4, -1));
+        t.put(kMtctrR12);
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
     }
     {
         // An early error return that leaves by a tail call (`lmw r29,8(r1);
@@ -959,6 +1066,27 @@ void TestWpadSetFormat() {
         Section t{0x80218000, {}};
         put_set_format(t, true, true);
         put_set_format(t, true, true);
+        EXPECT_EQ(riftwii::find_wpad_set_format({t.range()}), 0u);
+    }
+    {
+        // The format copied to r11 (volatile), a call, then r11 compared and
+        // stored: the call may have changed it, so not the format
+        // (CodeRabbit on #616).
+        Section t{0x80218000, {}};
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(kSlwiR0R3By2);
+        t.put(mr(11, 4));
+        t.put(lwzx(31, 5, 0));
+        t.put(lwz(30, 31, 2236));
+        t.put(lwz(28, 31, 2232));
+        t.put(cmpwi(30, -1));
+        t.put(li(3, -1));
+        t.put(li(30, -2));
+        t.put(bl(t.here(), 0x80200000u));
+        t.put(cmplw(28, 11));
+        t.put(stw(11, 31, 2232));
+        t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_set_format({t.range()}), 0u);
     }
 }
