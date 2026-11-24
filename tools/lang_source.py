@@ -1576,11 +1576,11 @@ T = {
         "各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。",
         "Cada controle de GameCube joga como um Classic Controller (a porta 1 como o Wii Remote 1 e assim por diante), nos jogos que aceitam um.",
         "Ogni controller GameCube gioca come un controller tradizionale (la porta 1 come il telecomando Wii 1 e così via), nei giochi che lo supportano."),
-    "An enabled pack turns it on as {1} while this is Off.": (
-        "Un paquete activado lo enciende como {1} mientras esto esté desactivado.",
-        "有効なパックが、ここがオフの間は{1}としてオンにします。",
-        "Um pacote ativado o liga como {1} enquanto isto estiver desligado.",
-        "Un pacchetto attivo lo accende come {1} finché questo è disattivato."),
+    "An enabled pack asks for {1} while this is Off.": (
+        "Un paquete activado pide {1} mientras esto esté desactivado.",
+        "有効なパックは、ここがオフの間は{1}を求めます。",
+        "Um pacote ativado pede {1} enquanto isto estiver desligado.",
+        "Un pacchetto attivo chiede {1} finché questo è disattivato."),
     "A code build doesn't use it.": ("Una compilación de código no lo usa.", "コードビルドでは使われません。", "Uma build de código não o usa.",
         "Una build di codice non lo usa."),
     "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.": (
@@ -3502,8 +3502,8 @@ KO = {
         "화면을 가리키는 Wii 리모컨",
     "Each GameCube controller plays as a Wii Remote pointed at the screen (port 1 as Wii Remote 1 and so on): the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it.":
         "각 게임큐브 컨트롤러가 화면을 가리키는 Wii 리모컨으로 작동합니다(포트 1은 Wii 리모컨 1 등). 컨트롤 스틱으로 포인터를 움직이고, X는 1, Y는 2, C 스틱으로 기울이고 R로 흔듭니다.",
-    "An enabled pack turns it on as {1} while this is Off.":
-        "켜진 팩이 이 설정이 꺼져 있는 동안 {1}(으)로 켭니다.",
+    "An enabled pack asks for {1} while this is Off.":
+        "켜진 팩은 이 설정이 꺼져 있는 동안 {1}을(를) 요청합니다.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "타 지역 게임(수입판)의 경우: 해당 게임은 콘솔의 지역 정보를 확인해야 할 위치에서 자사 지역의 국가명을 인식합니다.",
     "Don't show again":
@@ -5396,8 +5396,8 @@ FR = {
         "Télécommande Wii pointée",
     "Each GameCube controller plays as a Wii Remote pointed at the screen (port 1 as Wii Remote 1 and so on): the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it.":
         "Chaque manette GameCube joue comme une Télécommande Wii pointée vers l'écran (le port 1 comme la Télécommande Wii 1, et ainsi de suite) : le stick de contrôle déplace le pointeur, X est le 1, Y est le 2, le stick C l'incline, R la secoue.",
-    "An enabled pack turns it on as {1} while this is Off.":
-        "Un pack activé l'allume comme {1} tant que ceci est désactivé.",
+    "An enabled pack asks for {1} while this is Off.":
+        "Un pack activé demande {1} tant que ceci est désactivé.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine.",
     "Don't show again":

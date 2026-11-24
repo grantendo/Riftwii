@@ -16017,7 +16017,7 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 					// Off, with a pack that asks for a form (riftwii-gc-controllers).
 					say(std::string(tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.")) +
 					    " " +
-					    tr("An enabled pack turns it on as {1} while this is Off.", {from_pack == "nunchuk"    ? tr("Wii Remote + Nunchuk")
+					    tr("An enabled pack asks for {1} while this is Off.", {from_pack == "nunchuk"    ? tr("Wii Remote + Nunchuk")
 					                         : from_pack == "sideways" ? tr("Sideways Wii Remote")
 					                                                   : tr("Classic Controller")}));
 				else
