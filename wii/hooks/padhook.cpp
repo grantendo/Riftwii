@@ -967,6 +967,7 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
     // aren't read yet here, nor its length (up to the largest a file may
     // be), so a guard or a search that reads there can't be judged.
     const auto in_files = [&](std::uint64_t from, std::uint64_t to) {  // [from, to)
+        if (from >= to) return false;  // a guard that reads nothing (an unconditional patch)
         for (const std::uint32_t at : out.files) {
             if (from < std::uint64_t(at) + kMaxMemoryValueBytes && at < to) return true;
         }
