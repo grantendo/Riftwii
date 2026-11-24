@@ -1412,11 +1412,20 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
     if ((int8_t)status[RTGCWII_WPAD_ERR] == 0) {
         /* The game's own read found a real Wii Remote there: its report
          * stays, and the stand-in steps aside as it does when WPADProbe
-         * finds one. */
+         * finds one. Not a report that is all zeros on a channel no real
+         * Wii Remote is known on: a WPAD whose channel never had one copies
+         * its untouched entry, error 0 (Mario Strikers Charged), and no
+         * real Wii Remote's report is all zeros (its accelerometer never
+         * reads 0, 0, 0). */
+        uint32_t i, any = 0;
+        for (i = 0; i < RTGCWII_WPAD_ERR; ++i) any |= status[i];
         msr = interrupts_off();
-        rtgcwii_probed(w, (uint32_t)chan, 0);
+        if (any != 0 || ((w->real >> (uint32_t)chan) & 1u)) {
+            rtgcwii_probed(w, (uint32_t)chan, 0);
+            interrupts_restore(msr);
+            return;
+        }
         interrupts_restore(msr);
-        return;
     }
     if ((int8_t)status[RTGCWII_WPAD_ERR] == -1) {
         /* "No controller": a real Wii Remote that was there has left, which
