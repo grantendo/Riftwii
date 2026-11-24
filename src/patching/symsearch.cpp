@@ -1734,12 +1734,17 @@ bool gc_port_high(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
 // conditional branch, into the bytes' own functions at a call, with no
 // window), so a write skipped by a branch doesn't hide a later use.
 // - An access or address through the base off the serial interface's
-//   registers, or the base copied anywhere (into another register, stored,
-//   or passed in r3-r10 to a call out of the bytes), is shared.
+//   registers, or the base copied anywhere (into another register or
+//   stored), is shared.
 // - Adding a port's offset (`add r6,r6,r5`, `addi r6,r6,12`, an update
 //   form, `nop`) keeps it the base; any other write ends it on that path.
 // - A path ends at a return or a jump out of the bytes (the code goes
-//   elsewhere), and after a call for r0 and r3-r12, which a call doesn't keep.
+//   elsewhere). A call (`bl`, `blrl`, `bctrl`) ends it for r0 and r3-r12,
+//   which a call doesn't keep, and it goes on after the call for the others
+//   (`bctrl; lwz r9,0(r31)` still counts). The code a call reaches outside
+//   the bytes is the game's own, which never takes a hardware base it wasn't
+//   written for (quatric's patches call through the CTR with the base still
+//   in r6, r8 or r9).
 bool base_shared_from(const std::uint8_t* bytes, std::size_t words, std::size_t start, std::uint32_t reg,
                       unsigned depth) {
     constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
@@ -1779,13 +1784,16 @@ bool base_shared_from(const std::uint8_t* bytes, std::size_t words, std::size_t 
                 const bool in = !(insn & 2u) && inside(k, offset, to);
                 if (in) todo.push_back(to);
                 if (!(insn & 1u)) break;  // b: the code goes there
-                if (!in && reg >= 3 && reg <= 10) return true;  // passed to code out of the bytes
-                if (volatile_reg) break;                         // not kept across the call
+                if (volatile_reg) break;  // not kept across the call
                 todo.push_back(k + 1);
                 break;
             }
             if (op == 19 && (xo == 16 || xo == 528)) {  // bclr, bcctr
-                if ((rd & 0x14u) == 0x14u) break;      // a return or jump out
+                if (insn & 1u) {                        // blrl, bctrl: a call to code out of the bytes
+                    if (volatile_reg) break;            // not kept across the call
+                    continue;
+                }
+                if ((rd & 0x14u) == 0x14u) break;  // a return or jump out
                 continue;
             }
             const bool load = (op >= 32 && op <= 35) || (op >= 40 && op <= 43) || op == 46;  // lwz..lbzu, lhz..lhau, lmw

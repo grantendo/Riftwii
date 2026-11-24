@@ -1949,12 +1949,15 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
     code = bytes({0x3D20CD00u, 0x81096404u, 0x7D495214u, 0x810A0000u});  // ...; add r10,r9,r10; lwz r8,0(r10)
     EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
-    // The base passed in r3 to a call out of the bytes: shared. mflr reads
+    // A call ends a base in r3 (the game's code never takes it); mflr reads
     // no register.
-    code = bytes({0x3C60CD00u, 0x80836404u, 0x48001001u});  // lis r3,0xCD00; lwz r4,0x6404(r3); bl out
-    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3C60CD00u, 0x80836404u, 0x48001001u, 0x80630000u});  // ...; bl out; lwz r3,0(r3)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x7CA802A6u, 0x81066404u});  // lis r6,0xCD00; mflr r5; lwz r8,0x6404(r6)
     EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    // bctrl is a call, not a return: a base in r31 lives on after it.
+    code = bytes({0x3FE0CD00u, 0x813F6404u, 0x4E800421u, 0x813F0000u});  // lis r31; lwz r9,0x6404(r31); bctrl; lwz r9,0(r31)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
 }
 
 // KPAD's camera switch, read from KPADEnableDPD's code just after

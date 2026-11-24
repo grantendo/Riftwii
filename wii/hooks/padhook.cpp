@@ -1057,15 +1057,21 @@ bool pack_ports_routable(const std::vector<MemoryPatch>& patches) {
         std::vector<std::uint8_t> routed = left;
         if (retarget_gc_ports(routed.data(), routed.size(), kAnyCopy) == 0) continue;
         const std::uint32_t at = memory_patch_target(patch);
+        // So does a later patch written over such a word: it would put the
+        // hardware's address back after routing (boot.cpp rewrites the word
+        // in this patch, which is written first).
         for (std::size_t j = i + 1; j < patches.size(); ++j) {
             const MemoryPatch& later = patches[j];
-            if (later.original.empty() || !later.has_offset || later.search || later.ocarina) continue;
+            if (!later.has_offset || later.search || later.ocarina) continue;
             const std::uint64_t from = memory_patch_target(later);
-            const std::uint64_t to = from + later.original.size();
+            const std::uint64_t guard_to = from + later.original.size();
+            const std::uint64_t value_to = applies[j] ? from + later.value.size() : from;
             for (std::size_t w = 0; w + 4 <= routed.size(); w += 4) {
                 if (std::memcmp(routed.data() + w, left.data() + w, 4) == 0) continue;
                 const std::uint64_t word = std::uint64_t(at) + w;
-                if (word < to && word + 4 > from) return false;
+                // (An empty range covers nothing.)
+                if (guard_to > from && word < guard_to && word + 4 > from) return false;
+                if (value_to > from && word < value_to && word + 4 > from) return false;
             }
         }
     }
