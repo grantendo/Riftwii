@@ -932,8 +932,14 @@ struct PackWrites {
     std::vector<PackWrite> writes;
     bool incomplete = false;  // more writes than the planning follows (plan_pack_writes)
     std::vector<CodeRange> program;  // the game's program as loaded (its DOL's sections)
-    // Where file patches that apply go (their bytes aren't read yet here).
-    std::vector<std::uint32_t> files;
+    // Where file patches that apply go (their bytes aren't read yet here),
+    // and which patch each is (document order: a later write over its bytes
+    // decides them).
+    struct File {
+        std::uint32_t at;
+        std::size_t patch;
+    };
+    std::vector<File> files;
 };
 
 PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::vector<CodeRange>& image) {
@@ -968,8 +974,8 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
     // be), so a guard or a search that reads there can't be judged.
     const auto in_files = [&](std::uint64_t from, std::uint64_t to) {  // [from, to)
         if (from >= to) return false;  // a guard that reads nothing (an unconditional patch)
-        for (const std::uint32_t at : out.files) {
-            if (from < std::uint64_t(at) + kMaxMemoryValueBytes && at < to) return true;
+        for (const PackWrites::File& f : out.files) {
+            if (from < std::uint64_t(f.at) + kMaxMemoryValueBytes && f.at < to) return true;
         }
         return false;
     };
@@ -1029,7 +1035,7 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
             if (patch.has_offset && !patch.search && !patch.ocarina &&
                 matches_at(memory_patch_target(patch), patch.original)) {
                 out.applies[i] = true;
-                out.files.push_back(memory_patch_target(patch));
+                out.files.push_back({memory_patch_target(patch), i});
             }
             continue;
         }
@@ -1181,8 +1187,8 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
         }
         // (Only file patches that apply, as planned; a file's length isn't
         // known until it's read, so the largest a file may be stands in.)
-        for (const std::uint32_t at : plan.files) {
-            if (address >= at && address - at < kMaxMemoryValueBytes) return true;
+        for (const PackWrites::File& f : plan.files) {
+            if (address >= f.at && address - f.at < kMaxMemoryValueBytes) return true;
         }
         for (const PackWrite& w : plan.writes) {
             if (address >= w.at && address - w.at < patches[w.patch].value.size()) return true;
@@ -1194,19 +1200,31 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
     // branches from the next word still runs beside the stand-in's); a
     // write putting the same words back hooks nothing.
     constexpr std::uint32_t kEntryWords = 4;
-    // Where a file patch that applies may write (its bytes not read yet
-    // here, up to the largest a file may be): what it puts there can't be
-    // known, so over those words, or over a call to them, it may be a hook.
-    const auto in_file = [&](std::uint32_t address) {
-        for (const std::uint32_t at : plan.files) {
-            if (address >= at && address - at < kMaxMemoryValueBytes) return true;
+    // Whether a byte of the word at `address` may end up a file patch's
+    // (its bytes not read yet here, up to the largest a file may be): one
+    // in a file patch's reach that no later write of known bytes covers
+    // (a later write decides that byte, as final_word reads it).
+    const auto file_left = [&](std::uint32_t address) {
+        for (const PackWrites::File& f : plan.files) {
+            for (std::uint32_t b = 0; b < 4; ++b) {
+                const std::uint32_t byte = address + b;
+                if (byte < f.at || byte - f.at >= kMaxMemoryValueBytes) continue;
+                bool decided = false;
+                for (const PackWrite& w : plan.writes) {
+                    if (w.patch > f.patch && byte >= w.at && byte - w.at < patches[w.patch].value.size()) {
+                        decided = true;
+                        break;
+                    }
+                }
+                if (!decided) return true;
+            }
         }
         return false;
     };
     for (const std::uint32_t entry : {wpad_probe, kpad_read}) {
         if (entry == 0 || entry >= 0x81800000u - 4 * kEntryWords) continue;
         for (std::uint32_t w = 0; w < kEntryWords; ++w) {
-            if (in_file(entry + 4 * w)) return true;
+            if (file_left(entry + 4 * w)) return true;
         }
         for (std::uint32_t w = 0; w < kEntryWords; ++w) {
             const std::uint32_t at = entry + 4 * w;
@@ -1215,15 +1233,16 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
             if (written && final != *reinterpret_cast<const volatile std::uint32_t*>(at)) return true;
         }
     }
-    // A call to either in the game's program where a file patch may write.
-    for (const std::uint32_t file : plan.files) {
+    // A call to either in the game's program where a file patch may write
+    // (any byte of the call's word), unless later known writes decide it.
+    for (const PackWrites::File& file : plan.files) {
         for (const CodeRange& r : plan.program) {
-            const std::uint64_t from = std::max<std::uint64_t>(file, r.address) & ~std::uint64_t(3);
-            const std::uint64_t to = std::min<std::uint64_t>(std::uint64_t(file) + kMaxMemoryValueBytes,
+            const std::uint64_t from = std::max<std::uint64_t>(file.at, r.address) & ~std::uint64_t(3);
+            const std::uint64_t to = std::min<std::uint64_t>(std::uint64_t(file.at) + kMaxMemoryValueBytes,
                                                              std::uint64_t(r.address) + r.size);
-            for (std::uint64_t at = from; at + 4 <= to; at += 4) {
+            for (std::uint64_t at = from; at < to && at + 4 <= std::uint64_t(r.address) + r.size; at += 4) {
                 const std::uint32_t old = *reinterpret_cast<const volatile std::uint32_t*>(static_cast<std::uint32_t>(at));
-                if (!is_bl(old)) continue;
+                if (!is_bl(old) || !file_left(static_cast<std::uint32_t>(at))) continue;
                 const std::uint32_t target = bl_target(static_cast<std::uint32_t>(at), old);
                 if ((wpad_probe != 0 && target == wpad_probe) ||
                     (kpad_read != 0 && target <= kpad_read && kpad_read - target <= kReadEntry))
