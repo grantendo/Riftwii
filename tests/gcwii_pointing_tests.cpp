@@ -194,6 +194,21 @@ void TestCameraOff() {
     EXPECT_EQ(f.pointer_shown, 1);
     EXPECT_EQ(f.pointer[0], 0);  // still where it was
     EXPECT_EQ(f.pointer[1], 0);
+    // On, off for three frames and on again between two samples: the next
+    // sample moves it by a frame's worth, not by the time the camera was off.
+    rtgcwii w2 = fresh();
+    Pads p2;
+    std::uint8_t* s2 = p2.plug(0);
+    s2[2] = 72;
+    rtgcwii_camera(&w2, 0, 1);
+    rtgcwii_pads(&w2, p2.s, kFrame);
+    rtgcwii_pointing(&w2, 0, &f);
+    const int before = f.pointer[0];
+    rtgcwii_camera(&w2, 0, 0);
+    rtgcwii_camera(&w2, 0, 1);
+    rtgcwii_pads(&w2, p2.s, 4 * kFrame);
+    rtgcwii_pointing(&w2, 0, &f);
+    EXPECT_EQ(f.pointer[0] - before, static_cast<int>(RTGCWII_POINTER_STEP));
 }
 
 // Tilt, any way and whatever the camera: the C-stick right rolls it right
