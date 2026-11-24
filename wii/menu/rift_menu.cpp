@@ -6083,6 +6083,8 @@ static void LendPluginScreenHelpers()
 	hooks.window = [] { return mainWindow; };
 	hooks.popup = [](const std::string& title, const std::string& body, const std::string& yes,
 		const std::string& no) { return ShowPopup(title, body, yes, no); };
+	hooks.popup_safe_first = [](const std::string& title, const std::string& body, const std::string& safe,
+		const std::string& risky) { return ShowPopupSafeFirst(title, body, safe, risky); };
 	hooks.search = [](std::string& text,
 		const std::function<std::string(const std::string&, std::string&, std::string&)>& typed) {
 		return AskSearch(text, typed, tr("Search apps"));
@@ -6897,6 +6899,8 @@ static bool CountDownLastGame(const std::string& title)
 	}
 }
 
+static bool MenuAppStore();  // the Rift Store (Home's bar, Settings > Online)
+
 static int MenuSource(FrontendState& state)
 {
 	int menu = MENU_NONE;
@@ -7056,6 +7060,10 @@ static int MenuSource(FrontendState& state)
 	const int searchX = 484 + wide, searchY = 396;
 	const int layoutX = 120 - wide;
 	const int layoutY = searchY;
+	// The Rift Store: one more small button, left of Search (36 wide and 8
+	// apart, as Search and the gear are). Clear of the date in the dip; the
+	// status line runs under it.
+	const int storeX = searchX - 44;
 	const int statusY = dip ? 434 : 392;
 	actionHint.SetAlignment(ALIGN_H::CENTRE, ALIGN_V::TOP);
 	actionHint.SetPosition(0, statusY);
@@ -7083,9 +7091,10 @@ static int MenuSource(FrontendState& state)
 	// The page's ink: the softer one came to 2:1 on composite.
 	GuiText statusTxt("", dip ? 15 : 17, skin::kInk);
 	Place(statusTxt, 0, statusY, true);
-	// The bar's small buttons end at x 156 and start at x 484. Keep
-	// the centred text inside x 164..476, with 8px of breathing room.
-	statusTxt.SetWrap(true, 312 + 2 * wide, dip ? 1 : 3);
+	// The bar's small buttons end at x 156 and start at x 440 (the store's).
+	// Under the dip the line is below them and keeps x 164..476; on a bar
+	// that bumps it is level with them, so x 208..432, centred.
+	statusTxt.SetWrap(true, (dip ? 312 : 224) + 2 * wide, dip ? 1 : 3);
 	EmptyHomeNote emptyNote;
 	emptyNote.SetVisible(false);
 	HomeEmptyState emptyState;
@@ -7105,6 +7114,9 @@ static int MenuSource(FrontendState& state)
 	SkinButton searchBtn(skin::roundBtn, skin::roundBtnOver, 2, searchX, searchY, nullptr,
 		WPAD_CLASSIC_BUTTON_ZL, PAD_BUTTON_B, 0, &skin::iconSearch, 0.5f);
 	searchBtn.backAction = false;
+	// The Rift Store: pointed at (or a controller's stick pointer) and A.
+	SkinButton storeBtn(skin::roundBtn, skin::roundBtnOver, 2, storeX, searchY, nullptr,
+		0, 0, 0, &skin::iconStore, 0.5f);
 	// GameCube L/R already turn pages and L modifies letter jumps. Keep
 	// them; its control-stick pointer can reach this button. ZR and GamePad R
 	// are free on Home, and F2 is the keyboard's shortcut.
@@ -7150,6 +7162,7 @@ static int MenuSource(FrontendState& state)
 	w.Append(&nextFilterBtn.button);
 	w.Append(&settingsBtn.button);
 	w.Append(&searchBtn.button);
+	w.Append(&storeBtn.button);
 	w.Append(&layoutBtn.button);
 	w.Append(&layoutKey);
 	w.Append(&rescanBtn);
@@ -8228,7 +8241,7 @@ static int MenuSource(FrontendState& state)
 			setButtonHints();
 			showStatus();
 		}
-		ClearStaleButtons({&filterBtn.button, &settingsBtn.button, &searchBtn.button, &layoutBtn.button});
+		ClearStaleButtons({&filterBtn.button, &settingsBtn.button, &searchBtn.button, &storeBtn.button, &layoutBtn.button});
 		// A hover name fades in while the pointer rests on its button, and out after.
 		const auto fade = [](GuiText& hint, int& a, bool on) {
 			a = std::max(0, std::min(255, a + (on ? 40 : -40)));
@@ -8239,16 +8252,18 @@ static int MenuSource(FrontendState& state)
 		const bool filterHovered = filterBtn.button.GetState() == STATE::SELECTED;
 		const bool layoutHovered = layoutBtn.button.GetState() == STATE::SELECTED;
 		const bool searchHovered = searchBtn.button.GetState() == STATE::SELECTED;
+		const bool storeHovered = storeBtn.button.GetState() == STATE::SELECTED;
 		const char* nextActionLabel = nullptr;
 		if (layoutHovered) nextActionLabel = tr("Layout");
 		else if (searchHovered) nextActionLabel = searchLabel.c_str();
+		else if (storeHovered) nextActionLabel = tr("Rift Store");
 		else if (filterHovered) nextActionLabel = filterLabel.c_str();
 		else if (settingsHovered) nextActionLabel = settingsLabel.c_str();
 		if (nextActionLabel && shownActionLabel != nextActionLabel) {
 			shownActionLabel = nextActionLabel;
 			actionHint.SetText(nextActionLabel);
 		}
-		fade(actionHint, actionHintAlpha, layoutHovered || searchHovered || filterHovered || settingsHovered);
+		fade(actionHint, actionHintAlpha, layoutHovered || searchHovered || storeHovered || filterHovered || settingsHovered);
 		statusTxt.SetVisible(actionHintAlpha == 0);
 		// Not while the scan has the drives and the network: an update
 		// writes to the card and downloads.
@@ -8735,6 +8750,45 @@ static int MenuSource(FrontendState& state)
 				g_homeFocus = grid.FocusedIndex();
 				LearnHomeHints();
 				menu = MENU_OPTIONS;
+			}
+		} else if (storeBtn.Clicked()) {
+			storeBtn.button.ResetState();
+			// As Settings > Online > Rift Store opens it, with the same
+			// conditions: the card, downloads on, the drives read, and the
+			// PIN when parental controls keep Settings closed.
+			const bool locked = riftwii::parental_rules(riftwii::wii::Settings()).lock_settings;
+			// A card taken out during a download is only marked as going
+			// (g_sdRemovalPending) until the download stops: gone already.
+			const auto cardGone = [] { return g_sdGone || g_sdRemovalPending; };
+			if (grid.Carrying() || grid.CoverZoomed()) {
+				// As the Layout button: not with a tile carried or a cover up close.
+			} else if (cardGone()) {
+				toast.Show(tr("Put the SD card back in first."), true);
+			} else if (!riftwii::wii::Settings().online) {
+				toast.Show(tr("Downloads are off. Turn on Settings > Online > Downloads first."), true);
+			} else if (g_scanning) {
+				toast.Show(tr("RiftWii is still reading the drives. Open the Rift Store again in a moment."), false);
+			} else if (locked && !AskParentalPin(tr("Type the PIN to open the Rift Store."))) {
+				// Wrong PIN or Cancel: AskParentalPin said so.
+			} else if (cardGone()) {
+				// Taken out while the PIN was typed.
+				toast.Show(tr("Put the SD card back in first."), true);
+			} else {
+				g_focusRestored = true;
+				transition::Hold(transition::Kind::SlideForward);
+				mainWindow->Remove(&w);
+				ResumeGui();
+				const bool changed = MenuAppStore();
+				HaltGui();
+				if (changed) {
+					// Home's Homebrew view reads sd:/apps again.
+					riftwii::wii::ForgetAppIcons();
+					riftwii::wii::RescanHomebrewApps();
+				}
+				transition::Hold(transition::Kind::SlideBack);
+				mainWindow->Append(&w);
+				if (changed) refresh(true, false);
+				showStatus();
 			}
 		} else if (searchBtn.Clicked()) {
 			searchBtn.button.ResetState();
@@ -15673,29 +15727,35 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 	std::vector<RowRef> refs;
 	BuildGameRows(state, rows, refs, true, false);
 
+	// As wide as the game page that opened it: at 16:9 the rows' names get
+	// the room the TV has past the 4:3 middle ("GameCube controllers" was
+	// cut beside its choice), and at 4:3 the page is as it always was.
+	const PageBounds page = WidePageBounds();
 	GuiText titleTxt(tr("Game settings"), 30, skin::kInk);
-	Place(titleTxt, 78, 28);
+	Place(titleTxt, page.left + 38, 28);
 	TitleBand titleBand;
-	PageIcon pageIcon(&skin::iconGear);
+	PageIcon pageIcon(&skin::iconGear, page.left);
 	const std::string gameName = FlatCapped(GameTitle(state), 40);
 	GuiText gameTxt(gameName.c_str(), 16, skin::kInkDim);
 	gameTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
-	gameTxt.SetPosition(-40, 40);
-	NoteCard noteCard;
-	GuiFlowList list(40, 84, 560, 5);
+	// Right-aligned, so placed from the right edge of the page's window.
+	gameTxt.SetPosition(page.right - screenwidth, 40);
+	NoteCard noteCard(page.left);
+	GuiFlowList list(page.left, 84, page.Width(), 5);
 	list.SetCards(true);
 	list.SetRows(&rows);
 	list.Select(1);
 	GuiText noteTxt("", 15, skin::kInkSoft);
-	Place(noteTxt, NoteCard::kTextX, NoteCard::kTextY);
-	noteTxt.SetWrap(true, NoteCard::kTextW, NoteCard::kLines);
-	noteTxt.SetScroll(SCROLL::VERTICAL);  // a long note (the GameCube controllers' choices) rolls up, not cut
+	Place(noteTxt, page.left + 36, NoteCard::kTextY);
+	noteTxt.SetWrap(true, page.Width() - 40, NoteCard::kLines);
+	noteTxt.SetScroll(SCROLL::VERTICAL);  // a note longer than its lines (a long translation) rolls up, not cut
 	SkinButton backBtn(skin::pill, skin::pillOver, 4, 198, 406, "Back",
 		WPAD_BUTTON_B | WPAD_CLASSIC_BUTTON_B, PAD_BUTTON_B, WIIDRC_BUTTON_B);
 	HideButton(backBtn);
 	GuiPrompts prompts;
 	const int promptBack = prompts.Add("B", tr("Back"));
 	const int promptChange = prompts.Add("A", tr("Change"));
+	prompts.SetRightEdge(page.right);
 
 	HaltGui();
 	GuiWindow w(screenwidth, screenheight);
