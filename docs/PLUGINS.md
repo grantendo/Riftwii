@@ -413,8 +413,11 @@ Controllers, `runtime/rtgcwii.c`) are two more builds there: the full and
 adapter-only HOME Menu builds again with `RT_PAD_STANDIN`. Only a game
 whose GameCube controllers setting is on takes one (`kind_of` in
 `padhook.cpp`); every other game takes one of the six, whose bytes the
-stand-ins don't change (their code is in `#ifdef RT_PAD_STANDIN` blocks,
-and the pad context's layout is the same in all eight). More forms can
+stand-ins don't change (their code is in `#ifdef RT_PAD_STANDIN` blocks).
+The pad context starts the same in all eight: the builds without the
+HOME Menu have only that common start (`RT_PAD_CONTEXT_BASE_BYTES`), the
+others the whole context (`RT_PAD_CONTEXT_BYTES`; `context_bytes` in
+`padhook.cpp`). More forms can
 come the same way without the DOL or other games growing.
 
 | Piece | Where |
@@ -455,8 +458,11 @@ GameCube or USB ones unable to play, or to leave. Only launches that
 would put the pad code in are stopped: with the game's GameCube
 controllers setting Off, and Settings > GameCube adapter Off and no USB
 pad plugged in, or Automatic with no adapter or USB pad plugged in, it
-is never needed (with that setting on, the stand-in's build is always
-needed). A plugged-in USB pad with a layout turns
+is never needed. With that setting on, the stand-in's build is needed
+whenever the game has the KPAD read and WPADProbe it uses, adapter or
+not, since it plays from the Wii's own GameCube ports too; a game
+without them takes no pad code at all with the adapter Off, so a
+missing plugin doesn't stop it. A plugged-in USB pad with a layout turns
 Off into Automatic for that launch (settle_gc_adapter), so then the pad
 code goes in and a missing plugin stops the launch too; with USB pads
 only set up, not plugged in, the plugin is loaded early in case one is
