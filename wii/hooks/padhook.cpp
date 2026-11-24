@@ -947,7 +947,16 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         logf("GameCube adapter: SIProbe not found: a game that asks it which ports have a controller sees none there\n");
 
     if (!usb) {
-        // No adapter: the Wii's own ports play as Classic Controllers, and
+        // No adapter: the hook is there only for the stand-in, which needs
+        // the game's KPAD read and WPADProbe (plan_pad_hook's
+        // wants_home_build). Without them it would do nothing, so no hook,
+        // and no pads plugin to fail the launch over (CodeRabbit on #616).
+        if (out.kpad_read == 0 || out.wpad_probe == 0) {
+            why = "no adapter, and the game's KPAD read or WPADProbe that the GameCube controllers' stand-in needs "
+                  "wasn't found";
+            return false;
+        }
+        // The Wii's own ports play as Classic Controllers, and
         // USB is never asked anything (on some d2x a USB check broke the
         // game's disc reads, settle_gc_adapter).
         logf("GameCube adapter: none in use; the hook goes in for the GameCube controllers' stand-in (the "
@@ -1218,7 +1227,12 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
         g_pads_refused = true;
         return false;
     };
-    if (result == -1) return fail("the plugin could not be used (its own line above says why)", false);
+    if (result == -1) {
+        // The loader's own line says why; the player gets a sentence too,
+        // not whatever `message` held (CodeRabbit on #616).
+        message = tr("A part of RiftWii couldn't be used (the {1} add-on). Update RiftWii again.", {kPadsPlugin});
+        return fail("the plugin could not be used (its own line above says why)", false);
+    }
     if (result != RWP_PADS_COPIED)
         return fail("build " + std::to_string(kind) + " was not copied: " +
                         (request.error[0] != '\0' ? std::string(request.error) : std::string("no reason given")),
@@ -1387,8 +1401,9 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
                           "build has no room for the stand-in (the setting applies to ordinary launches)\n"
                         : "GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the game's "
                           "KPAD read or WPADProbe wasn't found\n");
-    logf("USB controllers: %s driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
-         kind % kBlobNoHome == kBlobAdapter ? "the adapter's" : kind % kBlobNoHome == kBlobPads ? "the USB pads'" : "the full",
+    // The build by its own name, as the fetch logs it (CodeRabbit on #616).
+    logf("USB controllers: the %s's driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
+         build_name(kind),
          static_cast<unsigned>(h.size), static_cast<unsigned>(out.link_count), static_cast<unsigned>(out.map_count),
          static_cast<unsigned>(out.map_bytes),
          out.ven_fd >= 0 ? " and the Xbox 360 list" : "", static_cast<unsigned>(out.state_bytes),
