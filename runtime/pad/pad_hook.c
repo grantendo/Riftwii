@@ -1160,7 +1160,11 @@ static void pad_put_dots(uint8_t* obj, const int32_t* pointer) {
     pad_put_dot(obj + 24, 0, 767, 0u, 3);
 }
 
-static void pad_gcwii_wpad_status(struct rt_pad_context* c, uint32_t chan, uint8_t* entry, uint32_t hold) {
+/* `pointer`: where the KPAD read on this channel points, for the dots (the
+ * permanent stand-in's own; while the HOME Menu is open on it, the HOME
+ * Menu's pointer); 0 for no dots. */
+static void pad_gcwii_wpad_status(struct rt_pad_context* c, uint32_t chan, uint8_t* entry, uint32_t hold,
+                                  const int32_t* pointer) {
     const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
     const int camera = chan < RTGCWII_CHANNELS && ((w->camera >> chan) & 1u);
     uint32_t i;
@@ -1170,7 +1174,7 @@ static void pad_gcwii_wpad_status(struct rt_pad_context* c, uint32_t chan, uint8
     /* The same data format the KPAD read reports on this channel (with the
      * camera on, its camera format), and with it the dots it promises, the
      * pointer as the KPAD read has it (Cake's review of #610). */
-    if (camera) pad_put_dots(entry + 8, w->pointer[chan]);
+    if (pointer) pad_put_dots(entry + 8, pointer);
     entry[40] = PAD_DEV_STANDIN;
     entry[54] = (uint8_t)(camera ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
 }
@@ -1191,8 +1195,12 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
 #ifdef RT_PAD_FORM_REMOTE
+            const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
+            const int32_t* own = (uint32_t)chan < RTGCWII_CHANNELS && ((w->camera >> (uint32_t)chan) & 1u)
+                                     ? w->pointer[chan]
+                                     : 0;
             for (i = 0; i < count; ++i)
-                pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, hold);
+                pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, hold, own);
 #else
             for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
 #endif
@@ -1206,8 +1214,14 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     /* The HOME Menu's stand-in on a channel the game knows as this one's
      * keeps its shape (pad_home_status). */
     if (pad_home_keeps_shape(c, (uint32_t)chan)) {
+        /* The dots where the KPAD read points (pad_gcwii_home_status): the
+         * HOME Menu's pointer while it is open, else the stand-in's own. */
+        const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
+        const int32_t* at = rthome_menu_open(&c->home) ? pointer
+                            : ((w->camera >> (uint32_t)chan) & 1u) ? w->pointer[chan]
+                                                                   : 0;
         for (i = 0; i < count; ++i)
-            pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, remote_hold);
+            pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);
         interrupts_restore(msr);
         return;
     }
