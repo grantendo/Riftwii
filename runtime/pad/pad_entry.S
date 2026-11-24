@@ -234,7 +234,10 @@ pad_hook_si_probe:
 /* s32 KPADReadEx(chan, status[], count, &error) (the 2007 read takes
  * three): the original first, then pad_on_kpad(ctx, chan, status, its
  * result, error) puts the stand-in's status in and returns the count.
- * Frame: 8 chan, 12 status, 16 error. */
+ * In the stand-in builds, pad_on_kpad_enter(ctx) is asked first: with
+ * the game's OSReturnToMenu (the way back, where no sleep leaves),
+ * interrupts go on and OSReturnToMenu takes over, never to return, as
+ * from pad_hook_sleep. Frame: 8 chan, 12 status, 16 error, 20 count. */
     .globl pad_hook_kpad
 pad_hook_kpad:
     stwu 1, -0x20(1)
@@ -243,6 +246,19 @@ pad_hook_kpad:
     stw 3, 0x08(1)
     stw 4, 0x0C(1)
     stw 6, 0x10(1)
+#ifdef RT_PAD_STANDIN
+    stw 5, 0x14(1)
+    bl 17f
+17: mflr 3
+    addi 3, 3, pad_context_data - 17b
+    bl pad_on_kpad_enter
+    cmpwi 3, 0
+    bne 18f
+    lwz 3, 0x08(1)
+    lwz 4, 0x0C(1)
+    lwz 5, 0x14(1)
+    lwz 6, 0x10(1)
+#endif
     bl pad_replay_kpad
     mr 6, 3
     lwz 4, 0x08(1)
@@ -256,6 +272,17 @@ pad_hook_kpad:
     mtlr 0
     addi 1, 1, 0x20
     blr
+#ifdef RT_PAD_STANDIN
+18: mr 12, 3
+    lwz 0, 0x24(1)
+    mtlr 0
+    addi 1, 1, 0x20
+    mfmsr 11
+    ori 11, 11, 0x8000
+    mtmsr 11
+    mtctr 12
+    bctr
+#endif
 
 /* s32 WPADProbe(chan, &type): the original first, then pad_on_probe(ctx,
  * chan, type, its result) answers for the stand-in's channel. Frame: 8
