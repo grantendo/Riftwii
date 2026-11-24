@@ -450,6 +450,49 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
     }
     {
+        // The loaded slot copied before CTR takes it (`mr r11,r12; mtctr
+        // r11`): still the slot's call (CodeRabbit CLI, #15).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(cmpwi(12, 0));
+        t.put(kBeqPlus8);
+        t.put(mr(11, 12));
+        t.put(mr(3, 30));
+        t.put(li(4, -1));
+        t.put(0x7D6903A6u);  // mtctr r11
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
+    }
+    {
+        // An early error return that leaves by a tail call (`lmw r29,8(r1);
+        // addi r1,r1,0x20; b` out) before the swap the branch around it
+        // reaches: still a setter (CodeRabbit CLI, #15).
+        Section t{0x80218000, {}};
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x803D));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(5, 5, -20720));
+        t.put(mr(29, 4));
+        t.put(lwzx(31, 5, 3));
+        t.put(0x41820010u);  // beq +16, to the swap
+        t.put(0xBBA10008u);  // lmw r29,8(r1)
+        t.put(addi(1, 1, 0x20));
+        t.put(0x4BFF0000u);  // b, far back: out of the function
+        t.put(lwz(30, 31, 2212));
+        t.put(stw(29, 31, 2212));
+        t.put(addi(1, 1, 0x20));
+        t.put(kBlr);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
+    }
+    {
         // An early error return restores r29 from the stack before the
         // store the branch around it reaches: still a setter, its slot found.
         Section t{0x80218000, {}};

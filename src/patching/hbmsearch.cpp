@@ -559,22 +559,11 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             // this aren't the table's block (CodeRabbit CLI, #15). A load into
             // it from the block itself ends it too.
             if (block >= 0 && writes_register(insn, static_cast<std::uint32_t>(block))) {
-                // An epilogue's restore (`lmw`, `lwz` off r1) on a path that
-                // returns before it uses the register again doesn't end it:
-                // an early error return branched around leaves the block as
-                // it was for the swap after it.
-                bool returns = false;
-                for (std::size_t n = k + 1; n < end && n <= k + 6; ++n) {
-                    const std::uint32_t next = be32(r.bytes + 4 * n);
-                    if (next == kBlr) {
-                        returns = true;
-                        break;
-                    }
-                    if (opcode(next) == 16 || opcode(next) == 18 ||
-                        reg_a(next) == static_cast<std::uint32_t>(block))
-                        break;
-                }
-                if (!returns) {
+                // An epilogue's restore (epilogue_restore: off r1, then the
+                // frame undone and a return or tail call) doesn't end it: an
+                // early error return branched around leaves the block as it
+                // was for the swap after it.
+                if (!epilogue_restore(r.bytes, k, end)) {
                     block = -1;
                     loaded = -1;
                 }
@@ -613,6 +602,7 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                                              [&](const auto& s) { return s.second == simm(insn); });
             if (setter == setters.end()) continue;
             bool gone = false, ctr_from_slot = false;
+            std::uint32_t slot_regs = 1u << 12;  // r12 and its copies (`mr`), one bit each
             for (std::size_t k = i + 1; k < words && k <= i + kCallWindow; ++k) {
                 const std::uint32_t next = be32(r.bytes + 4 * k);
                 if (next == kBctrl) {
@@ -623,8 +613,18 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                         told_gone.push_back(setter->second);
                     break;
                 }
-                // mtctr rS: from r12 (the slot) or from anything else.
-                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) ctr_from_slot = reg_d(next) == 12;
+                // mtctr rS: from the slot (r12 or a copy of it) or from
+                // anything else.
+                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) ctr_from_slot = ((slot_regs >> reg_d(next)) & 1u) != 0;
+                // `mr rA,rS` (`or rA,rS,rS`) copies the slot; any other write
+                // to a register drops it from the copies.
+                const bool mr = opcode(next) == 31 && ((next >> 1) & 0x3FFu) == 444 && reg_d(next) == ((next >> 11) & 31u);
+                if (mr && ((slot_regs >> reg_d(next)) & 1u)) {
+                    slot_regs |= 1u << reg_a(next);
+                } else {
+                    for (std::uint32_t g = 0; g < 32; ++g)
+                        if (((slot_regs >> g) & 1u) && writes_register(next, g)) slot_regs &= ~(1u << g);
+                }
                 // A jump or return, or r12 loaded again: not this slot's call
                 // (the `beq` past it when the slot is empty is fine).
                 if (opcode(next) == 18 || next == kBlr ||
