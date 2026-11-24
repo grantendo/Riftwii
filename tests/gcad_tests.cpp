@@ -1779,6 +1779,42 @@ static void TestKpadDpdSwitch() {
         text = {{c.base, code.data(), code.size()}};
         EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
     }
+    // The stride overwritten before the add (`li r6,0` after `mulli r6`): the
+    // read no longer depends on the channel, so nothing.
+    {
+        Asm c{0x8054C000u, {}};
+        const std::uint32_t is = is_dpd(c);
+        c.prologue();
+        c.op(0x3FE08075u);  // lis r31,0x8075
+        c.op(0x3BFF0A00u);  // addi r31,r31,0x0A00
+        c.op(0x1CC30688u);  // mulli r6,r3,1672
+        c.op(0x38C00000u);  // li r6,0
+        c.op(0x7FDF3214u);  // add r30,r31,r6
+        c.op(0x881E0642u);  // lbz r0,0x642(r30)
+        c.bl(is);
+        c.blr();
+        code = c.bytes();
+        text = {{c.base, code.data(), code.size()}};
+        EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
+    }
+    // A "WPADIsDpdEnabled" that loads the word and then returns 0 (`li r3,0`
+    // before its blr) isn't the camera query, so nothing is found.
+    {
+        Asm c{0x8054C000u, {}};
+        const std::uint32_t is = c.here();
+        c.prologue();
+        c.op(0x3C808079u);  // lis r4,0x8079
+        c.op(0x5460103Au);  // slwi r0,r3,2
+        c.op(0x38841C10u);  // addi r4,r4,0x1C10
+        c.op(0x7FE4002Eu);  // lwzx r31,r4,r0
+        c.op(0x807F0838u);  // lwz r3,0x838(r31)
+        c.op(0x38600000u);  // li r3,0
+        c.blr();
+        reader(c, is, 0x881E0642u);
+        code = c.bytes();
+        text = {{c.base, code.data(), code.size()}};
+        EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
+    }
     // No WPADIsDpdEnabled: nothing.
     Asm b{0x8054C000u, {}};
     reader(b, 0x8054C000u, 0x881E0642u);
