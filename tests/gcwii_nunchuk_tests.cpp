@@ -322,9 +322,39 @@ void TestWpadStatus() {
     EXPECT_EQ(static_cast<std::int16_t>((out[12] << 8) | out[13]), static_cast<int>(RTGCWII_DOT_SIZE));
 }
 
+// KPAD's raw samples for the stand-in (rtgcwii_unified), newest first, a
+// sample every 5 ticks here: with X held the shake swings through them
+// (Donkey Kong Country Returns reads these), each entry the raw report then
+// the data format in its last-but-one byte; samples from before the shake
+// began are at rest.
+void TestUnified() {
+    rtgcwii w = fresh();
+    w.shake_flip = 40;
+    Pads p;
+    p.plug(0, kGcX);
+    for (std::uint32_t t = 1000; t <= 1100; t += 10) rtgcwii_pads(&w, p.s, t);
+    constexpr std::uint32_t kBytes = 66, kCount = 16;
+    std::uint8_t out[kBytes * kCount];
+    w.format[0] = 3;
+    EXPECT_EQ(rtgcwii_unified(&w, 0, out, kBytes, kCount, 1100, 5, 0), kCount);
+    int plus = 0, minus = 0;
+    for (std::uint32_t i = 0; i < kCount; ++i) {
+        const std::uint8_t* e = out + i * kBytes;
+        const std::int16_t x = static_cast<std::int16_t>((e[2] << 8) | e[3]);
+        if (x > 0) ++plus;
+        if (x < 0) ++minus;
+        EXPECT_EQ(e[40], 1);  // a Wii Remote with a Nunchuk
+        EXPECT_EQ(e[kBytes - 2], 3);
+    }
+    EXPECT_TRUE(plus > 0 && minus > 0);  // the swing, across 80 ticks of samples
+    // Not the stand-in's channel: nothing written.
+    EXPECT_EQ(rtgcwii_unified(&w, 1, out, kBytes, kCount, 1100, 5, 0), 0u);
+}
+
 }  // namespace
 
 int main() {
+    TestUnified();
     TestShakeKeepsTime();
     TestMapping();
     TestWords();

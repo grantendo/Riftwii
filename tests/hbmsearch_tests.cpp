@@ -1269,6 +1269,22 @@ const std::uint32_t kMkwUnified[] = {
     0x39610030u, 0x4BE8894Du, 0x80010034u, 0x7C0803A6u, 0x38210030u, 0x4E800020u,
 };
 
+// Donkey Kong Country Returns' (SF8E01) KPADGetUnifiedWpadStatus at
+// 0x804aa030, word for word: the later KPAD's, whose ring can be longer
+// than 16 (`addi r0,r3,16; cmplw r5,r0`), 66-byte statuses.
+const std::uint32_t kDkcrUnified[] = {
+    0x9421FFD0u, 0x7C0802A6u, 0x90010034u, 0x39610030u, 0x4BFCC8CDu, 0x1C030688u,
+    0x3C60805Du, 0x7C992378u, 0x3863BCE8u, 0x7FC30214u, 0x7CBA2B78u, 0x807E05A4u,
+    0x38030010u, 0x7C050040u, 0x40810008u, 0x7C1A0378u, 0x4800CEC1u, 0x8B7E017Au,
+    0x7C7C1B78u, 0x3BE0FFFCu, 0x48000068u, 0x2C1B0000u, 0x40820010u, 0x807E05A4u,
+    0x3B63000Fu, 0x48000008u, 0x3B7BFFFFu, 0x281B0010u, 0x41800018u, 0x381BFFF0u,
+    0x807E05A0u, 0x1C000042u, 0x7FA30214u, 0x48000010u, 0x1C1B0042u, 0x7C7E0214u,
+    0x3BA30180u, 0x4801FA0Du, 0x2C030003u, 0x41820008u, 0x9BFD0029u, 0x7F23CB78u,
+    0x7FA4EB78u, 0x38A00042u, 0x4BB59F21u, 0x3B390042u, 0x2C1A0000u, 0x3B5AFFFFu,
+    0x4082FF94u, 0x7F83E378u, 0x4800CE79u, 0x39610030u, 0x4BFCC859u, 0x80010034u,
+    0x7C0803A6u, 0x38210030u, 0x4E800020u,
+};
+
 // A function that also limits a count to 16 (`cmplwi r5,16`) but indexes
 // no KPAD block and copies nothing: not taken.
 void put_count_limiter(Section& t) {
@@ -1288,6 +1304,14 @@ void TestKpadUnified() {
         const riftwii::KpadUnified u = riftwii::find_kpad_unified({t.range()});
         EXPECT_EQ(u.address, 0x8019808cu);
         EXPECT_EQ(u.status_bytes, 56u);
+    }
+    {
+        Section t{0x804aa030, {}};
+        for (std::uint32_t w : kDkcrUnified) t.put(w);
+        put_count_limiter(t);
+        const riftwii::KpadUnified u = riftwii::find_kpad_unified({t.range()});
+        EXPECT_EQ(u.address, 0x804aa030u);
+        EXPECT_EQ(u.status_bytes, 66u);
     }
     {
         // Not there (most games): nothing.

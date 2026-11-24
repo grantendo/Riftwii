@@ -585,6 +585,7 @@ uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, 
          * was, as for the HOME Menu's stand-in. */
         const uint32_t worked = w->worked[channel], delivered = w->delivered[channel];
         const uint32_t trig = w->trig[channel], release = w->release[channel];
+        const uint32_t jump = w->shake_jump;  /* a raw report has no speed: the next KPAD status keeps it */
 #ifdef RT_PAD_FORM_SIDEWAYS
         (void)now;
         rtgcwii_sideways(w, channel, &f);
@@ -601,6 +602,7 @@ uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, 
         w->delivered[channel] = delivered;
         w->trig[channel] = trig;
         w->release[channel] = release;
+        w->shake_jump = jump;
     }
     for (i = 0; i < bytes; ++i) out[i] = 0;
     rtgcwii_put16(out, (int32_t)(f.hold & 0xFFFFu));
@@ -631,7 +633,50 @@ uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, 
 #endif
     return bytes;
 }
+
+uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t entry_bytes, uint32_t count,
+                         uint32_t now, uint32_t sample_ticks, int kpad_camera) {
+    uint8_t first[RTGCWII_WPAD_FS_BYTES];
+    uint32_t i, k, n;
+    if (channel >= RTGCWII_CHANNELS || entry_bytes < RTGCWII_WPAD_FS_BYTES + 2u || count == 0) return 0;
+    n = rtgcwii_wpad_status(w, channel, first, now, kpad_camera);
+    if (n == 0) return 0;
+    for (i = 0; i < count; ++i) {
+        uint8_t* e = out + i * entry_bytes;
+        for (k = 0; k < entry_bytes; ++k) e[k] = 0;
+        for (k = 0; k < n; ++k) e[k] = first[k];
+        e[entry_bytes - 2u] = (uint8_t)w->format[channel];
+        /* The shake at each sample's own time: a step every shake_flip
+         * ticks from when it began; a sample from before it, at rest. */
+        if (w->shake[channel] != 0 && w->shake_flip != 0 && w->shake_from[channel] != 0) {
+            int32_t acc[3], value, speed;
+            const uint32_t since = rtgcwii_elapsed(now, w->shake_from[channel]);
+            if (i * sample_ticks <= since) {
+                const uint32_t steps = (since - i * sample_ticks) / w->shake_flip;
+                rtgcwii_shake(RTGCWII_SHAKE_FLIP * steps + 1u, 0, acc, &value, &speed);
+            } else {
+                acc[0] = 0;
+                acc[1] = -RTHOME_AXIS_FULL;
+                acc[2] = 0;
+            }
+            rtgcwii_put_acc(e + 2, acc);
+        }
+    }
+    return count;
+}
 #else
+uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t entry_bytes, uint32_t count,
+                         uint32_t now, uint32_t sample_ticks, int kpad_camera) {
+    (void)w;
+    (void)channel;
+    (void)out;
+    (void)entry_bytes;
+    (void)count;
+    (void)now;
+    (void)sample_ticks;
+    (void)kpad_camera;
+    return 0;
+}
 uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera) {
     (void)w;
     (void)channel;

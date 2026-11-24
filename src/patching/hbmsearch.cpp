@@ -889,13 +889,20 @@ std::uint32_t find_wpad_probe(const std::vector<CodeRange>& text) {
 
 KpadUnified find_kpad_unified(const std::vector<CodeRange>& text) {
     constexpr std::uint32_t kCmplwiR5By16 = 0x28050010u;
+    // The later KPAD's (Donkey Kong Country Returns'): its ring can be longer
+    // than 16, so the count is checked against the ring's length plus 16
+    // (`addi r0,r3,16; cmplw r5,r0`).
+    constexpr std::uint32_t kAddiR0R3By16 = 0x38030010u;
+    constexpr std::uint32_t kCmplwR5R0 = 0x7C050040u;
     KpadUnified found;
     unsigned matches = 0;
     std::vector<std::uint32_t> checked;
     for (const CodeRange& r : text) {
         if (r.bytes == nullptr) continue;
         for (std::size_t k = 0; k * 4 + 4 <= r.size; ++k) {
-            if (be32(r.bytes + 4 * k) != kCmplwiR5By16) continue;
+            const bool later = k * 4 + 8 <= r.size && be32(r.bytes + 4 * k) == kAddiR0R3By16 &&
+                               be32(r.bytes + 4 * (k + 1)) == kCmplwR5R0;
+            if (be32(r.bytes + 4 * k) != kCmplwiR5By16 && !later) continue;
             const std::uint32_t start = function_start(text, r.address + static_cast<std::uint32_t>(4 * k), 24);
             if (start == 0 || std::find(checked.begin(), checked.end(), start) != checked.end()) continue;
             checked.push_back(start);
@@ -911,6 +918,7 @@ KpadUnified find_kpad_unified(const std::vector<CodeRange>& text) {
                     if (simm(w) == 16) limit = true;
                     if (reg_d(w) == 5 && n_copies < 8) copies[n_copies++] = simm(w);
                 }
+                if (w == kAddiR0R3By16) limit = true;  // the later KPAD's limit
                 return true;
             });
             std::uint32_t size = 0;

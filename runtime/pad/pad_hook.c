@@ -1318,6 +1318,19 @@ static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold, const int32_t* 
 }
 #endif
 
+/* A later KPAD's longer entry (66 bytes: Donkey Kong Country Returns,
+ * Batman: The Brave and the Bold) keeps its format in its own last-but-one
+ * byte, past the 56-byte layout's that the writers above use. */
+static void pad_unified_format(const struct rt_pad_context* c, uint8_t* entry) {
+    uint32_t k;
+    uint8_t format;
+    if (c->kpad_unified_bytes <= RTHOME_WPAD_STATUS_BYTES) return;
+    format = entry[RTHOME_WPAD_STATUS_BYTES - 2u];
+    entry[RTHOME_WPAD_STATUS_BYTES - 2u] = 0;
+    for (k = RTHOME_WPAD_STATUS_BYTES; k < c->kpad_unified_bytes; ++k) entry[k] = 0;
+    entry[c->kpad_unified_bytes - 2u] = format;
+}
+
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count) {
     uint32_t msr, t, stand_in, hold, trig, release, remote_hold, remote_trig, remote_release;
     int32_t axes[6], pointer[2], i;
@@ -1338,10 +1351,29 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
             const int32_t* own = (uint32_t)chan < RTGCWII_CHANNELS && ((w->camera >> (uint32_t)chan) & 1u)
                                      ? w->pointer[chan]
                                      : 0;
-            for (i = 0; i < count; ++i)
-                pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, hold, own);
+            /* KPAD's raw samples, each at its own time (a sample every
+             * 5 ms, rtgcwii_unified): a shake swings through them as a
+             * real Wii Remote's do, which Donkey Kong Country Returns'
+             * "shake to start" reads; then the device and format as the
+             * KPAD read has them. */
+            rtgcwii_unified((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan, status, c->kpad_unified_bytes,
+                            (uint32_t)count, t, 5u * c->ticks_per_ms, own != 0);
+            for (i = 0; i < count; ++i) {
+                uint8_t* entry = status + (uint32_t)i * c->kpad_unified_bytes;
+                uint8_t raw[RTHOME_WPAD_STATUS_BYTES];
+                uint32_t k;
+                /* The device and format the static writer gives, over the
+                 * sample's buttons, accelerometer and dots. */
+                pad_gcwii_wpad_status(raw, hold, own);
+                entry[40] = raw[40];
+                for (k = RTHOME_WPAD_STATUS_BYTES - 2u; k < c->kpad_unified_bytes; ++k) entry[k] = 0;
+                entry[c->kpad_unified_bytes - 2u] = raw[RTHOME_WPAD_STATUS_BYTES - 2u];
+            }
 #else
-            for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
+            for (i = 0; i < count; ++i) {
+                rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
+                pad_unified_format(c, status + (uint32_t)i * c->kpad_unified_bytes);
+            }
 #endif
         }
         interrupts_restore(msr);
@@ -1360,13 +1392,18 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         const int32_t* at = rthome_menu_open(&c->home) ? pointer
                             : ((w->camera >> (uint32_t)chan) & 1u) ? w->pointer[chan]
                                                                    : 0;
-        for (i = 0; i < count; ++i)
+        for (i = 0; i < count; ++i) {
             pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);
+            pad_unified_format(c, status + (uint32_t)i * c->kpad_unified_bytes);
+        }
         interrupts_restore(msr);
         return;
     }
 #endif
-    for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, hold);
+    for (i = 0; i < count; ++i) {
+        rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, hold);
+        pad_unified_format(c, status + (uint32_t)i * c->kpad_unified_bytes);
+    }
     interrupts_restore(msr);
 }
 #endif

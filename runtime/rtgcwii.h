@@ -376,5 +376,14 @@ void rtgcwii_retell(struct rtgcwii* w, uint32_t now);
  * Returns the bytes written, 0 (none) where the stand-in isn't on. In the
  * Classic Controller form it writes nothing. */
 uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera);
+/* KPADGetUnifiedWpadStatus's raw samples for the stand-in's channel, newest
+ * first: `count` entries of `entry_bytes` (the raw report, rtgcwii_wpad_status,
+ * then the data format in the entry's last-but-one byte), each
+ * `sample_ticks` older than the one before, so a shake swings through them
+ * as a real Wii Remote's samples do (Donkey Kong Country Returns' "shake
+ * to start" reads these, not KPAD's statuses). 0 when the channel isn't
+ * the stand-in's (nothing written). */
+uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t entry_bytes, uint32_t count,
+                         uint32_t now, uint32_t sample_ticks, int kpad_camera);
 
 #endif
