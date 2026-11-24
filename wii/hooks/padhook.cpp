@@ -1045,10 +1045,14 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
                 if (pos % align != 0) pos += align - pos % align;
                 const std::uint64_t last = std::uint64_t(r.address) + r.size - patch.original.size();
                 while (pos <= last) {
-                    // The first byte as loaded first (cheap), then the whole
-                    // pattern with the earlier writes over it.
-                    if ((r.bytes[pos - r.address] == patch.original[0] || near_write(pos)) &&
-                        matches_at(static_cast<std::uint32_t>(pos), patch.original)) {
+                    // Where no earlier write reaches, the game's own bytes
+                    // decide (a plain compare); near one, the pattern is
+                    // checked with the earlier writes over it.
+                    const std::uint8_t* raw = r.bytes + (pos - r.address);
+                    const bool overlaid = near_write(pos);
+                    if (overlaid ? matches_at(static_cast<std::uint32_t>(pos), patch.original)
+                                 : raw[0] == patch.original[0] &&
+                                       std::memcmp(raw, patch.original.data(), patch.original.size()) == 0) {
                         // One more write than the planning follows: incomplete
                         // (a plan with exactly the limit is complete).
                         if (found >= kMaxMatches || out.writes.size() >= kMaxWrites) {
