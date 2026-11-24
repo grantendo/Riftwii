@@ -77,6 +77,13 @@ void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join) 
     w->told = (w->told | *join) & ~*leave;
 }
 
+int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
+    if (w->real == 0) return 0;
+    if (w->real_checked != 0 && rtgcwii_elapsed(now, w->real_checked) < 250u * ticks_per_ms) return 0;
+    w->real_checked = now | 1u;
+    return 1;
+}
+
 int rtgcwii_should_read(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
     if (w->reading) return 0;
     if (w->game_read != 0) {

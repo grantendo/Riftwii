@@ -412,12 +412,29 @@ void TestDroppedReportAndHomeKeep() {
 
 }  // namespace
 
+// A real controller's channels are checked with the game's WPADProbe every
+// 250 ms while one is real, whether or not the game reads them (#609).
+static void TestRealCheckDue() {
+    rtgcwii w{};
+    const std::uint32_t ms = 10;  // ticks per ms
+    EXPECT_TRUE(!rtgcwii_real_check_due(&w, 1000, ms));  // no real controller: nothing to check
+    w.real = 1u << 2;
+    EXPECT_TRUE(rtgcwii_real_check_due(&w, 1000, ms));
+    EXPECT_TRUE(!rtgcwii_real_check_due(&w, 1000 + 249 * ms, ms));
+    EXPECT_TRUE(rtgcwii_real_check_due(&w, 1000 + 250 * ms, ms));
+    // The Wii Remote found gone: the channel is the stand-in's again.
+    rtgcwii_probed(&w, 2, -1);
+    EXPECT_TRUE(w.real == 0);
+    EXPECT_TRUE(!rtgcwii_real_check_due(&w, 1000 + 600 * ms, ms));
+}
+
 int main() {
     TestComesAndGoes();
     TestRealControllerWins();
     TestButtonsAndSticks();
     TestHomeOnOwnChannel();
     TestShouldRead();
+    TestRealCheckDue();
     TestPressBetweenReadsAndLateCallback();
     TestOneChangeAtATimeAndKpadRead();
     TestEmptyReadsWithoutError();

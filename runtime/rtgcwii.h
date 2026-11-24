@@ -50,6 +50,9 @@ struct rtgcwii {
      * how many in a row. */
     uint32_t empty_since[RTGCWII_CHANNELS];
     uint32_t empty_reads[RTGCWII_CHANNELS];
+    /* When a real controller's channels were last checked with the game's
+     * own WPADProbe (low bit set), 0: never (rtgcwii_real_check_due). */
+    uint32_t real_checked;
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -64,6 +67,14 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
  * the stand-in. When it goes again, the stand-in is announced afresh (the
  * game's library told the game that channel's controller left). */
 void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result);
+
+/* Whether the channels a real controller holds are due a check of their
+ * own (the game's WPADProbe, answered through rtgcwii_probed): some games
+ * stop reading a channel once their library reports it gone, so its
+ * hooked reads and probes never tell the stand-in the Wii Remote turned
+ * off, and the GameCube controller would stay locked out. Every 250 ms
+ * while a channel is real; `now` is noted when it is due. */
+int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
 
 /* Whether the stand-in answers on `channel` now. */
 int rtgcwii_on(const struct rtgcwii* w, uint32_t channel);

@@ -37,8 +37,15 @@ uint32_t pad_on_restart(struct rt_pad_context* c);
 #endif
 uint32_t pad_on_si_probe(struct rt_pad_context* c, uint32_t chan, uint32_t type);
 #ifndef RT_PAD_NO_HOME
+#ifdef RT_PAD_STANDIN
+int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error,
+                    int32_t count);
+#else
 int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error);
+#endif
 int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int32_t result);
+/* The game's own WPADProbe (pad_entry.S: its first word, then the rest of it). */
+int32_t pad_replay_probe(int32_t chan, uint32_t* type);
 void pad_on_menu(struct rt_pad_context* c);
 int32_t pad_on_select(struct rt_pad_context* c, int32_t result);
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count);
@@ -605,6 +612,25 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     uint32_t msr, i;
     int read;
+    /* A real Wii Remote that took a channel is checked now and then with
+     * the game's own WPADProbe (its original, through the hook's replay),
+     * so one that turned off gives the channel back even in a game that
+     * stops reading a channel its library reported gone, whose hooked
+     * reads and probes then never come (rtgcwii_real_check_due). */
+    msr = interrupts_off();
+    read = rtgcwii_real_check_due(w, now(), c->ticks_per_ms);
+    interrupts_restore(msr);
+    if (read) {
+        for (i = 0; i < RTGCWII_CHANNELS; ++i) {
+            uint32_t type = 0;
+            int32_t result;
+            if (!((w->real >> i) & 1u)) continue;
+            result = pad_replay_probe((int32_t)i, &type);
+            msr = interrupts_off();
+            rtgcwii_probed(w, i, result);
+            interrupts_restore(msr);
+        }
+    }
     msr = interrupts_off();
     read = rtgcwii_should_read(w, now(), c->ticks_per_ms);
     if (read) w->reading = 1;
@@ -726,10 +752,13 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     return 1;
 }
 #else
-int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error) {
+int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error,
+                    int32_t count) {
     uint32_t msr, t, stand_in;
     if (!c->home_on && !c->gcwii) return result;
-    if (chan < 0 || !pad_in_ram(status) || c->kpad_status_bytes < PAD_KPAD_END) return result;
+    /* A read asking for no samples (`count`, the caller's room for them)
+     * gets none written. */
+    if (chan < 0 || count <= 0 || !pad_in_ram(status) || c->kpad_status_bytes < PAD_KPAD_END) return result;
     if (c->gcwii) {
         /* What the game's own read found says first (a read that brought
          * samples is a real controller; "no controller" gives the channel
@@ -1157,8 +1186,30 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
     interrupts_restore(msr);
 #ifndef RT_PAD_NO_HOME
 #ifdef RT_PAD_STANDIN
-    if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
-    if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
+    if (leave != RTHOME_NO_CHANNEL || join != RTHOME_NO_CHANNEL) {
+        /* While the HOME Menu's stand-in is told gone or connected, a
+         * PADRead in the game's callback doesn't tell the permanent
+         * stand-in's news (pad_gcwii_tell leaves it while `telling`): a
+         * GameCube controller taking the channel the HOME Menu's stand-in
+         * held is told connected only once the gone has returned, so the
+         * game's disconnect callback can't finish after it and leave the
+         * channel marked disconnected (Cake's review). */
+        struct rtgcwii* gw = c->gcwii ? (struct rtgcwii*)(uintptr_t)c->gcwii : 0;
+        uint32_t was = 0, flags;
+        if (gw) {
+            flags = interrupts_off();
+            was = gw->telling;
+            gw->telling = 1;
+            interrupts_restore(flags);
+        }
+        if (leave != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, leave, -1);
+        if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
+        if (gw) {
+            flags = interrupts_off();
+            gw->telling = was;
+            interrupts_restore(flags);
+        }
+    }
     if (c->gcwii && c->kpad_connect != 0) pad_gcwii_tell(c);
 #else
     if (leave != RTHOME_NO_CHANNEL) pad_tell_connect(c, leave, -1);
