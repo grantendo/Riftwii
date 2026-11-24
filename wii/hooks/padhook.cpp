@@ -1009,23 +1009,27 @@ bool pack_reads_gc_ports(const std::vector<MemoryPatch>& patches) {
     const std::vector<bool> applies = patches_that_apply(patches);
     const auto placed = [&](std::size_t i) {
         const MemoryPatch& patch = patches[i];
-        return applies[i] && patch.has_offset && !patch.search && !patch.value.empty();
+        return applies[i] && patch.has_offset && !patch.search && !patch.ocarina && !patch.value.empty();
     };
     for (std::size_t i = 0; i < patches.size(); ++i) {
         const MemoryPatch& patch = patches[i];
         if (patch.value.empty() || !applies[i]) continue;
         // A patch at a known place is judged as it ends up, with any later
         // patch written over part of it (one that replaces its port reads
-        // leaves none); a search patch's place isn't known, so as written.
+        // leaves none); a search or ocarina patch's place isn't known (an
+        // ocarina one goes where its bytes match, as a branch), so as written.
         std::vector<std::uint8_t> bytes = patch.value;
         if (placed(i)) {
             const std::uint32_t at = memory_patch_target(patch);
             for (std::size_t j = i + 1; j < patches.size(); ++j) {
                 if (!placed(j)) continue;
-                const std::uint32_t later = memory_patch_target(patches[j]);
-                for (std::size_t b = 0; b < patches[j].value.size(); ++b) {
-                    const std::uint32_t where = later + static_cast<std::uint32_t>(b);
-                    if (where >= at && where - at < bytes.size()) bytes[where - at] = patches[j].value[b];
+                // Only where the two overlap.
+                const std::uint64_t later = memory_patch_target(patches[j]);
+                const std::uint64_t from = std::max<std::uint64_t>(at, later);
+                const std::uint64_t to = std::min<std::uint64_t>(std::uint64_t(at) + bytes.size(),
+                                                                 later + patches[j].value.size());
+                for (std::uint64_t where = from; where < to; ++where) {
+                    bytes[where - at] = patches[j].value[where - later];
                 }
             }
         }
