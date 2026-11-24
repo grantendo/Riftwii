@@ -986,6 +986,8 @@ struct PackWrites {
     std::vector<PackWrite> writes;
     bool incomplete = false;  // more writes than the planning follows (plan_pack_writes)
     std::vector<CodeRange> program;  // the game's program as loaded (its DOL's sections)
+    // Where file patches that apply go (their bytes aren't read yet here).
+    std::vector<std::uint32_t> files;
 };
 
 PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::vector<CodeRange>& image) {
@@ -1017,6 +1019,15 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
     };
     for (std::size_t i = 0; i < patches.size(); ++i) {
         const MemoryPatch& patch = patches[i];
+        // A file patch: its guard judged like any other's, its place noted.
+        if (!patch.valuefile.empty() && patch.value.empty()) {
+            if (patch.has_offset && !patch.search && !patch.ocarina &&
+                matches_at(memory_patch_target(patch), patch.original)) {
+                out.applies[i] = true;
+                out.files.push_back(memory_patch_target(patch));
+            }
+            continue;
+        }
         if (patch.ocarina || patch.value.empty()) continue;
         if (patch.search) {
             if (patch.original.empty()) continue;
@@ -1159,19 +1170,10 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
                 if (address >= r.address && address - r.address < r.size) return true;
             }
         }
-        // (A file patch whose `original` guard doesn't match the game as
-        // loaded writes nothing; its file's length isn't known until it's
-        // read, so the largest a file may be stands in for it.)
-        for (const MemoryPatch& p : patches) {
-            if (!p.has_offset || p.search || p.ocarina || p.valuefile.empty() || !p.value.empty()) continue;
-            const std::uint32_t at = memory_patch_target(p);
-            bool guard = true;
-            for (std::size_t g = 0; g < p.original.size() && guard; ++g) {
-                const std::uint32_t where = at + static_cast<std::uint32_t>(g);
-                guard = where >= 0x80000000u && where < 0x81800000u &&
-                        *reinterpret_cast<const volatile std::uint8_t*>(where) == p.original[g];
-            }
-            if (guard && address >= at && address - at < kMaxMemoryValueBytes) return true;
+        // (Only file patches that apply, as planned; a file's length isn't
+        // known until it's read, so the largest a file may be stands in.)
+        for (const std::uint32_t at : plan.files) {
+            if (address >= at && address - at < kMaxMemoryValueBytes) return true;
         }
         for (const PackWrite& w : plan.writes) {
             if (address >= w.at && address - w.at < patches[w.patch].value.size()) return true;
