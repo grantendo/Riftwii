@@ -190,6 +190,17 @@ int rtgcwii_on(const struct rtgcwii* w, uint32_t channel) {
     return ((w->present & ~w->real) >> channel) & 1u;
 }
 
+uint32_t rtgcwii_shaped(const struct rtgcwii* w) { return (w->present & ~w->real) | w->told | w->home_shaped; }
+
+void rtgcwii_home_took(struct rtgcwii* w, uint32_t channel) {
+    w->home_shaped = 0;
+    if (channel < RTGCWII_CHANNELS) w->home_shaped = rtgcwii_shaped(w) & (1u << channel);
+}
+
+int rtgcwii_home_keeps_shape(const struct rtgcwii* w, uint32_t channel) {
+    return channel < RTGCWII_CHANNELS && ((w->home_shaped >> channel) & 1u);
+}
+
 void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join) {
     const uint32_t now_on = w->present & ~w->real;
     *join = now_on & ~w->told;

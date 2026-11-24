@@ -97,6 +97,20 @@ int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_m
 /* Whether the stand-in answers on `channel` now. */
 int rtgcwii_on(const struct rtgcwii* w, uint32_t channel);
 
+/* The channels the game knows as this stand-in's: held now, told of and
+ * not yet told gone, and the HOME Menu's stand-in's own when it took one
+ * of these. */
+uint32_t rtgcwii_shaped(const struct rtgcwii* w);
+
+/* The HOME Menu's stand-in takes `channel` (RTGCWII_CHANNELS or more:
+ * none): the shape it takes it in (this stand-in's, or a Classic
+ * Controller's) is kept until it next takes one, whatever is plugged in or
+ * unplugged meanwhile (Cake's review of #610). */
+void rtgcwii_home_took(struct rtgcwii* w, uint32_t channel);
+
+/* Whether the HOME Menu's stand-in on `channel` has this stand-in's shape. */
+int rtgcwii_home_keeps_shape(const struct rtgcwii* w, uint32_t channel);
+
 /* The game's connect callback: the channels to report gone (*leave) and
  * connected (*join), one bit each, since it was last told. A channel a real
  * controller took is neither: the game's own library tells it about that. */

@@ -609,7 +609,6 @@ struct pad_classic {
 
 static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
 #ifdef RT_PAD_FORM_REMOTE
-static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c);
 static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
 /* Whether the HOME Menu's stand-in on `chan` keeps this stand-in's shape:
  * as it was when the stand-in took the channel (w->home_shaped), not as
@@ -617,8 +616,7 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
  * while the HOME Menu is open doesn't turn its Classic Controller into a
  * Wii Remote with no disconnect between (Cake's review of #610). */
 static int pad_home_keeps_shape(const struct rt_pad_context* c, uint32_t chan) {
-    return c->gcwii && chan < RTGCWII_CHANNELS &&
-           ((((const struct rtgcwii*)(uintptr_t)c->gcwii)->home_shaped >> chan) & 1u);
+    return c->gcwii && rtgcwii_home_keeps_shape((const struct rtgcwii*)(uintptr_t)c->gcwii, chan);
 }
 #endif
 
@@ -757,16 +755,6 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
 #endif
 }
 
-/* The channels the game knows as this stand-in's: held now, or told of and
- * not yet told it's gone (its controller unplugged under the HOME Menu), so
- * the HOME Menu's stand-in there keeps the shape until the game hears; and
- * the HOME stand-in's own channel when it took one of these, so a game
- * with no connect callback (nothing told) keeps that shape too. */
-static uint32_t pad_gcwii_shaped(const struct rt_pad_context* c) {
-    const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
-    return c->gcwii ? pad_gcwii_own(c) | w->told | w->home_shaped : 0u;
-}
-
 /* The HOME Menu's stand-in on a channel this stand-in holds: the game knows
  * a Wii Remote (with a Nunchuk, or sideways) there, so the status keeps that shape
  * (pad_gcwii_status) and carries the HOME stand-in's Wii Remote words (its
@@ -879,13 +867,9 @@ static void pad_home_check(struct rt_pad_context* c, const uint8_t* status, uint
         c->home_judged = 0;
 #ifdef RT_PAD_FORM_REMOTE
         /* The shape it takes the channel in stays its own until it next
-         * takes one (pad_gcwii_shaped). */
-        if (c->gcwii) {
-            struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
-            w->home_shaped = 0;
-            if (c->home.channel < RTGCWII_CHANNELS)
-                w->home_shaped = pad_gcwii_shaped(c) & (1u << c->home.channel);
-        }
+         * takes one (rtgcwii_home_took: the channels the game knows as this
+         * stand-in's, rtgcwii_shaped, held now or told of and not yet told gone). */
+        if (c->gcwii) rtgcwii_home_took((struct rtgcwii*)(uintptr_t)c->gcwii, c->home.channel);
 #endif
     }
 }
