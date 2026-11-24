@@ -168,6 +168,50 @@ void TestPointer() {
     EXPECT_EQ(f.pointer[0], RTGCWII_POINTER_EDGE);  // still where it was left
 }
 
+// With shake_flip (the loader's 33 ms), the shake keeps time, not samples:
+// read every 4 ms or every 16 ms, it flips every shake_flip ticks, and only
+// the sample a flip lands on has the jump in speed (Donkey Kong Country
+// Returns' shake to start took nothing faster than a 15 Hz shake).
+void TestShakeKeepsTime() {
+    for (std::uint32_t step : {4u, 16u}) {
+        rtgcwii w = fresh();
+        w.shake_flip = 33;
+        Pads p;
+        p.plug(0, kGcX);
+        rtgcwii_fs f;
+        int flips = 0, jumps = 0;
+        std::int32_t last = 0;
+        for (std::uint32_t t = 1000; t < 1000 + 330; t += step) {
+            rtgcwii_pads(&w, p.s, t);
+            rtgcwii_nunchuk(&w, 0, t, &f);
+            if (t > 1000 && f.acc[0] != last) ++flips;
+            if (f.acc_speed != 0) ++jumps;
+            last = f.acc[0];
+        }
+        EXPECT_TRUE(flips >= 9 && flips <= 10);  // 330 ms / 33 ms, whatever the step
+        EXPECT_EQ(jumps, flips);
+    }
+    // Samples every 10 ms, reads every 20 ms (off the samples): each step's
+    // jump waits for the next read, never lost to a later sample
+    // (CodeRabbit CLI, #610).
+    {
+        rtgcwii w = fresh();
+        w.shake_flip = 40;
+        Pads p;
+        p.plug(0, kGcX);
+        rtgcwii_fs f;
+        int jumps = 0;
+        for (std::uint32_t t = 1000; t < 1000 + 400; t += 10) {
+            rtgcwii_pads(&w, p.s, t);
+            if ((t / 10) % 2 == 1) {
+                rtgcwii_nunchuk(&w, 0, t + 5, &f);
+                if (f.acc_speed != 0) ++jumps;
+            }
+        }
+        EXPECT_TRUE(jumps >= 9 && jumps <= 10);  // 400 ms / 40 ms
+    }
+}
+
 // X held shakes the Wii Remote: the axes swing past 3 g and flip every
 // RTGCWII_SHAKE_FLIP samples, a flip a jump in speed; let go, it's still.
 void TestShake() {
@@ -180,10 +224,18 @@ void TestShake() {
     for (std::uint32_t i = 0; i < 4 * RTGCWII_SHAKE_FLIP; ++i) {
         rtgcwii_pads(&w, p.s, 1 + i * 16);
         rtgcwii_nunchuk(&w, 0, 1 + i * 16, &f);
-        EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
-        EXPECT_TRUE(f.acc[0] == RTGCWII_SHAKE_G || f.acc[0] == -RTGCWII_SHAKE_G);
-        EXPECT_EQ(f.acc[1], f.acc[0]);
-        EXPECT_EQ(f.acc[2], -f.acc[0]);
+        if ((i + 1) / RTGCWII_SHAKE_FLIP == RTGCWII_SHAKE_STEPS - 1u) {
+            // The fifth step (sample 16): back at rest.
+            EXPECT_EQ(f.acc_value, RTHOME_AXIS_FULL);
+            EXPECT_EQ(f.acc[0], 0);
+            EXPECT_EQ(f.acc[1], -RTHOME_AXIS_FULL);
+            EXPECT_EQ(f.acc[2], 0);
+        } else {
+            EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
+            EXPECT_TRUE(f.acc[0] == RTGCWII_SHAKE_G || f.acc[0] == -RTGCWII_SHAKE_G);
+            EXPECT_EQ(f.acc[1], f.acc[0]);
+            EXPECT_EQ(f.acc[2], -f.acc[0]);
+        }
         if (i > 0 && f.acc[0] != last) {
             ++flips;
             EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_VALUE);
@@ -273,6 +325,7 @@ void TestWpadStatus() {
 }  // namespace
 
 int main() {
+    TestShakeKeepsTime();
     TestMapping();
     TestWords();
     TestStickAndRest();

@@ -483,7 +483,24 @@ void TestQuietDue() {
     EXPECT_EQ(rtgcwii_quiet_due(&w, 20100, ms), 0);
 }
 
+// Each probe result counts (rtgcwii_probe_count), busy doesn't: a caller
+// that took the count before a slow probe applies its answer only if no
+// newer one came in between (CodeRabbit on #610).
+void TestProbeCount() {
+    rtgcwii w = fresh();
+    EXPECT_EQ(rtgcwii_probe_count(&w, 1), 0u);
+    rtgcwii_probed(&w, 1, 0);
+    EXPECT_EQ(rtgcwii_probe_count(&w, 1), 1u);
+    rtgcwii_probed(&w, 1, -2);  // busy: no answer
+    EXPECT_EQ(rtgcwii_probe_count(&w, 1), 1u);
+    rtgcwii_probed(&w, 1, -1);
+    EXPECT_EQ(rtgcwii_probe_count(&w, 1), 2u);
+    EXPECT_EQ(rtgcwii_probe_count(&w, 0), 0u);
+    EXPECT_EQ(rtgcwii_probe_count(&w, RTGCWII_CHANNELS), 0u);
+}
+
 int main() {
+    TestProbeCount();
     TestComesAndGoes();
     TestQuietDue();
     TestHomeKeepsShapeAcrossPlug();
