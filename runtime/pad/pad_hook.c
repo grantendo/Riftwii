@@ -1161,12 +1161,10 @@ static void pad_put_dots(uint8_t* obj, const int32_t* pointer) {
 }
 
 /* `pointer`: where the KPAD read on this channel points, for the dots (the
- * permanent stand-in's own; while the HOME Menu is open on it, the HOME
- * Menu's pointer); 0 for no dots. */
-static void pad_gcwii_wpad_status(struct rt_pad_context* c, uint32_t chan, uint8_t* entry, uint32_t hold,
-                                  const int32_t* pointer) {
-    const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
-    const int camera = chan < RTGCWII_CHANNELS && ((w->camera >> chan) & 1u);
+ * permanent stand-in's own with the camera on; while the HOME Menu is open
+ * on it, the HOME Menu's pointer); 0 for no dots, in the format without the
+ * camera's. */
+static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold, const int32_t* pointer) {
     uint32_t i;
     for (i = 0; i < RTHOME_WPAD_STATUS_BYTES; ++i) entry[i] = 0;
     entry[0] = (uint8_t)(hold >> 8);
@@ -1176,7 +1174,9 @@ static void pad_gcwii_wpad_status(struct rt_pad_context* c, uint32_t chan, uint8
      * pointer as the KPAD read has it (Cake's review of #610). */
     if (pointer) pad_put_dots(entry + 8, pointer);
     entry[40] = PAD_DEV_STANDIN;
-    entry[54] = (uint8_t)(camera ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
+    /* With dots, the camera's format they come in (the HOME Menu open on a
+     * channel whose camera the game left off too: its pointer is seen). */
+    entry[54] = (uint8_t)(pointer ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
 }
 #endif
 
@@ -1200,7 +1200,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
                                      ? w->pointer[chan]
                                      : 0;
             for (i = 0; i < count; ++i)
-                pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, hold, own);
+                pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, hold, own);
 #else
             for (i = 0; i < count; ++i) rthome_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, 0, hold);
 #endif
@@ -1221,7 +1221,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
                             : ((w->camera >> (uint32_t)chan) & 1u) ? w->pointer[chan]
                                                                    : 0;
         for (i = 0; i < count; ++i)
-            pad_gcwii_wpad_status(c, (uint32_t)chan, status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);
+            pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);
         interrupts_restore(msr);
         return;
     }
