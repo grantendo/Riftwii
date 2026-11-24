@@ -185,16 +185,19 @@ uint32_t rtgcwii_float_bits(int32_t numerator);
 
 /* The stand-in's Wii Remote + Nunchuk on `channel` (RT_PAD_FORM_NUNCHUK),
  * for the game's KPAD read at `now`: the same words for every read until
- * the next sample, as rtgcwii_classic gives. All 0 (a still controller,
- * pointer hidden) where the stand-in isn't on. */
+ * the next sample, as rtgcwii_classic gives. Holding X shakes the Wii
+ * Remote's accelerometer; the Nunchuk's stays at rest. Where the stand-in
+ * isn't on, the buttons, stick and pointer are 0 (pointer hidden), and both
+ * accelerometers read a still controller: 1 g along -Y. */
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out);
 
 /* The stand-in's sideways Wii Remote on `channel` (RT_PAD_FORM_SIDEWAYS),
  * for the game's KPAD read: the words, the acceleration (tilted by the
  * C-stick's left and right while the game has the camera off, shaking while
  * R is held) and, while the game has the camera on, the pointer the C-stick
- * moves. The Nunchuk's fields stay at rest. All 0 where the stand-in isn't
- * on. */
+ * moves. The Nunchuk's fields stay at rest. Where the stand-in isn't on,
+ * the buttons and pointer are 0 and the accelerometer reads a still
+ * controller: 1 g along -Y. */
 void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out);
 
 /* The stand-in's Classic Controller on `channel`, for the game's KPAD read:

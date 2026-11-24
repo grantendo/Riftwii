@@ -45,12 +45,17 @@ static void test_classic_without_adapter() {
     adapter_plugged = false;
     const ExtrasBudget off = EstimateExtras(state);
     const auto state_bytes = ((sizeof(gcad_hub) + 31) & ~std::size_t(31)) + ((sizeof(rtgcwii) + 31) & ~std::size_t(31));
-    // Each stand-in form, with the adapter off (#609, #610).
-    for (const char* form : {"classic", "nunchuk", "sideways"}) {
-        state.model.game.gc_controllers = form;
+    // Each stand-in form, with the adapter off (#609, #610), at its own
+    // build's size.
+    const struct {
+        const char* form;
+        std::uint32_t bytes;
+    } forms[] = {{"classic", kBudgetClassicFull}, {"nunchuk", kBudgetNunchukFull}, {"sideways", kBudgetSidewaysFull}};
+    for (const auto& f : forms) {
+        state.model.game.gc_controllers = f.form;
         const ExtrasBudget standin = EstimateExtras(state);
         EXPECT_EQ(standin.pieces.size(), off.pieces.size() + 1);
-        EXPECT_EQ(standin.mem1() - off.mem1(), budget_pad.size);
+        EXPECT_EQ(standin.mem1() - off.mem1(), f.bytes);
         EXPECT_EQ(standin.mem2() - off.mem2(), state_bytes);
     }
 }

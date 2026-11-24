@@ -738,7 +738,8 @@ void find_way_back(const DolHeader& dol, const std::vector<CodeRange>& text, Pad
 // the way back. HBMGetSelectBtnNum is what tells the Operations Guide from
 // Close: without it, the stand-in would end when the guide opens and leave
 // it without a controller.
-void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, PadHook& out) {
+void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, const std::vector<CodeRange>& patched,
+                    PadHook& out) {
     std::vector<CodeRange> all;
     for (std::size_t i = 0; i < kDolSections; ++i) {
         const DolSection& s = dol.sections[i];
@@ -779,7 +780,12 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     // Optional, for the Wii Remote + Nunchuk form: KPAD's camera switch,
     // which a game turns on for its pointer menus, shows the stand-in's
     // pointer while it's on.
-    out.kpad_dpd = find_kpad_enable_dpd(text);
+    // In the code as the packs' patches leave it (CodeRabbit on #610): a
+    // pack that moves or changes the switch isn't read at its old place.
+    {
+        std::vector<CodeRange> view;
+        if (code_with_patches(text, patched, view)) out.kpad_dpd = find_kpad_enable_dpd(view);
+    }
     if (out.kpad_dpd.enable != 0)
         logf("GameCube adapter: KPADEnableDPD at 0x%08x (its switch at 0x%08x + channel * %u + 0x%x: with GameCube "
              "controllers as Wii Remotes + Nunchuks, the pointer shows while the game has it on)\n",
@@ -905,12 +911,12 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         // GameCube controllers as Classic Controllers use the HOME Menu's
         // KPAD hooks; its stand-in stays off.
         if (standin) {
-            find_home_menu(dol, text, out);
+            find_home_menu(dol, text, patched, out);
             out.home_combo_off = true;
         }
     } else {
         find_way_back(dol, text, out);
-        find_home_menu(dol, text, out);
+        find_home_menu(dol, text, patched, out);
     }
     // The stand-in also starts from the game's sleeps (a game that reads
     // nothing until its connect callback hears of a controller: Donkey
