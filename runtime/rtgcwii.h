@@ -62,8 +62,8 @@ struct rtgcwii {
     uint32_t shake[RTGCWII_CHANNELS];          /* the shake's count while its button is held (rtgcwii_shake), 0: not held */
     /* The shake's rhythm by time, not by samples (a game that reads more
      * often would shake faster): when its button went down (low bit set),
-     * which channels flipped at their last sample, and the ticks between
-     * flips (loader-filled; 0: every RTGCWII_SHAKE_FLIP samples). */
+     * which channels stepped since a read last took it, and the ticks
+     * between steps (loader-filled; 0: every RTGCWII_SHAKE_FLIP samples). */
     uint32_t shake_from[RTGCWII_CHANNELS];
     uint32_t shake_jump;
     uint32_t shake_flip;

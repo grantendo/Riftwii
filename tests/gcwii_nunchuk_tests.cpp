@@ -191,6 +191,25 @@ void TestShakeKeepsTime() {
         EXPECT_TRUE(flips >= 9 && flips <= 10);  // 330 ms / 33 ms, whatever the step
         EXPECT_EQ(jumps, flips);
     }
+    // Samples every 10 ms, reads every 20 ms (off the samples): each step's
+    // jump waits for the next read, never lost to a later sample
+    // (CodeRabbit CLI, #610).
+    {
+        rtgcwii w = fresh();
+        w.shake_flip = 40;
+        Pads p;
+        p.plug(0, kGcX);
+        rtgcwii_fs f;
+        int jumps = 0;
+        for (std::uint32_t t = 1000; t < 1000 + 400; t += 10) {
+            rtgcwii_pads(&w, p.s, t);
+            if ((t / 10) % 2 == 1) {
+                rtgcwii_nunchuk(&w, 0, t + 5, &f);
+                if (f.acc_speed != 0) ++jumps;
+            }
+        }
+        EXPECT_TRUE(jumps >= 9 && jumps <= 10);  // 400 ms / 40 ms
+    }
 }
 
 // X held shakes the Wii Remote: the axes swing past 3 g and flip every
