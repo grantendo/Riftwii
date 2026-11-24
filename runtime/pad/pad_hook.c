@@ -51,6 +51,7 @@ int32_t pad_on_select(struct rt_pad_context* c, int32_t result);
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count);
 #ifdef RT_PAD_STANDIN
 int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result);
+uint32_t pad_on_kpad_enter(struct rt_pad_context* c);
 #endif
 #endif
 
@@ -391,6 +392,39 @@ uint32_t pad_on_suspend(struct rt_pad_context* c, uint32_t thread) {
     if (!rtleave_self_suspend(thread, *(volatile uint32_t*)(uintptr_t)0x800000E4u, c->leave_thread)) return 0;
     return pad_on_sleep(c);
 }
+
+#if defined(RT_PAD_STANDIN) && !defined(RT_PAD_NO_HOME)
+/* The KPAD read, as the game calls it: a game whose main thread never
+ * sleeps (Excite Truck waits for each frame in a loop, Dolphin 23 Nov)
+ * leaves from here instead, on the thread that read the pads at the ask,
+ * once RT_PAD_LEAVE_FALLBACK_MS has passed with no sleep leaving, and only
+ * from a call made with interrupts on (rtleave_read_leaves): like a
+ * sleep, a call from the game's own code, where OSReturnToMenu can take
+ * over. The same quiet-save rule as pad_on_sleep's. */
+uint32_t pad_on_kpad_enter(struct rt_pad_context* c) {
+    int resident_wrote, quiet;
+    uint32_t resident_last_write, msr, t;
+    if (c->leave_asked != RT_PAD_LEAVE_ASKED) return 0;  /* every read: the quick way out */
+    msr = interrupts_off();
+    t = now();
+    if (c->leave_asked != RT_PAD_LEAVE_ASKED ||
+        !rtleave_read_leaves(*(volatile uint32_t*)(uintptr_t)0x800000E4u, c->leave_thread, c->leave_asked_at, t,
+                             RT_PAD_LEAVE_FALLBACK_MS * c->ticks_per_ms, (msr & 0x8000u) != 0)) {
+        interrupts_restore(msr);
+        return 0;
+    }
+    pad_check_pending(c, t);
+    pad_resident_write(c, &resident_wrote, &resident_last_write);
+    quiet = rtleave_quiet(&c->leave, t, resident_wrote, resident_last_write);
+    c->leave_asked = quiet ? RT_PAD_LEAVE_GONE : 0;
+    if (!quiet) {
+        c->leave_thread = 0;
+        c->leave_asked_at = 0;
+    }
+    interrupts_restore(msr);
+    return quiet ? c->return_to_menu : 0;
+}
+#endif
 
 #ifndef GCAD_PADS_ONLY
 /* ---- The game's own Reset (#458) ---- */

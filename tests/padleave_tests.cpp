@@ -195,6 +195,25 @@ void TestQuietAtLeave() {
 // and a second thread reads the pads (Cruis'n USA, in Dolphin): that
 // thread's sleep leaves once the fallback wait has passed since the ask,
 // any other thread's never does.
+// Excite Truck's main thread never sleeps (Dolphin 23 Nov): the way back
+// leaves from the KPAD read on the thread that asked, after the fallback
+// wait, with interrupts on; never another thread's, never before the wait,
+// never from an interrupt handler's call.
+void TestReadLeaves() {
+    const std::uint32_t kMain = 0x8038e398u, kOther = 0x805584b8u;
+    const std::uint32_t kAsked = 1000u | 1u, kFallback = 500u;
+    EXPECT_FALSE(rtleave_read_leaves(kMain, kMain, kAsked, 1002, kFallback, 1));
+    EXPECT_FALSE(rtleave_read_leaves(kMain, kMain, kAsked, 1499, kFallback, 1));
+    EXPECT_TRUE(rtleave_read_leaves(kMain, kMain, kAsked, 1500, kFallback, 1));
+    EXPECT_FALSE(rtleave_read_leaves(kMain, kMain, kAsked, 1500, kFallback, 0));
+    EXPECT_FALSE(rtleave_read_leaves(kOther, kMain, kAsked, 9000, kFallback, 1));
+    EXPECT_FALSE(rtleave_read_leaves(kMain, kMain, 0, 9000, kFallback, 1));
+    EXPECT_FALSE(rtleave_read_leaves(0, 0, kAsked, 9000, kFallback, 1));
+    // The time base's low word wraps: the wait still counts across it.
+    EXPECT_FALSE(rtleave_read_leaves(kMain, kMain, 0xFFFFFF01u, 0x000000F0u, kFallback, 1));
+    EXPECT_TRUE(rtleave_read_leaves(kMain, kMain, 0xFFFFFF01u, 0x00000200u, kFallback, 1));
+}
+
 void TestSleepLeaves() {
     const std::uint32_t kMain = 0x8018df78u, kPadThread = 0x80186048u, kOther = 0x80184af0u;
     const std::uint32_t kAsked = 1000u | 1u, kFallback = 500u;
@@ -407,6 +426,7 @@ int main() {
     TestDue();
     TestQuietAtLeave();
     TestSleepLeaves();
+    TestReadLeaves();
     TestPendingSave();
     TestHeldThrough();
     if (g_failures == 0) {
