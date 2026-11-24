@@ -77,6 +77,9 @@ constexpr std::uint32_t kGcwiiGraceMs = 500;
 // C-stick last moved it, then hides (games that hide the cursor when
 // nothing points still do).
 constexpr std::uint32_t kGcwiiPointerShowMs = 2000;
+// The stand-in's shake steps every this many ms: a half-swing of about
+// 2.5 frames, as Dolphin's 15 Hz shake measures (rtgcwii.shake_flip).
+constexpr std::uint32_t kGcwiiShakeFlipMs = 40;
 // v5 serves 16 handles, picked by the open mode: libogc's USB takes 0 and
 // fakemote (a cIOS module) 15. 0 is tried first (free once libogc's USB
 // is shut down; a Wii U's IOS 58 answered nothing on 1), then 1. v4
@@ -251,8 +254,11 @@ bool blob_whole(int kind) {
     // read from it.
     const std::uint32_t header_bytes =
         !no_home(kind) ? sizeof(rt_pad_header) : offsetof(rt_pad_header, hook_kpad);
+    // The context's end checked by subtraction, so a huge offset can't wrap
+    // round the sum and pass (CodeRabbit on #610); the build's own size must
+    // hold its header too.
     if (size < header_bytes || h.magic != RT_PAD_MAGIC || h.version != RT_PAD_VERSION || h.size > size ||
-        h.context_offset + context_bytes(kind) > h.size)
+        h.size < header_bytes || h.context_offset > h.size || context_bytes(kind) > h.size - h.context_offset)
         return false;
     return no_home(kind) || (h.hook_kpad != 0 && h.hook_probe != 0 && h.hook_menu != 0 && h.hook_select != 0 &&
                                    h.hook_unified != 0);
@@ -737,7 +743,8 @@ void find_way_back(const DolHeader& dol, const std::vector<CodeRange>& text, Pad
 // the way back. HBMGetSelectBtnNum is what tells the Operations Guide from
 // Close: without it, the stand-in would end when the guide opens and leave
 // it without a controller.
-void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, PadHook& out) {
+void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, const std::vector<CodeRange>& patched,
+                    PadHook& out) {
     std::vector<CodeRange> all;
     for (std::size_t i = 0; i < kDolSections; ++i) {
         const DolSection& s = dol.sections[i];
@@ -805,7 +812,12 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     // Optional, for the Wii Remote + Nunchuk form: KPAD's camera switch,
     // which a game turns on for its pointer menus, shows the stand-in's
     // pointer while it's on.
-    out.kpad_dpd = find_kpad_enable_dpd(text);
+    // In the code as the packs' patches leave it (CodeRabbit on #610): a
+    // pack that moves or changes the switch isn't read at its old place.
+    {
+        std::vector<CodeRange> view;
+        if (code_with_patches(text, patched, view)) out.kpad_dpd = find_kpad_enable_dpd(view);
+    }
     if (out.kpad_dpd.enable != 0)
         logf("GameCube adapter: KPADEnableDPD at 0x%08x (its switch at 0x%08x + channel * %u + 0x%x: with GameCube "
              "controllers as Wii Remotes + Nunchuks, the pointer shows while the game has it on)\n",
@@ -933,12 +945,12 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         // GameCube controllers as Classic Controllers use the HOME Menu's
         // KPAD hooks; its stand-in stays off.
         if (standin) {
-            find_home_menu(dol, text, out);
+            find_home_menu(dol, text, patched, out);
             out.home_combo_off = true;
         }
     } else {
         find_way_back(dol, text, out);
-        find_home_menu(dol, text, out);
+        find_home_menu(dol, text, patched, out);
     }
     // The stand-in also starts from the game's sleeps (a game that reads
     // nothing until its connect callback hears of a controller: Donkey
@@ -966,7 +978,16 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         logf("GameCube adapter: SIProbe not found: a game that asks it which ports have a controller sees none there\n");
 
     if (!usb) {
-        // No adapter: the Wii's own ports play as Classic Controllers, and
+        // No adapter: the hook is there only for the stand-in, which needs
+        // the game's KPAD read and WPADProbe (plan_pad_hook's
+        // wants_home_build). Without them it would do nothing, so no hook,
+        // and no pads plugin to fail the launch over (CodeRabbit on #616).
+        if (out.kpad_read == 0 || out.wpad_probe == 0) {
+            why = "no adapter, and the game's KPAD read or WPADProbe that the GameCube controllers' stand-in needs "
+                  "wasn't found";
+            return false;
+        }
+        // The Wii's own ports play as Classic Controllers, and
         // USB is never asked anything (on some d2x a USB check broke the
         // game's disc reads, settle_gc_adapter).
         logf("GameCube adapter: none in use; the hook goes in for the GameCube controllers' stand-in (the "
@@ -1237,7 +1258,12 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
         g_pads_refused = true;
         return false;
     };
-    if (result == -1) return fail("the plugin could not be used (its own line above says why)", false);
+    if (result == -1) {
+        // The loader's own line says why; the player gets a sentence too,
+        // not whatever `message` held (CodeRabbit on #616).
+        message = tr("A part of RiftWii couldn't be used (the {1} add-on). Update RiftWii again.", {kPadsPlugin});
+        return fail("the plugin could not be used (its own line above says why)", false);
+    }
     if (result != RWP_PADS_COPIED)
         return fail("build " + std::to_string(kind) + " was not copied: " +
                         (request.error[0] != '\0' ? std::string(request.error) : std::string("no reason given")),
@@ -1406,8 +1432,9 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
                           "build has no room for the stand-in (the setting applies to ordinary launches)\n"
                         : "GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the game's "
                           "KPAD read or WPADProbe wasn't found\n");
-    logf("USB controllers: %s driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
-         kind % kBlobNoHome == kBlobAdapter ? "the adapter's" : kind % kBlobNoHome == kBlobPads ? "the USB pads'" : "the full",
+    // The build by its own name, as the fetch logs it (CodeRabbit on #616).
+    logf("USB controllers: the %s's driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
+         build_name(kind),
          static_cast<unsigned>(h.size), static_cast<unsigned>(out.link_count), static_cast<unsigned>(out.map_count),
          static_cast<unsigned>(out.map_bytes),
          out.ven_fd >= 0 ? " and the Xbox 360 list" : "", static_cast<unsigned>(out.state_bytes),
@@ -1500,6 +1527,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         std::memset(state, 0, sizeof(rtgcwii));
         state->grace = kGcwiiGraceMs * (kBusClock / 4000u);
         state->pointer_show = kGcwiiPointerShowMs * (kBusClock / 4000u);
+        state->shake_flip = kGcwiiShakeFlipMs * (kBusClock / 4000u);
         state->kpad_dpd = out.kpad_dpd.base;
         state->kpad_dpd_stride = out.kpad_dpd.stride;
         state->kpad_dpd_offset = out.kpad_dpd.offset;

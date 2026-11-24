@@ -90,6 +90,35 @@ uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
 }
 
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+/* The shake's count at a sample: by time (every shake_flip ticks a step),
+ * else by samples; shake_jump notes a step until a read (rtgcwii_nunchuk,
+ * rtgcwii_sideways) takes it, so samples between two reads can't lose it
+ * (CodeRabbit CLI, #610). */
+static void rtgcwii_count_shake(struct rtgcwii* w, uint32_t i, uint32_t shaking, uint32_t now) {
+    const uint32_t bit = 1u << i;
+    uint32_t flips;
+    if (!shaking) {
+        w->shake[i] = 0;
+        w->shake_from[i] = 0;
+        w->shake_jump &= ~bit;
+        return;
+    }
+    if (w->shake_flip == 0) {
+        ++w->shake[i];
+        if (w->shake[i] > 1u && (w->shake[i] % RTGCWII_SHAKE_FLIP) == 0) w->shake_jump |= bit;
+        return;
+    }
+    if (w->shake_from[i] == 0) w->shake_from[i] = now | 1u;
+    flips = rtgcwii_elapsed(now, w->shake_from[i]) / w->shake_flip;
+    /* The count keeps the flips in its RTGCWII_SHAKE_FLIP's (rtgcwii_shake
+     * takes the side from it), never 0 while held. */
+    {
+        const uint32_t count = RTGCWII_SHAKE_FLIP * flips + 1u;
+        if (w->shake[i] != 0 && count != w->shake[i]) w->shake_jump |= bit;
+        w->shake[i] = count;
+    }
+}
+
 /* Once a sample: the pointer follows the C-stick (in the sideways form
  * only while the game has the camera on: else the C-stick tilts), and the
  * shake counts while its button is held (X; R in the sideways form, also
@@ -100,7 +129,7 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
     rthome_classic_axes(s, axes);  /* the C-stick is axes 2 and 3 */
 #ifdef RT_PAD_FORM_SIDEWAYS
     shaking = (rtgcwii_pad_buttons(s) & RTGCWII_GC_R) || s[7] >= RTGCWII_TRIGGER_ON;
-    w->shake[i] = shaking ? w->shake[i] + 1u : 0u;
+    rtgcwii_count_shake(w, i, shaking, now);
     if (!((w->camera >> i) & 1u)) return;
 #else
     shaking = rtgcwii_pad_buttons(s) & RTGCWII_GC_X;
@@ -121,7 +150,7 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
         w->pointer_moved[i] = 0;
     }
 #ifndef RT_PAD_FORM_SIDEWAYS
-    w->shake[i] = shaking ? w->shake[i] + 1u : 0u;
+    rtgcwii_count_shake(w, i, shaking, now);
 #endif
 }
 #endif
@@ -153,6 +182,8 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             w->hold[i] = w->delivered[i] = 0;
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
             w->shake[i] = 0;
+            w->shake_from[i] = 0;
+            w->shake_jump &= ~bit;
             /* Unplugged: the pointer's last move is forgotten too, so an
              * old mark never reads as recent after the time base wraps. */
             w->pointer_moved[i] = 0;
@@ -166,9 +197,14 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     }
 }
 
+uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel) {
+    return channel < RTGCWII_CHANNELS ? w->probe_counts[channel] : 0u;
+}
+
 void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result) {
     uint32_t bit;
     if (channel >= RTGCWII_CHANNELS || result == -2) return;  /* busy: no answer either way */
+    ++w->probe_counts[channel];
     bit = 1u << channel;
     if (result == 0) {
         w->real |= bit;
@@ -267,15 +303,26 @@ static void rtgcwii_still(int32_t acc[3], int32_t* value, int32_t* speed) {
     *speed = 0;
 }
 
-/* The shake (rtgcwii_nunchuk's): all three axes swing together, and a
- * flip is a jump in speed. */
-static void rtgcwii_shake(uint32_t shake, int32_t acc[3], int32_t* value, int32_t* speed) {
-    const int32_t swing = ((shake / RTGCWII_SHAKE_FLIP) & 1u) ? RTGCWII_SHAKE_G : -RTGCWII_SHAKE_G;
-    acc[0] = swing;
-    acc[1] = swing;
-    acc[2] = -swing;
-    *value = RTGCWII_SHAKE_VALUE;
-    *speed = shake > 1u && (shake % RTGCWII_SHAKE_FLIP) == 0 ? RTGCWII_SHAKE_VALUE : 0;
+/* The shake (rtgcwii_nunchuk's): all three axes swing together, every
+ * RTGCWII_SHAKE_STEPS-th step at rest, and a step (`jump`,
+ * rtgcwii_count_shake) is a jump in speed. */
+static void rtgcwii_shake(uint32_t shake, int jump, int32_t acc[3], int32_t* value, int32_t* speed) {
+    const uint32_t step = shake / RTGCWII_SHAKE_FLIP;
+    *speed = jump ? RTGCWII_SHAKE_VALUE : 0;
+    if (step % RTGCWII_SHAKE_STEPS == RTGCWII_SHAKE_STEPS - 1u) {
+        acc[0] = 0;
+        acc[1] = -RTHOME_AXIS_FULL;
+        acc[2] = 0;
+        *value = RTHOME_AXIS_FULL;
+        return;
+    }
+    {
+        const int32_t swing = (step & 1u) ? RTGCWII_SHAKE_G : -RTGCWII_SHAKE_G;
+        acc[0] = swing;
+        acc[1] = swing;
+        acc[2] = -swing;
+        *value = RTGCWII_SHAKE_VALUE;
+    }
 }
 
 /* The integer square root of `v` (rounded down). */
@@ -316,7 +363,10 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
     out->pointer_shown = ((w->camera >> channel) & 1u) ||
                          (w->pointer_moved[channel] != 0 && rtgcwii_elapsed(now, w->pointer_moved[channel]) < w->pointer_show);
     shake = w->shake[channel];
-    if (shake != 0) rtgcwii_shake(shake, out->acc, &out->acc_value, &out->acc_speed);
+    if (shake != 0) {
+        rtgcwii_shake(shake, (int)((w->shake_jump >> channel) & 1u), out->acc, &out->acc_value, &out->acc_speed);
+        w->shake_jump &= ~(1u << channel);  /* this read took the step's jump */
+    }
 }
 
 void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out) {
@@ -343,7 +393,11 @@ void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* ou
         out->acc[2] = s;
         out->acc[1] = -rtgcwii_isqrt(RTHOME_AXIS_FULL * RTHOME_AXIS_FULL - s * s);
     }
-    if (w->shake[channel] != 0) rtgcwii_shake(w->shake[channel], out->acc, &out->acc_value, &out->acc_speed);
+    if (w->shake[channel] != 0) {
+        rtgcwii_shake(w->shake[channel], (int)((w->shake_jump >> channel) & 1u), out->acc, &out->acc_value,
+                      &out->acc_speed);
+        w->shake_jump &= ~(1u << channel);  /* this read took the step's jump */
+    }
 }
 
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) {

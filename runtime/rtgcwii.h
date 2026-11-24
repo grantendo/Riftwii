@@ -59,7 +59,14 @@ struct rtgcwii {
     uint32_t pointer_show;                     /* ticks the pointer stays shown after the C-stick (loader-filled) */
     int32_t pointer[RTGCWII_CHANNELS][2];      /* each channel's pointer, x and y over RTHOME_POINTER_FULL */
     uint32_t pointer_moved[RTGCWII_CHANNELS];  /* when the C-stick last moved it (low bit set), 0: never */
-    uint32_t shake[RTGCWII_CHANNELS];          /* samples the shake button has been held, 0: not held */
+    uint32_t shake[RTGCWII_CHANNELS];          /* the shake's count while its button is held (rtgcwii_shake), 0: not held */
+    /* The shake's rhythm by time, not by samples (a game that reads more
+     * often would shake faster): when its button went down (low bit set),
+     * which channels stepped since a read last took it, and the ticks
+     * between steps (loader-filled; 0: every RTGCWII_SHAKE_FLIP samples). */
+    uint32_t shake_from[RTGCWII_CHANNELS];
+    uint32_t shake_jump;
+    uint32_t shake_flip;
     uint32_t camera;  /* channels whose Wii Remote camera the game wants on (KPAD's switch), one bit each */
     /* Where KPAD keeps each channel's camera switch (KPADEnableDPD's
      * code): the byte at kpad_dpd + channel * kpad_dpd_stride +
@@ -79,6 +86,7 @@ struct rtgcwii {
      * one): the table of the channels' control blocks and the callback's
      * place in one, 0: none. Loader-filled. */
     uint32_t wpad_connect_table, wpad_connect_offset;
+    uint32_t probe_counts[RTGCWII_CHANNELS];  /* rtgcwii_probe_count */
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -93,6 +101,11 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
  * the stand-in. When it goes again, the stand-in is announced afresh (the
  * game's library told the game that channel's controller left). */
 void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result);
+
+/* How many probe results `channel` has had (rtgcwii_probed counts them):
+ * taken before a probe whose answer is applied later, so a newer result in
+ * between isn't undone by the older one. */
+uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel);
 
 /* Whether the channels a real controller holds are due a check of their
  * own (the game's WPADProbe, answered through rtgcwii_probed): some games
@@ -155,13 +168,19 @@ struct rtgcwii_fs {
 };
 
 /* The shake: all three axes swing between +RTGCWII_SHAKE_G and -SHAKE_G,
- * flipping every RTGCWII_SHAKE_FLIP samples while X is held, as Dolphin's
- * emulated shake does; 3.4 g is past the threshold Batman: The Brave and
+ * a step every `shake_flip` ticks while X is held (the loader's 40 ms,
+ * about the 2-3 frames a half-swing of Dolphin's emulated 15 Hz shake
+ * takes; with no shake_flip, every RTGCWII_SHAKE_FLIP samples), and every
+ * RTGCWII_SHAKE_STEPS-th step back at rest (1 g along -Y), as a hand's
+ * shake passes through still: Donkey Kong Country Returns' "shake to
+ * start" took Dolphin's shake, which does, but not a swing that never
+ * came back below 3 g. 3.4 g is past the threshold Batman: The Brave and
  * the Bold checks for its heavy attacks (3.2 g for the Wii Remote, 2.0 g
  * for the Nunchuk). Numerators over RTHOME_AXIS_FULL (256: 1 g). */
 #define RTGCWII_SHAKE_G 870
 #define RTGCWII_SHAKE_VALUE 1508  /* |(3.4, 3.4, 3.4)| g */
 #define RTGCWII_SHAKE_FLIP 4u
+#define RTGCWII_SHAKE_STEPS 5u  /* +, -, +, -, at rest */
 /* Full C-stick moves the pointer this much a sample (the screen is two
  * RTHOME_POINTER_FULL wide, so about a second across), and it stays inside
  * +-RTGCWII_POINTER_EDGE, so the cursor never leaves the screen. */
@@ -187,16 +206,19 @@ uint32_t rtgcwii_float_bits(int32_t numerator);
 
 /* The stand-in's Wii Remote + Nunchuk on `channel` (RT_PAD_FORM_NUNCHUK),
  * for the game's KPAD read at `now`: the same words for every read until
- * the next sample, as rtgcwii_classic gives. All 0 (a still controller,
- * pointer hidden) where the stand-in isn't on. */
+ * the next sample, as rtgcwii_classic gives. Holding X shakes the Wii
+ * Remote's accelerometer; the Nunchuk's stays at rest. Where the stand-in
+ * isn't on, the buttons, stick and pointer are 0 (pointer hidden), and both
+ * accelerometers read a still controller: 1 g along -Y. */
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out);
 
 /* The stand-in's sideways Wii Remote on `channel` (RT_PAD_FORM_SIDEWAYS),
  * for the game's KPAD read: the words, the acceleration (tilted by the
  * C-stick's left and right while the game has the camera off, shaking while
  * R is held) and, while the game has the camera on, the pointer the C-stick
- * moves. The Nunchuk's fields stay at rest. All 0 where the stand-in isn't
- * on. */
+ * moves. The Nunchuk's fields stay at rest. Where the stand-in isn't on,
+ * the buttons and pointer are 0 and the accelerometer reads a still
+ * controller: 1 g along -Y. */
 void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out);
 
 /* The stand-in's Classic Controller on `channel`, for the game's KPAD read:
