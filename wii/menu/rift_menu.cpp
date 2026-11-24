@@ -9508,7 +9508,9 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 	gcControllers.kind = FlowRow::Kind::Option;
 	gcControllers.label = tr("GameCube controllers");
 	gcControllers.on = game.gc_controllers == "classic";
-	gcControllers.value = gcControllers.on ? tr("As Classic Controllers") : tr("Off");
+	// The row's label says what the choice is for: the choice alone (a long
+	// "As ..." was cut off beside the arrows).
+	gcControllers.value = gcControllers.on ? tr("Classic Controller") : tr("Off");
 	add(gcControllers, {RowRef::What::GcControllers});
 	FlowRow regionStrings;
 	regionStrings.kind = FlowRow::Kind::Toggle;
@@ -15563,7 +15565,11 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 			else if (ref.what == RowRef::What::Speaker)
 				say(tr("Off: no sound from the Wii Remotes' speakers in this game."));
 			else if (ref.what == RowRef::What::GcControllers)
-				say(tr("As Classic Controllers: each GameCube controller plays as a Classic Controller, port 1 as Wii Remote 1 and so on, for games that take one. Off: as before."));
+				// The chosen one's help only (all of them together ran past the
+				// help's lines).
+				say(gameSettings.gc_controllers == "classic"
+				        ? tr("Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.")
+				        : tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."));
 			else if (ref.what == RowRef::What::RegionStrings)
 				say(tr("For a game from another region (an import): the game sees its own region's country names where it looks for the console's."));
 			else if (ref.what == RowRef::What::Language)
