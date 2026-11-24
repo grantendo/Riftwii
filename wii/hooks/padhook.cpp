@@ -1105,10 +1105,19 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
                 if (address >= r.address && address - r.address < r.size) return true;
             }
         }
+        // (A file patch whose `original` guard doesn't match the game as
+        // loaded writes nothing; its file's length isn't known until it's
+        // read, so the largest a file may be stands in for it.)
         for (const MemoryPatch& p : patches) {
-            if (!p.has_offset || p.search || p.ocarina || !p.value.empty()) continue;
+            if (!p.has_offset || p.search || p.ocarina || p.valuefile.empty() || !p.value.empty()) continue;
             const std::uint32_t at = memory_patch_target(p);
-            if (address >= at && address - at < kMaxMemoryValueBytes) return true;
+            bool guard = true;
+            for (std::size_t g = 0; g < p.original.size() && guard; ++g) {
+                const std::uint32_t where = at + static_cast<std::uint32_t>(g);
+                guard = where >= 0x80000000u && where < 0x81800000u &&
+                        *reinterpret_cast<const volatile std::uint8_t*>(where) == p.original[g];
+            }
+            if (guard && address >= at && address - at < kMaxMemoryValueBytes) return true;
         }
         for (const PackWrite& w : plan.writes) {
             if (address >= w.at && address - w.at < patches[w.patch].value.size()) return true;
