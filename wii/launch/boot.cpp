@@ -1622,7 +1622,15 @@ void install_game_extras(GameExtras& extras) {
     }
     if (extras.pad.active) {
         std::string why;
-        if (!install_pad_hook(extras.pad, why)) logf("GameCube adapter: off: %s\n", why.c_str());
+        if (!install_pad_hook(extras.pad, why)) {
+            logf("GameCube adapter: off: %s\n", why.c_str());
+            // Nothing will fill the copy the pack's port reads were pointed
+            // at: they go back to the hardware.
+            if (extras.pad.route_pack) {
+                const unsigned restored = unroute_pack(extras.pad);
+                logf("GameCube adapter: the pack's %u port reads point at the hardware again\n", restored);
+            }
+        }
     }
     if (extras.shot.active) {
         std::string why;
@@ -3057,6 +3065,56 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
         logf("CTGP-R: none of RiftWii's in-game extras (GameCube adapter, screenshots, crash recorder)\n");
     } else {
         plan_game_extras(dol, extras_context, extras);
+    }
+    // Routing (#587): the pack's port reads, not yet written, pointed at the
+    // copy the stand-in fills from the adapter.
+    if (extras.pad.active && extras.pad.route_pack && extras.pad.route_si != 0) {
+        unsigned rewritten = 0;
+        // Each record says whether the planning check expects its patch to be
+        // written (unroute_pack puts those back first): two patches can
+        // rewrite one word to the same routed form, and the one whose guard
+        // fails mustn't win; but a guard on low memory, cleared after this
+        // check, can still pass when the patch is written.
+        const std::vector<bool> applies = memory_patches_that_apply(options.memory_patches);
+        for (std::size_t p = 0; p < options.memory_patches.size(); ++p) {
+            MemoryPatch& patch = options.memory_patches[p];
+            // Routing leaves out a pack with port reads in a search or ocarina
+            // patch (pack_ports_routable): their places aren't known, and an
+            // ocarina patch's value is the pattern it looks for.
+            if (patch.value.empty() || !patch.has_offset || patch.search || patch.ocarina) continue;
+            // The port reads as the patch ends up, with later patches written
+            // over it (as pack_ports_routable judged them); the words routing
+            // changes there are changed in the patch.
+            const std::vector<std::uint8_t> left =
+                memory_patch_as_left(options.memory_patches, applies, p);
+            std::vector<std::uint8_t> routed = left;
+            if (retarget_gc_ports(routed.data(), routed.size(), extras.pad.route_si) == 0) continue;
+            const std::vector<std::uint8_t> before = patch.value;
+            unsigned count = 0;
+            for (std::size_t w = 0; w + 4 <= routed.size(); w += 4) {
+                if (std::memcmp(routed.data() + w, left.data() + w, 4) == 0) continue;
+                std::memcpy(patch.value.data() + w, routed.data() + w, 4);
+                ++count;
+            }
+            rewritten += count;
+            // Where each rewritten word will sit, with its original and
+            // rewritten forms, so a hook that fails to go in can undo it
+            // (unroute_pack, which only puts back a word still as
+            // rewritten).
+            const std::uint32_t at = memory_patch_target(patch);
+            const auto word_at = [](const std::uint8_t* b) {
+                return (std::uint32_t(b[0]) << 24) | (std::uint32_t(b[1]) << 16) | (std::uint32_t(b[2]) << 8) | b[3];
+            };
+            for (std::size_t w = 0; w + 4 <= before.size(); w += 4) {
+                if (std::memcmp(before.data() + w, patch.value.data() + w, 4) == 0) continue;
+                extras.pad.route_restore.push_back(at + static_cast<std::uint32_t>(w));
+                extras.pad.route_restore.push_back(word_at(before.data() + w));
+                extras.pad.route_restore.push_back(word_at(patch.value.data() + w));
+                extras.pad.route_restore.push_back(applies[p] ? 1u : 0u);
+            }
+        }
+        logf("GameCube adapter: %u of the pack's port reads now read the adapter's copy at 0x%08x\n", rewritten,
+             extras.pad.route_si);
     }
     if (pad_reset && (!extras.pad.active || extras.pad.restart_os == 0)) {
         logf("Reset: the game's own Reset restarts it without the GameCube adapter or USB controllers: the adapter's "

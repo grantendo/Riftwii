@@ -143,6 +143,18 @@ struct PadHook {
     // itself, once RiftWii routes the adapter into it (not yet: until then
     // the stand-in keeps the controls, find_pad_functions).
     bool standin_inputless = false;
+    // Routing (#587): a pack reads the GameCube ports itself and hooks the
+    // Wii controller reads (quatric's patches): its port reads point at a
+    // copy of the serial interface's registers at route_si (an address
+    // ending in 0x6400, planned after the stand-in's state), which the
+    // stand-in fills; its hooks run after the stand-in's.
+    bool route_pack = false;
+    std::uint32_t route_si = 0;
+    // The pack's rewritten port reads, as (address, original word, rewritten
+    // word, expected) records, expected 1 where the planning check expected
+    // the patch to be written, so a hook that then fails to go in can give
+    // the pack its hardware back (unroute_pack).
+    std::vector<std::uint32_t> route_restore;
     // ...or a pointing Wii Remote (RT_PAD_FORM_POINTING).
     bool standin_pointing = false;
     // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on
@@ -317,6 +329,23 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
 
 // After the patches and the cheats, just before the handover.
 bool install_pad_hook(PadHook& hook, std::string& why);
+
+// Routing undone after install_pad_hook failed: the pack's port reads, as
+// written into memory, point back at the hardware (nothing would fill the
+// copy). Returns how many it put back.
+unsigned unroute_pack(PadHook& hook);
+
+// Which memory patches the patcher will write (a plain patch's original
+// guard checked against the game as loaded, in document order), as the
+// pack checks judge them.
+std::vector<bool> memory_patches_that_apply(const std::vector<MemoryPatch>& patches);
+
+// Memory patch `i`'s bytes as they end up: every later patch the patcher
+// writes at a known place (`applies`, from memory_patches_that_apply)
+// written over it where they overlap. A search or ocarina patch's own place
+// isn't known, so its bytes come back as written.
+std::vector<std::uint8_t> memory_patch_as_left(const std::vector<MemoryPatch>& patches,
+                                               const std::vector<bool>& applies, std::size_t i);
 
 // After Return to RiftWii has been patched in for the channel (the Reset
 // leaves through the game's OSReturnToMenu, which starts it): turns the

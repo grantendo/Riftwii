@@ -196,8 +196,43 @@ static void rtgcwii_pointing_motion(struct rtgcwii* w, uint32_t i, const uint8_t
 }
 #endif
 
+void rtgcwii_route_into(volatile uint32_t* si, const uint8_t* status) {
+    uint32_t i;
+    for (i = 0; i < RTGCWII_CHANNELS; ++i) {
+        const uint8_t* s = status + i * RTGCWII_PAD_BYTES;
+        uint32_t high = 0x80000000u, low = 0;  /* error: no controller answered */
+        if ((int8_t)s[RTGCWII_PAD_ERR] == 0) {
+            const uint32_t buttons = ((uint32_t)s[0] << 8) | s[1];
+            /* The pad's own answer: Start, Y, X, B, A; then the origin bit
+             * (set in every real pad's answer), L, R, Z and the D-pad;
+             * the sticks unsigned around 128 (PADStatus has them signed
+             * around 0); the C-stick and the triggers in the low word. */
+            const uint32_t first = (buttons >> 8) & 0x1Fu;
+            const uint32_t second = 0x80u | (buttons & 0x7Fu);
+            high = (first << 24) | (second << 16) | ((uint32_t)(uint8_t)(s[2] + 128u) << 8) |
+                   (uint32_t)(uint8_t)(s[3] + 128u);
+            low = ((uint32_t)(uint8_t)(s[4] + 128u) << 24) | ((uint32_t)(uint8_t)(s[5] + 128u) << 16) |
+                  ((uint32_t)s[6] << 8) | s[7];
+        }
+        si[i * 3u + 1u] = high;
+        si[i * 3u + 2u] = low;
+    }
+}
+
+void rtgcwii_route(const struct rtgcwii* w, const uint8_t* status) {
+    if (w->route_si != 0) rtgcwii_route_into((volatile uint32_t*)(uintptr_t)w->route_si, status);
+}
+
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     uint32_t i, k;
+    if (w->route_si != 0) {
+        /* Routing: the pack reads the controllers from the copy. A pack
+         * that hooks the Wii controller reads itself needs nothing more
+         * from the stand-in; one that adds the pad to a Wii Remote's input
+         * gets the stand-in as that Wii Remote, at rest (inputless). */
+        rtgcwii_route(w, status);
+        if (!w->inputless) return;
+    }
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
         const uint8_t* s = status + i * RTGCWII_PAD_BYTES;
         const uint32_t bit = 1u << i;

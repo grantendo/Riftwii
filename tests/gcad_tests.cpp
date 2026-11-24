@@ -1848,7 +1848,12 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC08000u, 0x81066404u, 0x4E800020u});  // lis r6,0x8000: plain memory
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
-    code = bytes({0x3CC0CD00u, 0x3CC08000u, 0x81066404u});  // lis r6,0xCD00; lis r6,0x8000: plain memory again
+    // Pointed at a copy at 0x90126400: the port reads' `lis` only; the
+    // other hardware register and plain memory stay.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x3CE0CD00u, 0x81070000u, 0x3D008000u, 0x81086404u});
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90126400u), 1u);
+    EXPECT_TRUE(code[2] == 0x90 && code[3] == 0x12 && code[0] == 0x3C && code[1] == 0xC0);  // lis r6,0x9012
+    EXPECT_TRUE(code[10] == 0xCD && code[11] == 0x00);  // lis r7,0xCD00 kept (IPC, not the ports)
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x7C661B78u, 0x81066404u});  // lis r6,0xCD00; mr r6,r3: plain memory
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
@@ -1872,6 +1877,90 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x7CA444AAu, 0x81066404u});  // lis r6,0xCD00; lswi r5,r4,8 (r5 and r6): plain memory
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    // The use ten words after the `lis` (quatric's Kirby patch): still
+    // found; the register loaded anew before its use: not.
+    code = bytes({0x3C80CD00u, 0x60000000u, 0x60000000u, 0x60000000u, 0x60000000u, 0x60000000u, 0x60000000u,
+                  0x60000000u, 0x60000000u, 0x60000000u, 0x60846438u});  // lis r4,0xCD00; ...; ori r4,r4,0x6438
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3C80CD00u, 0x3C808000u, 0x80846404u});  // lis r4,0xCD00; lis r4,0x8000; lwz r4,0x6404(r4)
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x3CC08000u, 0x81066404u});  // lis r6,0xCD00; lis r6,0x8000: plain memory again
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    // A port's registers as quatric's Kirby sample and probe code reads
+    // them: the port's offset plus the base (`addis`, not `lis`). Found and
+    // rewritten the same way, the offset register kept.
+    code = bytes({0x1D24000Cu, 0x9421FFC8u, 0x3D29CD00u, 0x93A1002Cu, 0x83A96404u});
+    // mulli r9,r4,12; stwu r1,-56(r1); addis r9,r9,0xCD00; stw r29,44(r1); lwz r29,0x6404(r9)
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90126400u), 1u);
+    EXPECT_TRUE(code[8] == 0x3D && code[9] == 0x29 && code[10] == 0x90 && code[11] == 0x12);  // addis r9,r9,0x9012
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    // One base for the IPC register and a port: a port read, but not
+    // routable, and left alone (the IPC read would go to the copy too).
+    code = bytes({0x3CC0CD00u, 0x81060000u, 0x81266404u, 0x4E800020u});
+    // lis r6,0xCD00; lwz r8,0(r6); lwz r9,0x6404(r6); blr
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90126400u), 0u);
+    // The base turned into a register's address (`ori rX,rX,0x6438`) and
+    // then read at 0 (quatric's Kirby poll): routable. A use past a return
+    // belongs to other code: not counted.
+    code = bytes({0x3C80CD00u, 0x60846438u, 0x80040000u, 0x4E800020u, 0x80040000u});
+    // lis r4,0xCD00; ori r4,r4,0x6438; lwz r0,0(r4); blr; lwz r0,0(r4)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3C80CD00u, 0x80046404u, 0x4E800020u, 0x80840000u});
+    // lis r4,0xCD00; lwz r0,0x6404(r4); blr; lwz r4,0(r4)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    // A conditional branch doesn't end what's followed: the IPC read past
+    // it, through the same base, still makes it not routable.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x41820008u, 0x81260000u, 0x4E800020u});
+    // lis r6,0xCD00; lwz r8,0x6404(r6); beq +8; lwz r9,0(r6); blr
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    // A copy that doesn't end in 0x6400: nothing rewritten.
+    code = bytes({0x3CC0CD00u, 0x81066404u});
+    EXPECT_EQ(riftwii::retarget_gc_ports(code.data(), code.size(), 0x90120000u), 0u);
+    EXPECT_TRUE(code[2] == 0xCD);
+    // Whether routing may point a base at the copy: every path is followed
+    // while the register holds it. A write a branch can skip doesn't end
+    // it; a use 25 words on still counts; an add keeps it the base.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x41820008u, 0x3CC08000u, 0x81260000u});
+    // lis r6,0xCD00; lwz r8,0x6404(r6); beq +8; lis r6,0x8000; lwz r9,0(r6)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x60000000u, 0x3CC08000u, 0x81260000u});  // no branch: set anew
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    {
+        std::vector<std::uint32_t> far = {0x3CC0CD00u, 0x81066404u};
+        for (int n = 0; n < 25; ++n) far.push_back(0x60000000u);
+        far.push_back(0x81260000u);  // lwz r9,0(r6), 27 words on
+        code.clear();
+        for (const std::uint32_t w : far) {
+            code.push_back(static_cast<std::uint8_t>(w >> 24));
+            code.push_back(static_cast<std::uint8_t>(w >> 16));
+            code.push_back(static_cast<std::uint8_t>(w >> 8));
+            code.push_back(static_cast<std::uint8_t>(w));
+        }
+        EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    }
+    code = bytes({0x3CC0CD00u, 0x7CC62A14u, 0x81066404u, 0x81260000u});  // add r6,r6,r5 keeps it; then 0(r6)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    // A port's address built in another register is followed as a base of
+    // its own.
+    code = bytes({0x3D20CD00u, 0x7D495214u, 0x810A6404u});  // lis r9,0xCD00; add r10,r9,r10; lwz r8,0x6404(r10)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3D20CD00u, 0x81096404u, 0x7D495214u, 0x810A0000u});  // ...; add r10,r9,r10; lwz r8,0(r10)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    // A call ends a base in r3 (the game's code never takes it); mflr reads
+    // no register.
+    code = bytes({0x3C60CD00u, 0x80836404u, 0x48001001u, 0x80630000u});  // ...; bl out; lwz r3,0(r3)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x7CA802A6u, 0x81066404u});  // lis r6,0xCD00; mflr r5; lwz r8,0x6404(r6)
+    EXPECT_TRUE(riftwii::gc_ports_routable(code.data(), code.size()));
+    // A conditional call may not be taken: the base in r6 is still there.
+    code = bytes({0x3CC0CD00u, 0x81066404u, 0x4D820021u, 0x81260000u});  // ...; beqlrl; lwz r9,0(r6)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
+    // bctrl is a call, not a return: a base in r31 lives on after it.
+    code = bytes({0x3FE0CD00u, 0x813F6404u, 0x4E800421u, 0x813F0000u});  // lis r31; lwz r9,0x6404(r31); bctrl; lwz r9,0(r31)
+    EXPECT_TRUE(!riftwii::gc_ports_routable(code.data(), code.size()));
 }
 
 // KPAD's camera switch, read from KPADEnableDPD's code just after

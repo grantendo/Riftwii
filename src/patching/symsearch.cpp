@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <map>
 #include <set>
+#include <vector>
 
 namespace riftwii {
 namespace {
@@ -1680,46 +1681,228 @@ bool base_update(std::uint32_t insn, std::uint32_t reg) {
     }
 }
 
-}  // namespace
-
-bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
-    constexpr unsigned kWithin = 8;  // words from the `lis` to its use
+// Whether the word at `i` is a `lis rX,0xCD00` (or 0xCC00), or an
+// `addis rX,rY,0xCD00` that adds it to a port's offset, whose rX is used
+// within the next 24 words, before another `lis`/`addis` sets rX, at the
+// serial interface's registers (0x6400 to 0x64FF): an address or access
+// through it. (quatric's Kirby's Return to Dream Land patch loads it ten
+// words ahead of its `ori rX,rX,0x6438`, and reads a port as
+// `mulli r9,chan,12; addis r9,r9,0xCD00; lwz rD,0x6404(r9)`.)
+bool gc_port_high(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
+    constexpr unsigned kWithin = 24;  // words from the `lis`/`addis` to its use
     constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
-    const std::size_t words = size / 4;
-    for (std::size_t i = 0; i < words; ++i) {
-        const std::uint32_t lis = be32(bytes + i * 4);
-        const std::uint32_t high = lis & 0xFFFFu;
-        if ((lis >> 26) != 15 || ((lis >> 16) & 31u) != 0 || (high != 0xCD00u && high != 0xCC00u)) continue;
-        const std::uint32_t reg = (lis >> 21) & 31u;
-        for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
+    const std::uint32_t addis = be32(bytes + i * 4);
+    const std::uint32_t high = addis & 0xFFFFu;
+    if ((addis >> 26) != 15 || (high != 0xCD00u && high != 0xCC00u)) return false;
+    const std::uint32_t reg = (addis >> 21) & 31u;
+    for (std::size_t k = i + 1; k < words && k <= i + kWithin; ++k) {
+        const std::uint32_t insn = be32(bytes + k * 4);
+        const std::uint32_t op = insn >> 26;
+        const std::uint32_t low = insn & 0xFFFFu;
+        const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
+        if (low >= kSiFirst && low < kSiEnd) {
+            // ori rA,rS,low takes rX as its source (rS); addi and the loads
+            // and stores as their base (rA), where a base of r0 is the
+            // number 0, not r0 (`li r3,0x6430`).
+            const std::uint32_t source = op == 24 ? rd : ra;
+            const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 || op == 40 ||
+                              op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
+            if (uses && source == reg && (op == 24 || source != 0)) return true;
+        }
+        // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`, `li
+        // r6,0`, a load into it): no longer the hardware's base, so a use
+        // after it reads plain memory. Adding to it keeps it a base (`add
+        // r6,r6,r5`, `addi r6,r6,12`: a port's offset), and so does `ori
+        // rX,rX,0` (`nop` is `ori r0,r0,0`).
+        const std::uint32_t xo = (insn >> 1) & 0x3FFu;
+        // So does an update form's base (`lbzu r8,0(r6)`, `lfsu f0,4(r6)`: the
+        // base plus an offset). `addi r0,0,n` is `li r0,n`.
+        const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) ||
+                           (op == 14 && rd == reg && ra == reg && reg != 0) ||
+                           (op == 24 && rd == reg && ra == reg && low == 0) || base_update(insn, reg);
+        if (writes_gpr(insn, reg) && !keeps) return false;
+    }
+    return false;
+}
+
+// Whether the base a port read's `lis`/`addis` at `i` loads may also reach
+// something other than the serial interface's registers while it holds
+// that base (`lis r6,0xCD00; lwz r8,0(r6); lwz r9,0x6404(r6)` reads the
+// IPC register at 0xCD000000 through the same r6): pointing that base at the
+// copy would send the other access there too. Every path through the bytes
+// is followed while the register may hold the base (both ways at a
+// conditional branch, into the bytes' own functions at a call, with no
+// window), so a write skipped by a branch doesn't hide a later use.
+// - An access or address through the base off the serial interface's
+//   registers, or the base copied anywhere (into another register or
+//   stored), is shared.
+// - Adding a port's offset (`add r6,r6,r5`, `addi r6,r6,12`, an update
+//   form, `nop`) keeps it the base; any other write ends it on that path.
+// - A path ends at a return or a jump out of the bytes (the code goes
+//   elsewhere). A call (`bl`, `blrl`, `bctrl`) ends it for r0 and r3-r12,
+//   which a call doesn't keep, and it goes on after the call for the others
+//   (`bctrl; lwz r9,0(r31)` still counts). The code a call reaches outside
+//   the bytes is the game's own, which never takes a hardware base it wasn't
+//   written for (quatric's patches call through the CTR with the base still
+//   in r6, r8 or r9).
+bool base_shared_from(const std::uint8_t* bytes, std::size_t words, std::size_t start, std::uint32_t reg,
+                      unsigned depth) {
+    constexpr std::uint32_t kSiFirst = 0x6400, kSiEnd = 0x6500;
+    constexpr unsigned kCopies = 4;  // copies of copies followed, then shared
+    const bool volatile_reg = reg == 0 || (reg >= 3 && reg <= 12);
+    std::vector<std::uint8_t> seen(words, 0);
+    std::vector<std::size_t> todo{start};
+    const auto inside = [&](std::size_t k, std::int32_t offset, std::size_t& to) {
+        const std::int64_t t = static_cast<std::int64_t>(k) + offset / 4;
+        if (t < 0 || t >= static_cast<std::int64_t>(words)) return false;
+        to = static_cast<std::size_t>(t);
+        return true;
+    };
+    while (!todo.empty()) {
+        std::size_t k = todo.back();
+        todo.pop_back();
+        for (; k < words && !seen[k]; ++k) {
+            seen[k] = 1;
             const std::uint32_t insn = be32(bytes + k * 4);
             const std::uint32_t op = insn >> 26;
             const std::uint32_t low = insn & 0xFFFFu;
-            const std::uint32_t rd = (insn >> 21) & 31u, ra = (insn >> 16) & 31u, rb = (insn >> 11) & 31u;
-            if (low >= kSiFirst && low < kSiEnd) {
-                // ori rA,rS,low takes rX as its source (rS); addi and the
-                // loads and stores as their base (rA), where a base of r0
-                // is the number 0, not r0 (`li r3,0x6430`).
-                const std::uint32_t source = op == 24 ? rd : ra;
-                const bool uses = op == 14 || op == 24 || op == 32 || op == 34 || op == 36 || op == 38 ||
-                                  op == 40 || op == 44;  // addi, ori, lwz, lbz, stw, stb, lhz, sth
-                if (uses && source == reg && (op == 24 || source != 0)) return true;
-            }
-            // rX written by anything else (`lis r6,0x8000`, `mr r6,r3`,
-            // `li r6,0`, a load into it): no longer the hardware's base, so a
-            // use after it reads plain memory. Adding to it keeps it a base
-            // (`add r6,r6,r5`, `addi r6,r6,12`: a port's offset), and so
-            // does `ori rX,rX,0` (`nop` is `ori r0,r0,0`).
+            const std::uint32_t rd = (insn >> 21) & 31u;  // rD or rS (BO for branches)
+            const std::uint32_t ra = (insn >> 16) & 31u;
+            const std::uint32_t rb = (insn >> 11) & 31u;
             const std::uint32_t xo = (insn >> 1) & 0x3FFu;
-            // So does an update form's base (`lbzu r8,0(r6)`, `lfsu f0,4(r6)`:
-            // the base plus an offset). `addi r0,0,n` is `li r0,n`.
-            const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) ||
-                               (op == 14 && rd == reg && ra == reg && reg != 0) ||
-                               (op == 24 && rd == reg && ra == reg && low == 0) || base_update(insn, reg);
-            if (writes_gpr(insn, reg) && !keeps) break;
+            const bool si = low >= kSiFirst && low < kSiEnd;
+            std::size_t to = 0;
+            if (op == 16) {  // bc: both ways
+                if (!(insn & 2u) && inside(k, static_cast<std::int16_t>(insn & 0xFFFCu), to)) todo.push_back(to);
+                if ((rd & 0x14u) == 0x14u) break;  // branch always: no way on
+                todo.push_back(k + 1);
+                break;
+            }
+            if (op == 18) {  // b, bl
+                std::int32_t offset = static_cast<std::int32_t>(insn & 0x03FFFFFCu);
+                if (offset & 0x02000000) offset -= 0x04000000;
+                const bool in = !(insn & 2u) && inside(k, offset, to);
+                if (in) todo.push_back(to);
+                if (!(insn & 1u)) break;  // b: the code goes there
+                if (volatile_reg) break;  // not kept across the call
+                todo.push_back(k + 1);
+                break;
+            }
+            if (op == 19 && (xo == 16 || xo == 528)) {  // bclr, bcctr
+                if (insn & 1u) {  // blrl, bctrl: a call to code out of the bytes
+                    // Not kept across the call; a conditional one may not be
+                    // taken, and then the base is still there.
+                    if (volatile_reg && (rd & 0x14u) == 0x14u) break;
+                    continue;
+                }
+                if ((rd & 0x14u) == 0x14u) break;  // a return or jump out
+                continue;
+            }
+            const bool load = (op >= 32 && op <= 35) || (op >= 40 && op <= 43) || op == 46;  // lwz..lbzu, lhz..lhau, lmw
+            const bool store = (op >= 36 && op <= 39) || op == 44 || op == 45 || op == 47;  // stw..stbu, sth, sthu, stmw
+            const bool fp_access = op >= 48 && op <= 55;                                     // lfs..stfdu
+            if (store && rd == reg) return true;  // the base itself stored
+            if ((load || store || fp_access) && ra == reg && reg != 0) {
+                if (!si) return true;  // an access through the base at another register
+                if (load && rd == reg) break;  // the base loaded over
+                continue;
+            }
+            if (op == 14 && ra == reg && reg != 0) {  // addi rD,rX,low
+                if (rd == reg) continue;              // the base plus an offset
+                if (!si) return true;
+                continue;
+            }
+            if (op == 24 && rd == reg) {  // ori rA,rX,low
+                if (ra == reg && low == 0) continue;  // nop
+                if (!si) return true;
+                if (ra == reg) break;
+                continue;
+            }
+            // Read by anything else: an indexed access through the base (its
+            // offset unknown) or the base copied elsewhere is shared; a
+            // compare only reads it; a result in the register itself sets it
+            // anew.
+            const bool compare = op == 10 || op == 11 || (op == 31 && (xo == 0 || xo == 32));
+            const bool keeps = (op == 31 && xo == 266 && rd == reg && (ra == reg || rb == reg)) || base_update(insn, reg);
+            if (op == 31) {
+                const bool load_x = xo == 20 || xo == 23 || xo == 55 || xo == 87 || xo == 119 || xo == 279 ||
+                                    xo == 311 || xo == 343 || xo == 375 || xo == 534 || xo == 790 || xo == 535 ||
+                                    xo == 567 || xo == 599 || xo == 631;
+                const bool store_x = xo == 150 || xo == 151 || xo == 183 || xo == 215 || xo == 247 || xo == 407 ||
+                                     xo == 439 || xo == 662 || xo == 918 || xo == 663 || xo == 695 || xo == 727 ||
+                                     xo == 759 || xo == 983;
+                if ((load_x || store_x) && !keeps && (ra == reg || rb == reg)) return true;
+                if (store_x && rd == reg) return true;  // the base itself stored
+            }
+            const bool logical_x = op == 31 && (xo == 28 || xo == 60 || xo == 124 || xo == 284 || xo == 316 ||
+                                                xo == 412 || xo == 444 || xo == 476 || xo == 24 || xo == 536 ||
+                                                xo == 792 || xo == 824 || xo == 26 || xo == 922 || xo == 954);
+            // A port's address in another register (`add r10,r9,r10`, `mr
+            // r7,r6`): that register is followed as a base of its own from
+            // here, and this one goes on.
+            const bool add_copy = op == 31 && xo == 266 && rd != reg && (ra == reg || rb == reg);
+            const bool mr_copy = op == 31 && xo == 444 && rd == reg && rb == reg && ra != reg;
+            if (add_copy || mr_copy) {
+                const std::uint32_t copy = add_copy ? rd : ra;
+                if (depth >= kCopies || base_shared_from(bytes, words, k + 1, copy, depth + 1)) return true;
+                continue;
+            }
+            // mfspr, mftb, mfcr, mfmsr read no register; mtspr, mtcrf, mtmsr
+            // read rS; srawi's rB field is its shift.
+            const bool move_from = op == 31 && (xo == 339 || xo == 371 || xo == 19 || xo == 83);
+            const bool move_to = op == 31 && (xo == 467 || xo == 144 || xo == 146);
+            bool reads = false;
+            if (move_from) {
+                reads = false;
+            } else if (move_to || (op == 31 && xo == 824)) {
+                reads = rd == reg;
+            } else if (op == 31) {
+                reads = logical_x ? (rd == reg || rb == reg) : (ra == reg || rb == reg);
+            } else if (op >= 20 && op <= 29 && op != 22) {
+                reads = rd == reg;  // rlwimi..andis.: rS
+            } else if (op == 7 || op == 8 || op == 12 || op == 13 || op == 15) {
+                reads = ra == reg && reg != 0;  // mulli, subfic, addic, addic., addis
+            }
+            if (reads && !compare && !keeps && !writes_gpr(insn, reg)) return true;  // copied elsewhere
+            if (keeps) continue;
+            if (writes_gpr(insn, reg)) break;  // set anew
         }
     }
     return false;
+}
+
+bool gc_port_base_shared(const std::uint8_t* bytes, std::size_t words, std::size_t i) {
+    return base_shared_from(bytes, words, i + 1, (be32(bytes + i * 4) >> 21) & 31u, 0);
+}
+
+}  // namespace
+
+bool gc_ports_routable(const std::uint8_t* bytes, std::size_t size) {
+    const std::size_t words = size / 4;
+    for (std::size_t i = 0; i < words; ++i)
+        if (gc_port_high(bytes, words, i) && gc_port_base_shared(bytes, words, i)) return false;
+    return true;
+}
+
+bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
+    const std::size_t words = size / 4;
+    for (std::size_t i = 0; i < words; ++i)
+        if (gc_port_high(bytes, words, i)) return true;
+    return false;
+}
+
+unsigned retarget_gc_ports(std::uint8_t* bytes, std::size_t size, std::uint32_t copy) {
+    if ((copy & 0xFFFFu) != 0x6400u) return 0;
+    const std::size_t words = size / 4;
+    unsigned rewritten = 0;
+    for (std::size_t i = 0; i < words; ++i) {
+        if (!gc_port_high(bytes, words, i) || gc_port_base_shared(bytes, words, i)) continue;
+        // Keep the instruction and its register, change only the upper half.
+        bytes[i * 4 + 2] = static_cast<std::uint8_t>(copy >> 24);
+        bytes[i * 4 + 3] = static_cast<std::uint8_t>(copy >> 16);
+        ++rewritten;
+    }
+    return rewritten;
 }
 
 }  // namespace riftwii
