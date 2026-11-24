@@ -86,6 +86,16 @@ KpadConnect find_kpad_connect(const std::vector<CodeRange>& text, std::uint32_t 
 // the 29 Wii games dumped (2006 to 2010). 0 when not exactly one.
 std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text);
 
+// The later WPAD's WPADGetInfoAsync, by its blocking caller WPADGetInfo: a
+// short framed function that makes the address of WPAD's control-block
+// table `block_table` (its connect callbacks' table,
+// find_wpad_connect_later) and calls a function whose result it checks
+// for busy at once (`bl X; cmpwi r3,-2`); X is WPADGetInfoAsync (Mario
+// Strikers Charged: WPADGetInfo 0x803CD2A4 calls 0x803CD35C). The 2006
+// finder's marks also fit another function in that WPAD. 0 when not exactly
+// one.
+std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::uint32_t block_table);
+
 // Where the 2006 WPAD (Excite Truck, Marvel Ultimate Alliance: both its
 // Oct 3 2006 build) keeps each channel's connect callback, which those games
 // wait on before they use a Wii Remote (KPAD has none of its own there):

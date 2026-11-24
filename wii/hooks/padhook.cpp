@@ -779,7 +779,12 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, Pa
     // its answer (the stand-in gives one); a later game's blocking
     // WPADGetInfo would sleep for a real Wii Remote's reply (Mario Strikers
     // Charged after its title), so there it's busy and returns at once.
-    out.wpad_info = out.standin ? find_wpad_get_info(text) : 0;
+    // The 2006 WPAD's by its marks; a later one's through its blocking
+    // caller, which loads WPAD's control-block table (the 2006 marks also
+    // fit another function there: Mario Strikers Charged).
+    out.wpad_info = !out.standin ? 0
+                    : old_kpad   ? find_wpad_get_info(text)
+                                 : find_wpad_get_info_later(text, find_wpad_connect_later(text).table);
     out.info_answers = old_kpad;
     if (out.standin) {
         if (out.wpad_info != 0)

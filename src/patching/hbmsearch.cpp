@@ -585,6 +585,36 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
 
 }  // namespace
 
+std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::uint32_t block_table) {
+    constexpr std::size_t kMaxWords = 48;
+    constexpr std::uint32_t kCmpwiR3Busy = 0x2C03FFFEu;  // cmpwi r3,-2
+    if (block_table == 0) return 0;
+    std::uint32_t found = 0;
+    bool two = false;
+    each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
+        std::uint32_t high[32] = {};
+        bool table = false;
+        std::uint32_t target = 0;
+        for (std::size_t k = start; k < end; ++k) {
+            const std::uint32_t insn = be32(r.bytes + 4 * k);
+            const std::uint32_t d = reg_d(insn), a = reg_a(insn);
+            if (opcode(insn) == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;  // lis
+            if (opcode(insn) == 14 && a != 0 && high[a] != 0 &&
+                high[a] + static_cast<std::uint32_t>(simm(insn)) == block_table)
+                table = true;
+            if ((insn & 0xFC000003u) == 0x48000001u && k + 1 < end && be32(r.bytes + 4 * (k + 1)) == kCmpwiR3Busy) {
+                std::uint32_t offset = insn & 0x03FFFFFCu;  // bl: its target
+                if (offset & 0x02000000u) offset |= 0xFC000000u;
+                target = r.address + static_cast<std::uint32_t>(4 * k) + offset;
+            }
+        }
+        if (!table || target == 0) return;
+        if (found != 0 && found != target) two = true;
+        found = target;
+    });
+    return two ? 0 : found;
+}
+
 WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
     constexpr std::uint32_t kBctrl = 0x4E800421u;
     constexpr unsigned kCallWindow = 8;  // words from the slot's load to its call
