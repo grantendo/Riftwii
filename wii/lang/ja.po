@@ -1548,6 +1548,9 @@ msgstr "ゲームキューブコントローラー"
 msgid "Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one."
 msgstr "各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。"
 
+msgid "An enabled pack turns it on as {1} while this is Off."
+msgstr "有効なパックが、ここがオフの間は{1}としてオンにします。"
+
 msgid "A code build doesn't use it."
 msgstr "コードビルドでは使われません。"
 

@@ -345,6 +345,13 @@ public:
     // folder and it wins over save_mode (resolve_save_override), so the
     // frontend shows the save setting as the pack's instead of offering it.
     std::string pack_save_owner() const;
+    // The GameCube controllers' stand-in form an enabled pack for this disc
+    // asks for (its `riftwii-gc-controllers`, with something of it chosen),
+    // empty for none; the first such pack's when several do.
+    std::string pack_gc_controllers() const;
+    // The form this launch uses: the game's own setting, or with it Off,
+    // the one a pack asks for ("off" for none).
+    std::string effective_gc_controllers() const;
     // Whether an enabled pack patches the game: one with a choice picked,
     // or one with no options (it applies as a whole). Code builds do not
     // count. The launch then leaves online play to the packs (wii/launch/boot.cpp
