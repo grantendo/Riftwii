@@ -990,11 +990,17 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
                 std::uint64_t pos = r.address;
                 if (pos % align != 0) pos += align - pos % align;
                 const std::uint64_t last = std::uint64_t(r.address) + r.size - patch.original.size();
-                while (pos <= last && found < kMaxMatches && out.writes.size() < kMaxWrites) {
+                while (pos <= last) {
                     // The first byte as loaded first (cheap), then the whole
                     // pattern with the earlier writes over it.
                     if ((r.bytes[pos - r.address] == patch.original[0] || near_write(pos)) &&
                         matches_at(static_cast<std::uint32_t>(pos), patch.original)) {
+                        // One more write than the planning follows: incomplete
+                        // (a plan with exactly the limit is complete).
+                        if (found >= kMaxMatches || out.writes.size() >= kMaxWrites) {
+                            out.incomplete = true;
+                            return out;
+                        }
                         out.writes.push_back({static_cast<std::uint32_t>(pos), i});
                         out.applies[i] = true;
                         ++found;
@@ -1004,10 +1010,6 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
                     }
                     pos += align;
                 }
-            }
-            if (found >= kMaxMatches || out.writes.size() >= kMaxWrites) {
-                out.incomplete = true;
-                return out;
             }
             continue;
         }
