@@ -475,6 +475,12 @@ void TestQuietDue() {
     EXPECT_EQ(rtgcwii_quiet_due(&w, 7000 + 3000, ms), 1);
     rtgcwii_wii_read(&w, 11000);  // reading again: quiet again only after 3 s
     EXPECT_EQ(rtgcwii_quiet_due(&w, 12000, ms), 0);
+    // Once quiet, quiet until the next read, even when the time base comes
+    // round to just after the old timestamp (CodeRabbit CLI, #616).
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 14000, ms), 1);
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 11010u, ms), 1);  // a wrapped clock: as if 10 ticks after the old read
+    rtgcwii_wii_read(&w, 20000);
+    EXPECT_EQ(rtgcwii_quiet_due(&w, 20100, ms), 0);
 }
 
 int main() {

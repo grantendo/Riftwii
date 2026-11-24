@@ -113,6 +113,9 @@ struct rtgcwii {
      * read, WPADProbe or WPADRead; low bit set), 0: never; and when the
      * first sleep that asked was (low bit set), 0: none yet. */
     uint32_t wii_read, quiet_from;
+    /* Quiet already reached: kept until the next Wii controller read, so the
+     * time base wrapping round can't make an old timestamp look recent. */
+    uint32_t quiet_reached;
     /* WPAD's extension callbacks (the game's, WPADSetExtensionCallback):
      * the table of the channels' control blocks and the callback's place in
      * one (just before the connect callback's), 0: none. Told the stand-in's

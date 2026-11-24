@@ -392,6 +392,45 @@ void put_slot_call(Section& t, std::int32_t slot, std::int32_t reason) {
     t.put(kBctrl);
 }
 
+// The later WPAD's WPADGetInfoAsync through its blocking caller: the table's
+// address made, then `bl X; cmpwi r3,-2` (find_wpad_get_info_later).
+void TestWpadGetInfoLater() {
+    const std::uint32_t table = 0x805D6170u, async = 0x80100000u;
+    const auto wrapper = [&](Section& t, std::uint32_t overwrite_high, std::uint32_t second_target) {
+        t.put(stwu_r1(0x10));
+        t.put(kMflrR0);
+        t.put(bl(t.here(), async));
+        t.put(0x2C03FFFEu);  // cmpwi r3,-2
+        if (second_target != 0) {
+            t.put(bl(t.here(), second_target));
+            t.put(0x2C03FFFEu);
+        }
+        t.put(lis(3, 0x805D));
+        if (overwrite_high) t.put(li(3, 0));  // r3 written again: the high half is gone
+        t.put(addi(3, 3, 0x6170));
+        t.put(addi(1, 1, 0x10));
+        t.put(kBlr);
+    };
+    {
+        Section t{0x803CD2A4, {}};
+        wrapper(t, 0, 0);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), async);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, 0), 0u);
+    }
+    {
+        // `lis r3; li r3,0; addi r3,r3,lo` makes lo, not the table (CodeRabbit CLI, #616).
+        Section t{0x803CD2A4, {}};
+        wrapper(t, 1, 0);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), 0u);
+    }
+    {
+        // Two different busy-checked calls in one function: not guessed (CodeRabbit CLI, #616).
+        Section t{0x803CD2A4, {}};
+        wrapper(t, 0, 0x80100100u);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), 0u);
+    }
+}
+
 void TestWpadConnectLater() {
     {
         // The extension, connect and sampling setters side by side; WPAD
@@ -1181,6 +1220,7 @@ void TestKpadConnect() {
 }  // namespace
 
 int main() {
+    TestWpadGetInfoLater();
     TestKpadRead();
     TestWpadProbe();
     TestWpadGetInfo();

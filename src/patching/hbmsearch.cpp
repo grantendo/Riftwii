@@ -598,14 +598,30 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             const std::uint32_t d = reg_d(insn), a = reg_a(insn);
-            if (opcode(insn) == 15 && a == 0) high[d] = (insn & 0xFFFFu) << 16;  // lis
+            const bool bl = (insn & 0xFC000003u) == 0x48000001u;
+            // `addi` from the value its register held before it (CodeRabbit
+            // CLI, #616), then what this instruction writes: a `lis` a high
+            // half, anything else forgets it, and a call clobbers r0, r3-r12.
             if (opcode(insn) == 14 && a != 0 && high[a] != 0 &&
                 high[a] + static_cast<std::uint32_t>(simm(insn)) == block_table)
                 table = true;
-            if ((insn & 0xFC000003u) == 0x48000001u && k + 1 < end && be32(r.bytes + 4 * (k + 1)) == kCmpwiR3Busy) {
+            if (opcode(insn) == 15 && a == 0) {
+                high[d] = (insn & 0xFFFFu) << 16;  // lis
+            } else if (bl) {
+                high[0] = 0;
+                for (std::uint32_t g = 3; g <= 12; ++g) high[g] = 0;
+            } else {
+                for (std::uint32_t g = 0; g < 32; ++g)
+                    if (high[g] != 0 && writes_register(insn, g)) high[g] = 0;
+            }
+            if (bl && k + 1 < end && be32(r.bytes + 4 * (k + 1)) == kCmpwiR3Busy) {
                 std::uint32_t offset = insn & 0x03FFFFFCu;  // bl: its target
                 if (offset & 0x02000000u) offset |= 0xFC000000u;
-                target = r.address + static_cast<std::uint32_t>(4 * k) + offset;
+                const std::uint32_t here = r.address + static_cast<std::uint32_t>(4 * k) + offset;
+                // Two different busy-checked calls in one function: not
+                // guessed (CodeRabbit CLI, #616); the same one twice is fine.
+                if (target != 0 && target != here) two = true;
+                target = here;
             }
         }
         if (!table || target == 0) return;
