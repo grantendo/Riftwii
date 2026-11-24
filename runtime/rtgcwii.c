@@ -301,15 +301,26 @@ static void rtgcwii_still(int32_t acc[3], int32_t* value, int32_t* speed) {
     *speed = 0;
 }
 
-/* The shake (rtgcwii_nunchuk's): all three axes swing together, and a
- * flip (`jump`, rtgcwii_count_shake) is a jump in speed. */
+/* The shake (rtgcwii_nunchuk's): all three axes swing together, every
+ * RTGCWII_SHAKE_STEPS-th step at rest, and a step (`jump`,
+ * rtgcwii_count_shake) is a jump in speed. */
 static void rtgcwii_shake(uint32_t shake, int jump, int32_t acc[3], int32_t* value, int32_t* speed) {
-    const int32_t swing = ((shake / RTGCWII_SHAKE_FLIP) & 1u) ? RTGCWII_SHAKE_G : -RTGCWII_SHAKE_G;
-    acc[0] = swing;
-    acc[1] = swing;
-    acc[2] = -swing;
-    *value = RTGCWII_SHAKE_VALUE;
+    const uint32_t step = shake / RTGCWII_SHAKE_FLIP;
     *speed = jump ? RTGCWII_SHAKE_VALUE : 0;
+    if (step % RTGCWII_SHAKE_STEPS == RTGCWII_SHAKE_STEPS - 1u) {
+        acc[0] = 0;
+        acc[1] = -RTHOME_AXIS_FULL;
+        acc[2] = 0;
+        *value = RTHOME_AXIS_FULL;
+        return;
+    }
+    {
+        const int32_t swing = (step & 1u) ? RTGCWII_SHAKE_G : -RTGCWII_SHAKE_G;
+        acc[0] = swing;
+        acc[1] = swing;
+        acc[2] = -swing;
+        *value = RTGCWII_SHAKE_VALUE;
+    }
 }
 
 /* The integer square root of `v` (rounded down). */

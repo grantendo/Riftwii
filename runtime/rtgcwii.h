@@ -160,16 +160,19 @@ struct rtgcwii_fs {
 };
 
 /* The shake: all three axes swing between +RTGCWII_SHAKE_G and -SHAKE_G,
- * flipping every `shake_flip` ticks while X is held (the loader's 33 ms:
- * a 15 Hz shake, as Dolphin's emulated one at that speed; Donkey Kong
- * Country Returns takes nothing slower than that for its "shake to start",
- * and it read the old flip every few samples as too fast; with no
- * shake_flip, every RTGCWII_SHAKE_FLIP samples); 3.4 g is past the threshold Batman: The Brave and
+ * a step every `shake_flip` ticks while X is held (the loader's 40 ms,
+ * about the 2-3 frames a half-swing of Dolphin's emulated 15 Hz shake
+ * takes; with no shake_flip, every RTGCWII_SHAKE_FLIP samples), and every
+ * RTGCWII_SHAKE_STEPS-th step back at rest (1 g along -Y), as a hand's
+ * shake passes through still: Donkey Kong Country Returns' "shake to
+ * start" took Dolphin's shake, which does, but not a swing that never
+ * came back below 3 g. 3.4 g is past the threshold Batman: The Brave and
  * the Bold checks for its heavy attacks (3.2 g for the Wii Remote, 2.0 g
  * for the Nunchuk). Numerators over RTHOME_AXIS_FULL (256: 1 g). */
 #define RTGCWII_SHAKE_G 870
 #define RTGCWII_SHAKE_VALUE 1508  /* |(3.4, 3.4, 3.4)| g */
 #define RTGCWII_SHAKE_FLIP 4u
+#define RTGCWII_SHAKE_STEPS 5u  /* +, -, +, -, at rest */
 /* Full C-stick moves the pointer this much a sample (the screen is two
  * RTHOME_POINTER_FULL wide, so about a second across), and it stays inside
  * +-RTGCWII_POINTER_EDGE, so the cursor never leaves the screen. */

@@ -205,10 +205,18 @@ void TestShake() {
     for (std::uint32_t i = 0; i < 4 * RTGCWII_SHAKE_FLIP; ++i) {
         rtgcwii_pads(&w, p.s, 1 + i * 16);
         rtgcwii_nunchuk(&w, 0, 1 + i * 16, &f);
-        EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
-        EXPECT_TRUE(f.acc[0] == RTGCWII_SHAKE_G || f.acc[0] == -RTGCWII_SHAKE_G);
-        EXPECT_EQ(f.acc[1], f.acc[0]);
-        EXPECT_EQ(f.acc[2], -f.acc[0]);
+        if ((i + 1) / RTGCWII_SHAKE_FLIP == RTGCWII_SHAKE_STEPS - 1u) {
+            // The fifth step (sample 16): back at rest.
+            EXPECT_EQ(f.acc_value, RTHOME_AXIS_FULL);
+            EXPECT_EQ(f.acc[0], 0);
+            EXPECT_EQ(f.acc[1], -RTHOME_AXIS_FULL);
+            EXPECT_EQ(f.acc[2], 0);
+        } else {
+            EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
+            EXPECT_TRUE(f.acc[0] == RTGCWII_SHAKE_G || f.acc[0] == -RTGCWII_SHAKE_G);
+            EXPECT_EQ(f.acc[1], f.acc[0]);
+            EXPECT_EQ(f.acc[2], -f.acc[0]);
+        }
         if (i > 0 && f.acc[0] != last) {
             ++flips;
             EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_VALUE);

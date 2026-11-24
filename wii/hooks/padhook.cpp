@@ -77,8 +77,9 @@ constexpr std::uint32_t kGcwiiGraceMs = 500;
 // C-stick last moved it, then hides (games that hide the cursor when
 // nothing points still do).
 constexpr std::uint32_t kGcwiiPointerShowMs = 2000;
-// The stand-in's shake flips every this many ms: a 15 Hz shake (rtgcwii.shake_flip).
-constexpr std::uint32_t kGcwiiShakeFlipMs = 33;
+// The stand-in's shake steps every this many ms: a half-swing of about
+// 2.5 frames, as Dolphin's 15 Hz shake measures (rtgcwii.shake_flip).
+constexpr std::uint32_t kGcwiiShakeFlipMs = 40;
 // v5 serves 16 handles, picked by the open mode: libogc's USB takes 0 and
 // fakemote (a cIOS module) 15. 0 is tried first (free once libogc's USB
 // is shut down; a Wii U's IOS 58 answered nothing on 1), then 1. v4
