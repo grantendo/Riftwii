@@ -870,7 +870,12 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         // adapter itself from the game's KPAD reads (#587's question 4).
         // The screen stays lit through the Wii Remotes' dimming reset,
         // which GameCube presses never reach (there's no ports' one to use).
-        pad.idle_reset = find_wii_remote_idle_reset(text, find_wpad_probe(text));
+        // In the code as the packs' patches leave it, so a pack that
+        // changes the reset (or the call to it) isn't missed: not found
+        // there, none is used (CodeRabbit on #609).
+        std::vector<CodeRange> view;
+        pad.idle_reset =
+            code_with_patches(text, patched, view) ? find_wii_remote_idle_reset(view, find_wpad_probe(view)) : 0;
         logf("GameCube adapter: no PADRead in this game; the hook reads the GameCube controllers itself for their "
              "stand-in\n");
     }
@@ -1363,9 +1368,13 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         logf("GameCube adapter: GameCube controllers as Wii controllers (the game's setting): %u bytes of MEM2 "
              "for their state\n",
              static_cast<unsigned>(align_up(sizeof(rtgcwii))));
+    // The reason, as it is: a code build never takes the stand-in's build
+    // (it needs every byte, wants_home_build), whatever was found.
     if (out.standin && !out.home_blob)
-        logf("GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the game's KPAD read or "
-             "WPADProbe wasn't found\n");
+        logf(code_build ? "GameCube adapter: GameCube controllers don't stand in for Wii controllers here: a code "
+                          "build has no room for the stand-in (the setting applies to ordinary launches)\n"
+                        : "GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the game's "
+                          "KPAD read or WPADProbe wasn't found\n");
     logf("USB controllers: %s driver (%u bytes), room for %u other USB pad(s) and %u layout(s) (%u bytes)%s, state %u bytes%s\n",
          kind % kBlobNoHome == kBlobAdapter ? "the adapter's" : kind % kBlobNoHome == kBlobPads ? "the USB pads'" : "the full",
          static_cast<unsigned>(h.size), static_cast<unsigned>(out.link_count), static_cast<unsigned>(out.map_count),
@@ -1526,6 +1535,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                       hook.read);
         why = buf;
         hook.active = false;
+        close_pad_handles(hook);  // the plan's USB handles back (CodeRabbit on #609)
         return false;
     }
     const int kind = kind_of(hook);
@@ -1609,6 +1619,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
                 std::snprintf(buf, sizeof(buf), "PADRead's first instruction (0x%08x)", first);
                 why = std::string(buf) + " cannot be moved: " + reason + "; a pack or code has hooked it";
                 hook.active = false;
+                close_pad_handles(hook);  // the plan's USB handles back (CodeRabbit on #609)
                 return false;
             }
             if (&s == &motor_site) {
@@ -1669,6 +1680,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
             if (why.empty())
                 why = "the KPAD read's and WPADProbe's hooks, the only way in for a game with no PADRead, can't go in";
             hook.active = false;
+            close_pad_handles(hook);  // the plan's USB handles back (CodeRabbit on #609)
             return false;
         }
     }
@@ -1693,6 +1705,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
             why = std::string(s.name) + " is out of a branch's reach";
             if (&s == &read_site) {
                 hook.active = false;
+                close_pad_handles(hook);  // the plan's USB handles back (CodeRabbit on #609)
                 return false;
             }
             if (&s == &submit_site || &s == &sleep_site) way_back_off(s.name, "is out of a branch's reach");
@@ -1773,7 +1786,10 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
         logf("GameCube adapter: GameCube controllers don't stand in for Wii controllers here: the KPAD read's or WPADProbe's "
              "hook didn't go in\n");
     }
-    if (home) {
+    // What the combo does as the context has it (ctx->home_on), not which
+    // hooks went in: the KPAD read and WPADProbe also go in for Classic
+    // Controllers alone, with the HOME Menu off (CodeRabbit on #609).
+    if (ctx->home_on) {
         logf("GameCube adapter: the HOME Menu by the controller is on: the combo held %u ms opens the game's own "
              "HOME Menu (a Classic Controller on a free channel, HOME held %u ms)%s\n",
              static_cast<unsigned>(kLeaveHoldMs), static_cast<unsigned>(kHomePressMs),
