@@ -864,7 +864,8 @@ static void pad_home_check(struct rt_pad_context* c, const uint8_t* status, uint
         }
     }
 #ifdef RT_PAD_STANDIN
-    rthome_pads_own(&c->home, status, t, pad_gcwii_own(c));
+    rthome_pads_own(&c->home, status, t, pad_gcwii_own(c),
+                    c->gcwii ? ((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot.real : 0u);
 #else
     rthome_pads(&c->home, status, t);
 #endif
@@ -1314,6 +1315,7 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
             interrupts_restore(msr);
             (void)pad_tell_connect(c, chan, 0);
             msr = interrupts_off();
+            rtslot_corrected(&w->slot, chan);
         }
     }
     rtslot_tell_give(&w->slot);

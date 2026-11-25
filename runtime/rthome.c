@@ -50,14 +50,16 @@ static uint32_t combo_port(const uint8_t* status) {
 
 #ifdef RT_PAD_STANDIN
 /* The lowest empty channel, else the lowest the game never asked about. */
-static uint32_t free_channel(const struct rthome* h, uint32_t port, uint32_t own) {
+static uint32_t free_channel(const struct rthome* h, uint32_t port, uint32_t own, uint32_t real) {
     uint32_t i;
     if ((own >> port) & 1u) return port;
-    /* Never another player's permanent stand-in's channel. */
+    /* Never another player's permanent stand-in's channel, nor one a real Wii
+     * Remote holds, whatever the last probe there said (KPAD reads found it
+     * since; CodeRabbit, fork #22). */
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (((h->probed & h->free & ~own) >> i) & 1u) return i;
+        if (((h->probed & h->free & ~own & ~real) >> i) & 1u) return i;
     for (i = 0; i < RTHOME_CHANNELS; ++i)
-        if (!(((h->probed | own) >> i) & 1u)) return i;
+        if (!(((h->probed | own | real) >> i) & 1u)) return i;
     return RTHOME_NO_CHANNEL;
 }
 #else
@@ -81,7 +83,7 @@ static void keep_pad(struct rthome* h, const uint8_t* status) {
 }
 
 #ifdef RT_PAD_STANDIN
-void rthome_pads_own(struct rthome* h, const uint8_t* status, uint32_t now, uint32_t own) {
+void rthome_pads_own(struct rthome* h, const uint8_t* status, uint32_t now, uint32_t own, uint32_t real) {
 #else
 void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
 #endif
@@ -107,7 +109,7 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
     }
     if (elapsed(now, h->since) < h->hold) return;
 #ifdef RT_PAD_STANDIN
-    h->channel = free_channel(h, port, own);
+    h->channel = free_channel(h, port, own, real);
 #else
     h->channel = free_channel(h);
 #endif
@@ -131,7 +133,7 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) {
 }
 
 #ifdef RT_PAD_STANDIN
-void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) { rthome_pads_own(h, status, now, 0u); }
+void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now) { rthome_pads_own(h, status, now, 0u, 0u); }
 #endif
 
 void rthome_probed(struct rthome* h, uint32_t channel, int32_t result) {

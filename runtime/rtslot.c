@@ -184,3 +184,8 @@ int rtslot_home_may_leave(const struct rtslot* s, uint32_t slot) {
 int rtslot_tell_busy(const struct rtslot* s) { return s->telling != 0; }
 void rtslot_tell_take(struct rtslot* s) { s->telling += 1; }
 void rtslot_tell_give(struct rtslot* s) { s->telling -= 1; }
+
+void rtslot_corrected(struct rtslot* s, uint32_t slot) {
+    if (slot >= RTSLOT_SLOTS) return;
+    if (!((s->real >> slot) & 1u) && !((s->present >> slot) & 1u)) s->told |= 1u << slot;
+}

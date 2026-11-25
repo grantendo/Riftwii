@@ -121,7 +121,7 @@ void rthome_pads(struct rthome* h, const uint8_t* status, uint32_t now);
  * its HOME on the player who pressed it, and no other port's stand-in takes
  * such a channel. rthome_pads is this with none. (Not a field of struct
  * rthome: the pad context's layout is the same in every build.) */
-void rthome_pads_own(struct rthome* h, const uint8_t* status, uint32_t now, uint32_t own);
+void rthome_pads_own(struct rthome* h, const uint8_t* status, uint32_t now, uint32_t own, uint32_t real);
 #endif
 
 /* WPADProbe(`channel`) answered `result` (0 a controller, -1 none, -2

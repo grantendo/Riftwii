@@ -111,6 +111,12 @@ int rtslot_next_tell(struct rtslot* s, uint32_t home, int remote_shapes, uint32_
 enum rtslot_after { RTSLOT_AFTER_NOTHING, RTSLOT_AFTER_CONNECTED };
 enum rtslot_after rtslot_told(struct rtslot* s, uint32_t slot, int32_t reason, int delivered);
 
+/* A corrective "connected" (rtslot_told's RTSLOT_AFTER_CONNECTED) was just
+ * delivered for `slot`: if the real controller has left meanwhile, the slot
+ * counts as told, so the next pass tells the game "gone" (the last word it
+ * heard is then the slot's real state; CodeRabbit, fork #22). */
+void rtslot_corrected(struct rtslot* s, uint32_t slot);
+
 /* The callback couldn't take a "connected" (rtslot_not_told: told again
  * next time) or a "gone" (rtslot_still_told: it counts as told connected
  * until then). */

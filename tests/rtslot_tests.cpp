@@ -261,6 +261,21 @@ void TestTellingCount() {
 
 }  // namespace
 
+// Fork #22 (CodeRabbit): a corrective "connected" delivered after the real
+// controller had already left: the slot counts as told, so "gone" follows;
+// with the controller still there, nothing more is told.
+void TestCorrectedAfterLeave() {
+    rtslot s = fresh();
+    rtslot_probed(&s, 1, 0);   // a real Wii Remote on slot 1
+    rtslot_probed(&s, 1, -1);  // gone before the correction was delivered
+    rtslot_corrected(&s, 1);
+    EXPECT_EQ(tell_all(s).leaves, 1);
+    rtslot t = fresh();
+    rtslot_probed(&t, 1, 0);
+    rtslot_corrected(&t, 1);
+    EXPECT_EQ(tell_all(t).leaves, 0);
+}
+
 int main() {
     TestOwnerOrder();
     TestRealBeatsHome();
@@ -276,6 +291,7 @@ int main() {
     TestHomeKeepsShapeAfterUnplug();
     TestHomeLeaveNotForReal();
     TestTellingCount();
+    TestCorrectedAfterLeave();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;
