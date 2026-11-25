@@ -50,6 +50,7 @@ struct rtgcwii {
      * how many in a row. */
     uint32_t empty_since[RTGCWII_CHANNELS];
     uint32_t empty_reads[RTGCWII_CHANNELS];
+    uint32_t empty_last[RTGCWII_CHANNELS];  /* the last empty read (low bit set): a gap past `grace` starts over */
     /* When a real controller's channels were last checked with the game's
      * own WPADProbe (low bit set), 0: never (rtgcwii_real_check_due). */
     uint32_t real_checked;

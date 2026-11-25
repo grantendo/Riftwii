@@ -601,7 +601,8 @@ namespace {
 // One of the video library's screen-dimming resets at word `i` of `r`: a
 // flag cleared by one store, and 1 returned. `li r0,0; stw r0,d(r13);
 // li r3,1; blr` (the middle two either way round), or with the flag's address made by `lis rX` before or
-// after the `li r0,0` (LEGO Star Wars III's other reset).
+// after the `li r0,0` (LEGO Star Wars III's other reset), `li r3,1` before
+// or after its store.
 // Read by address: the words may cross from one range into the next
 // touching one (a patch over part of it with the same bytes splits it in
 // code_with_patches' view; CodeRabbit on #610); a gap ends it.
@@ -633,7 +634,13 @@ bool one_store_reset(const std::vector<CodeRange>& text, std::uint32_t at) {
                ((store >> 16) & 31u) == rx && rx != 0u;
     };
     if (w(0) == kLiR0Zero && lis_then_store(w(1), w(2)) && w(3) == kLiR3One && w(4) == kBlr) return true;
-    return lis_then_store(w(0), w(2)) && w(1) == kLiR0Zero && w(3) == kLiR3One && w(4) == kBlr;
+    if (lis_then_store(w(0), w(2)) && w(1) == kLiR0Zero && w(3) == kLiR3One && w(4) == kBlr) return true;
+    // `li r3,1` before the store (CodeRabbit on #609), when the flag's
+    // address isn't in r3 (the return value would overwrite it): `li r0,0`
+    // and `lis rX` in either order, then `li r3,1`, the store and the return.
+    const bool not_r3 = ((w(0) >> 21) & 31u) != 3u && ((w(1) >> 21) & 31u) != 3u;
+    return w(2) == kLiR3One && w(4) == kBlr && not_r3 &&
+           ((w(0) == kLiR0Zero && lis_then_store(w(1), w(3))) || (w(1) == kLiR0Zero && lis_then_store(w(0), w(3))));
 }
 
 }  // namespace

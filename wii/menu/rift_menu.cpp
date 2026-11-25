@@ -1386,6 +1386,16 @@ static std::string GameInfoKey(const std::string& id, bool channel)
 	return channel && id.size() >= 4 ? id.substr(0, 4) : id;
 }
 
+// The chosen entry describes the tile, not the game used for launch checks.
+static std::string TileDetailsId(const FrontendState& state)
+{
+	if (!state.profile_key.empty()) {
+		const riftwii::Profile* profile = riftwii::wii::Profiles().find(state.profile_key);
+		if (profile && !profile->gametdb_id.empty()) return profile->gametdb_id;
+	}
+	return GameInfoKey(state.game_id, state.use_channel);
+}
+
 // What parental controls (riftwii/parental.hpp) do with the game `id`
 // (`channel`: a Wii channel's): its age from GameTDB's rating, as the
 // About page's cache has it. A game the cache does not know yet counts as
@@ -2053,27 +2063,29 @@ static bool g_retryMissingCovers = false;
 
 // The mod tiles GameTDB lists as games of their own (#385), matched again
 // when the tiles or GameTDB's list of mods change: their own covers.
-// How many times a mod tile's GameTDB match changed through a rename on
-// its Mods page this session (back to an earlier match too): the game page
-// gives the tile's box a fresh try only after one, not after a rename that
-// keeps the match.
+// A changed GameTDB match gives the game page's box a fresh try, even if
+// several changes in a subpage bring it back to an earlier match.
 static unsigned g_tileMatchChanges = 0;
 
 static void UpdateModCoverIds()
 {
 	static unsigned seenWritten = ~0u, seenCleared = ~0u;
+	static bool hadList = false;
 	static std::string seenTiles;
 	std::string tiles;
-	for (const riftwii::Profile& p : riftwii::wii::Profiles().all()) tiles += p.key() + "\t" + p.name + "\n";
+	for (const riftwii::Profile& p : riftwii::wii::Profiles().all())
+		tiles += p.key() + "\t" + p.name + "\t" + p.gametdb_id + "\n";
 	const unsigned written = riftwii::wii::ModTitlesWritten();
 	const unsigned cleared = riftwii::wii::ModCoverIdsCleared();
-	if (written == seenWritten && cleared == seenCleared && tiles == seenTiles) return;
+	const bool unchanged = written == seenWritten && cleared == seenCleared && tiles == seenTiles;
+	if (unchanged && hadList) return;
 	std::vector<riftwii::CustomGame> customs;
 	std::map<std::string, std::string> ids;
-	// No list to read (none yet, or a card error): tried again next time.
-	if (!riftwii::wii::LoadModTitles(customs)) return;
+	// Explicit choices work even before the index for automatic matches exists.
+	hadList = riftwii::wii::LoadModTitles(customs);
+	if (unchanged && !hadList) return;
 	for (const riftwii::Profile& p : riftwii::wii::Profiles().all()) {
-		const std::string id = riftwii::mod_cover_id(customs, p.game_id, p.name);
+		const std::string id = riftwii::profile_cover_id(customs, p);
 		if (!id.empty()) ids[p.key()] = id;
 	}
 	const unsigned matched = static_cast<unsigned>(ids.size());
@@ -5283,12 +5295,12 @@ static void OfferNintendontSavesOnce(const std::function<void(bool)>& homeShown)
 // holds six lines), for the release script to keep up to date. Shown
 // once when they change; Settings > Help > What's new shows them again.
 static const char* const kWhatsNew[] = {
+	"Pick a mod tile's GameTDB entry",
+	"USA games play on a Japanese Wii",
+	"The pointer works after a Remote wakes up",
 	"The Rift Store: get homebrew apps",
 	"Search and Layout on Home's bar",
 	"Wider game pages at 16:9",
-	"Install WAD files is under Games",
-	"Names sort without case or accents",
-	"WAD games go back to RiftWii on a Wii U",
 };
 
 static std::string WhatsNewText()
@@ -6138,7 +6150,7 @@ static bool ReadHomebrewTitlesNow()
 // labels are translated when the player's catalog knows them; otherwise
 // the author's text is shown as written.
 static bool EmulatorRowsPage(const std::string& title, std::vector<FlowRow>& rows,
-	const std::vector<std::string>& help, const std::function<bool(int, int)>& act, bool wide = false)
+	const std::vector<std::string>& help, const std::function<bool(int, int)>& act, bool wide = false, int first = 0)
 {
 	const PageBounds page = wide ? WidePageBounds() : PageBounds{};
 	GuiText titleTxt(title.c_str(), 30, skin::kInk);
@@ -6150,6 +6162,7 @@ static bool EmulatorRowsPage(const std::string& title, std::vector<FlowRow>& row
 	GuiFlowList list(page.left, 84, page.Width(), 5);
 	list.SetCards(true);
 	list.SetRows(&rows);
+	list.Select(first);
 	GuiText noteTxt("", 15, skin::kInkSoft);
 	Place(noteTxt, page.left + 36, NoteCard::kTextY);
 	noteTxt.SetWrap(true, page.Width() - 40, NoteCard::kLines);
@@ -9341,7 +9354,8 @@ struct RowRef {
 	enum class What { Mods, Saves, Cheats, Width, Deflicker, Borders, VideoMode, RegionVideo, Aspect, Rumble, Speaker, GcControllers,
 		RegionStrings, Language, Cios, NandSource, Server, Favorite, Pack, Option, Note, ResetOptions,
 		AddCodes, ForgetCodes, MakeImage, Cover, Memory, About, GcDiscReads, GcCard, GcProgressive, GcWidescreen,
-		GcSharp, GcWidth, GcSpeed, GcVolume, GcLanguage, GcControls, SaveTile, RenameTile, RemoveTile, CodeStart, CrashLogs, CoverSet, CoverPick } what = What::Note;
+		GcSharp, GcWidth, GcSpeed, GcVolume, GcLanguage, GcControls, SaveTile, RenameTile, RemoveTile, CodeStart, CrashLogs,
+		CoverSet, CoverPick, GameTdbEntry } what = What::Note;
 	std::size_t pkg = 0, opt = 0;
 };
 
@@ -9892,6 +9906,14 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 		}
 		add(pick, {RowRef::What::CoverPick});
 	}
+	if (const riftwii::Profile* profile = riftwii::wii::Profiles().find(state.profile_key)) {
+		FlowRow entry;
+		entry.kind = readFiles ? FlowRow::Kind::Action : FlowRow::Kind::Info;
+		entry.dim = !readFiles;
+		entry.label = tr("GameTDB entry");
+		entry.value = profile->gametdb_id.empty() ? tr("Automatic") : profile->gametdb_id;
+		add(entry, {RowRef::What::GameTdbEntry});
+	}
 
 	// The game's own rows first, then the picture's and the rest under
 	// their names (rows the focus passes over).
@@ -10019,7 +10041,7 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 		controls.label = tr("Controls");
 		rows.push_back(controls);
 		refs.push_back({W::GcControls});
-		if (settingsOnly) show({W::Cover, W::CoverSet, W::CoverPick});
+		if (settingsOnly) show({W::Cover, W::CoverSet, W::CoverPick, W::GameTdbEntry});
 		if (settingsOnly) {
 			FlowRow reset;
 			reset.kind = FlowRow::Kind::Action;
@@ -10034,7 +10056,7 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 	heading(tr("Other"));
 	if (settingsOnly && GameRowNotApplied(state.game_id, W::Cheats)) show({W::Cheats});
 	show({W::Language, W::RegionStrings, W::Cios, W::Server, W::Rumble, W::Speaker, W::GcControllers});
-	if (settingsOnly) show({W::Cover, W::CoverSet, W::CoverPick});
+	if (settingsOnly) show({W::Cover, W::CoverSet, W::CoverPick, W::GameTdbEntry});
 	// What RiftWii's extras take of the game's memory this time.
 	const riftwii::ExtrasBudget budget = riftwii::wii::EstimateExtras(state);
 	if (!budget.pieces.empty() && !state.use_channel) {
@@ -12855,9 +12877,9 @@ static std::string GameTitle(const FrontendState& state);
 
 // The name for a Home tile, typed on the search's keyboard (its name
 // mode). False when cancelled.
-static bool AskTileName(const std::string& title, std::string& name)
+static bool AskTileName(const std::string& title, std::string& name, std::size_t limit = riftwii::kMaxProfileName)
 {
-	GuiSearchKeys keys(riftwii::clean_profile_name(name), title, riftwii::kMaxProfileName);
+	GuiSearchKeys keys(riftwii::clean_profile_name(name), title, limit);
 	mainWindow->SetState(STATE::DISABLED);
 	mainWindow->Append(&keys);
 	keys.SetState(STATE::DEFAULT);
@@ -12888,13 +12910,16 @@ static bool AskSteamGridKey(std::string& key)
 	return true;
 }
 
+static std::string GameOwnTitle(const FrontendState& state);
+
 // A new tile's name to start from: the first mod turned on (what the tile
-// is for, as often as not), else the game's.
+// is for, as often as not), else the game's own (on a tile's page too, so
+// a tile going back to Automatic doesn't get the entry's title again).
 static std::string SuggestedTileName(const FrontendState& state)
 {
 	for (const riftwii::LaunchPackage& p : state.model.packages)
 		if (p.valid && p.enabled && riftwii::show_package(p)) return PackLabel(p);
-	return GameTitle(state);
+	return GameOwnTitle(state);
 }
 
 static std::string SourceWhere(const FrontendState& state)
@@ -13042,7 +13067,8 @@ static bool DownloadGameInfoNow()
 // The selected game's details from the cache, or read out of the database
 // for it and the drives' games (with a popup and a bar while that takes
 // seconds). Downloads nothing.
-static riftwii::wii::GameInfoResult ReadGameInfo(const FrontendState& state, riftwii::GameInfo& info, std::string& error)
+static riftwii::wii::GameInfoResult ReadGameInfo(const FrontendState& state, const std::string& id,
+	riftwii::GameInfo& info, std::string& error, bool tileEntry = false)
 {
 	std::set<std::string> wanted;
 	for (const riftwii::wii::ImageGame& g : state.usb_catalog.games) wanted.insert(g.id);
@@ -13063,8 +13089,11 @@ static riftwii::wii::GameInfoResult ReadGameInfo(const FrontendState& state, rif
 		ResumeGui();
 		return !stop;
 	};
-	const riftwii::wii::GameInfoResult result = riftwii::wii::FindGameInfo(GameInfoKey(state.game_id, state.use_channel),
-		wanted, info, error, progress);
+	// A tile's GameTDB entry (typed or chosen) is looked up on its own: the
+	// drives' games' lists stay as they are whether GameTDB has it or not.
+	const riftwii::wii::GameInfoResult result = tileEntry
+		? riftwii::wii::LookUpTypedGameInfo(id, info, error, progress)
+		: riftwii::wii::FindGameInfo(id, wanted, info, error, progress);
 	if (box) {
 		HaltGui();
 		box.reset();
@@ -13078,14 +13107,18 @@ static riftwii::wii::GameInfoResult ReadGameInfo(const FrontendState& state, rif
 // first when the player agrees. False, having said why, when there are none.
 static bool FetchGameInfo(const FrontendState& state, riftwii::GameInfo& info)
 {
+	const std::string id = TileDetailsId(state);
+	// A mod tile's chosen GameTDB entry, not one of the drives' games: read
+	// on its own, so its mods never join the drives' games' list.
+	const bool chosenEntry = id != GameInfoKey(state.game_id, state.use_channel);
 	for (int attempt = 0; attempt < 2; ++attempt) {
 		std::string error;
-		const riftwii::wii::GameInfoResult result = ReadGameInfo(state, info, error);
+		const riftwii::wii::GameInfoResult result = ReadGameInfo(state, id, info, error, chosenEntry);
 		switch (result) {
 			case riftwii::wii::GameInfoResult::Found:
 				return true;
 			case riftwii::wii::GameInfoResult::NotListed:
-				ShowPopup(tr("No details for this game"), tr("GameTDB's database does not list {1}.", {state.game_id}), tr("OK"));
+				ShowPopup(tr("No details for this game"), tr("GameTDB's database does not list {1}.", {id}), tr("OK"));
 				return false;
 			case riftwii::wii::GameInfoResult::Failed:
 				if (error != "stopped")
@@ -13108,6 +13141,110 @@ static bool FetchGameInfo(const FrontendState& state, riftwii::GameInfo& info)
 		if (!DownloadGameInfoNow()) return false;
 	}
 	return false;
+}
+
+static bool PickTileGameTdbEntry(const FrontendState& state, const riftwii::Profile* profile,
+	riftwii::CustomGame& chosen)
+{
+	using namespace riftwii;
+	const std::string title = tr("GameTDB entry");
+	const std::string formatHelp = tr("Enter six letters or numbers.");
+	std::vector<CustomGame> entries;
+	riftwii::wii::LoadModTitles(entries);
+	std::sort(entries.begin(), entries.end(), [](const CustomGame& left, const CustomGame& right) {
+		const int order = strcasecmp(left.title.c_str(), right.title.c_str());
+		return order == 0 ? left.id < right.id : order < 0;
+	});
+	// The saved choice is lit and focused: Automatic when there is none,
+	// whatever the tile's name matches now (its help line says which).
+	const std::string saved = profile ? profile->gametdb_id : std::string();
+	const std::string current = profile ? profile_cover_id(entries, *profile) : std::string();
+	const std::string prefix = custom_prefix(state.game_id);
+	std::vector<const CustomGame*> choices;
+	std::vector<FlowRow> rows;
+	std::vector<std::string> help;
+	const std::size_t room = entries.size() + 3;
+	if (!try_reserve(choices, room) || !try_reserve(rows, room) || !try_reserve(help, room)) {
+		RestartIfOutOfMemory();
+		return false;
+	}
+	const auto add = [&](const std::string& label, const std::string& id, const std::string& note, bool on) {
+		FlowRow row;
+		row.kind = FlowRow::Kind::Action;
+		row.label = label;
+		row.value = id;
+		row.on = on;
+		rows.push_back(std::move(row));
+		help.push_back(note);
+	};
+	std::string automaticHelp = tr("Use the tile's name to look for a match.");
+	if (saved.empty() && !current.empty()) {
+		const CustomGame* matched = find_gametdb_entry(entries, current);
+		const std::string matchedName = matched && !matched->title.empty() ? matched->title : current;
+		automaticHelp = tr("Use the tile's name to look for a match. Now: {1}", {matchedName});
+	}
+	add(tr("Automatic"), "", automaticHelp, saved.empty());
+	add(tr("Type an ID"), "", formatHelp, false);
+	int first = 0;
+	// `label` is what the row shows; `entry` what choosing it saves, its
+	// title possibly empty (then no tile is named after it).
+	const auto addEntry = [&](const CustomGame& entry, const std::string& label) {
+		const bool chosenNow = !saved.empty() && entry.id == saved;
+		if (chosenNow) first = static_cast<int>(rows.size());
+		add(label, entry.id, label, chosenNow);
+		choices.push_back(&entry);
+	};
+	// Keep the two ways to change the match beside the current choice, even
+	// when a game has hundreds of entries or the saved one is from another region.
+	CustomGame extra;
+	if (const CustomGame* selected = find_gametdb_entry(entries, current)) {
+		addEntry(*selected, selected->title);
+	} else if (!current.empty()) {
+		extra.id = current;
+		GameInfo info;
+		if (riftwii::wii::PeekGameInfo(current, info)) extra.title = info.title;
+		addEntry(extra, extra.title.empty() ? tr("Current entry") : extra.title);
+	}
+	for (const CustomGame& entry : entries) {
+		if (prefix.empty() || entry.id.compare(0, prefix.size(), prefix) != 0) continue;
+		if (entry.id == state.game_id || entry.id == current) continue;
+		addEntry(entry, entry.title);
+	}
+	return EmulatorRowsPage(title, rows, help, [&](int clicked, int) {
+		if (clicked == 0) {
+			chosen = {};
+			return true;
+		}
+		if (clicked > 1) {
+			chosen = *choices[static_cast<std::size_t>(clicked - 2)];
+			return true;
+		}
+		std::string typed;
+		if (!AskTileName(tr("Type an ID"), typed, 6)) return false;
+		const std::string id = normalize_gametdb_id(typed);
+		if (id.empty()) {
+			ShowPopup(title, formatHelp, tr("OK"));
+			return false;
+		}
+		if (const CustomGame* entry = find_gametdb_entry(entries, id)) {
+			chosen = *entry;
+			return true;
+		}
+		GameInfo info;
+		std::string error;
+		const auto result = ReadGameInfo(state, id, info, error, true);
+		if (result == riftwii::wii::GameInfoResult::Found) {
+			// No title: chosen for its art and details only.
+			chosen = {id, info.title};
+			return true;
+		}
+		if (result == riftwii::wii::GameInfoResult::Failed) {
+			if (error != "stopped") ShowPopup(title, tr("Could not read them: {1}", {FlatCapped(error, 140)}), tr("OK"));
+		} else {
+			ShowPopup(title, tr("This ID is not in the GameTDB data on the SD card."), tr("OK"));
+		}
+		return false;
+	}, true, first);
 }
 
 // Where the page's parts go: inside a TV's overscan, 5% of the screen in
@@ -13959,7 +14096,7 @@ static bool ShowAbout(const FrontendState& state, const riftwii::GameInfo& info)
 		if (state.model.packs_patch_game() || (server != "off" && !server.empty()))
 			online += " \xC2\xB7 " + tr("Up to {1} players", {std::to_string(info.online_players)});
 		facts.push_back({tr("Online"), online});
-	} else if (riftwii::game_has_no_online(state.game_id) || info.players > 0) {
+	} else if (riftwii::game_has_no_online(info.id) || info.players > 0) {
 		facts.push_back({tr("Online"), tr("No online play")});
 	}
 	if (!info.developer.empty() && info.developer == info.publisher) {
@@ -14001,7 +14138,7 @@ static bool ShowAbout(const FrontendState& state, const riftwii::GameInfo& info)
 		if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - 'a' + 'A');
 	// 16 points: at 13 a composite cable blurred its strokes together.
 	GuiText whereTxt(overline.c_str(), 16, (GXColor){225, 228, 235, 255});
-	const std::string title = GameOwnTitle(state);
+	const std::string title = GameTitle(state);
 	hero.SetMadeUpName(title, riftwii::emulator_cover_id(state.game_id) ? std::string() : state.game_id);
 	const int titleRoom = page.right - titleX - (body.HasRating() ? 70 : 0);
 	GuiText titleTxt(title.c_str(), 28, skin::kWhite);
@@ -14047,7 +14184,7 @@ static bool ShowAbout(const FrontendState& state, const riftwii::GameInfo& info)
 	w.Append(&prompts);
 	mainWindow->Append(&w);
 	ResumeGui();
-	logf("About: %s, %u controller(s) listed, %u bytes of story\n", state.game_id.c_str(),
+	logf("About: %s, %u controller(s) listed, %u bytes of story\n", info.id.c_str(),
 		static_cast<unsigned>(info.controls.size()), static_cast<unsigned>(info.synopsis.size()));
 
 	int footFor = -2;
@@ -15397,12 +15534,33 @@ static void MenuMods(FrontendState& state, std::string& scanStatus)
 				list.Select(acted);
 			} else if (ref.what == RowRef::What::SaveTile || ref.what == RowRef::What::RenameTile) {
 				const bool renaming = ref.what == RowRef::What::RenameTile;
-				std::string name = renaming ? state.profile_name : SuggestedTileName(state);
+				riftwii::CustomGame entry;
+				bool picked = true;
+				if (!renaming) {
+					mainWindow->Remove(&w);
+					picked = PickTileGameTdbEntry(state, nullptr, entry);
+					mainWindow->Append(&w);
+				}
+				// A chosen entry's title is offered as the name; kept as it is,
+				// the tile follows the entry's title (and gives the pack's name
+				// back if it goes back to Automatic). An entry without a title,
+				// or Automatic, offers the pack's name.
+				const std::string packName = renaming ? std::string() : SuggestedTileName(state);
+				std::string name = renaming ? state.profile_name : packName;
+				const bool entryTitled = !renaming && !entry.id.empty() && !riftwii::clean_profile_name(entry.title).empty();
+				if (entryTitled) name = entry.title;
+				const std::string suggested = riftwii::clean_profile_name(name);
+				const std::string fullName = name;
+				const bool enteredName = picked && AskTileName(renaming ? tr("Rename the tile") : tr("Name the new tile"), name);
+				const bool useEntryName = entryTitled && riftwii::clean_profile_name(name) == suggested;
 				std::string key, error;
-				if (!AskTileName(renaming ? tr("Rename the tile") : tr("Name the new tile"), name)) {
-					// cancelled
+				const bool unchanged = renaming && riftwii::clean_profile_name(name) == riftwii::clean_profile_name(state.profile_name);
+				if (!enteredName || unchanged) {
+					// cancelled, or OK on the name as it was: a GameTDB title
+					// longer than a typed name stays whole
 				} else if (renaming ? riftwii::wii::RenameProfile(state, name, error)
-						    : riftwii::wii::CreateProfile(state, name, key, error)) {
+				                    : riftwii::wii::CreateProfile(state, useEntryName ? fullName : name,
+					                    entry.id, useEntryName, packName, key, error)) {
 					if (renaming) {
 						// Matched again at once, so a rename that changes the
 						// GameTDB entry is counted, even one changed back later.
@@ -15549,7 +15707,7 @@ static std::string GameFacts(const FrontendState& state)
 	if (!state.game_id.empty()) parts.push_back(state.game_id);
 	if (SelectedGcGame(state)) parts.push_back(tr("GameCube"));
 	riftwii::GameInfo info;
-	if (!state.game_id.empty() && riftwii::wii::PeekGameInfo(GameInfoKey(state.game_id, state.use_channel), info)) {
+	if (!state.game_id.empty() && riftwii::wii::PeekGameInfo(TileDetailsId(state), info)) {
 		if (info.year) parts.push_back(std::to_string(info.year));
 		if (!info.genres.empty()) parts.push_back(GenreText({info.genres[0]}));
 		if (info.players == 1) parts.push_back(tr("1 player"));
@@ -15740,6 +15898,10 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 	gameTxt.SetAlignment(ALIGN_H::RIGHT, ALIGN_V::TOP);
 	// Right-aligned, so placed from the right edge of the page's window.
 	gameTxt.SetPosition(page.right - screenwidth, 40);
+	// A long name (a mod tile's GameTDB title) ends in "..." before the
+	// page's title rather than over it, at 4:3 most of all.
+	const int titleEnd = page.left + 38 + titleTxt.GetTextWidth();
+	gameTxt.SetMaxWidth(page.right - titleEnd - 24);
 	NoteCard noteCard(page.left);
 	GuiFlowList list(page.left, 84, page.Width(), 5);
 	list.SetCards(true);
@@ -15846,7 +16008,8 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 					                : gameSettings.gc_controllers == "sideways"
 					                    ? tr("Each GameCube controller plays as a Wii Remote held sideways (port 1 as Wii Remote 1 and so on): A is 2, B is 1, the control stick is its D-pad, the C-stick tilts it, R shakes it.")
 					                    : tr("Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.")) +
-					    " " + tr("A code build doesn't use it."));
+					    " " + tr("A code build doesn't use it.") + " " +
+					    tr("In a game with no GameCube controller code, only the adapter's controllers play."));
 				else
 					say(tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."));
 			else if (ref.what == RowRef::What::RegionStrings)
@@ -15860,6 +16023,8 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 				       {PageCoverName(state)}));  // a mod tile reads its own, by its key
 			else if (ref.what == RowRef::What::CoverPick)
 				say(tr("Pick any of GameTDB's covers for this game. It is kept as your own cover on the SD card, so it works offline; Back to automatic removes it."));
+			else if (ref.what == RowRef::What::GameTdbEntry)
+				say(tr("Choose an entry for this tile's cover and About page."));
 			else if (ref.what == RowRef::What::GcDiscReads)
 				say(tr("Fast suits almost every game; a few need the GameCube's own, slower speed (experimental, it can freeze some games)."));
 			else if (ref.what == RowRef::What::GcCard) {
@@ -16103,6 +16268,27 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 				mainWindow->Remove(&w);
 				PickGameCover(state);
 				mainWindow->Append(&w);
+				changed = false;
+			} else if (ref.what == RowRef::What::GameTdbEntry) {
+				const riftwii::Profile* profile = riftwii::wii::Profiles().find(state.profile_key);
+				if (profile) {
+					riftwii::CustomGame entry;
+					const std::string before = profile->gametdb_id;
+					mainWindow->Remove(&w);
+					const bool picked = PickTileGameTdbEntry(state, profile, entry);
+					mainWindow->Append(&w);
+					if (picked && entry.id != before) {
+						std::string error;
+						const std::string previousMatch = riftwii::wii::ModTileCoverId(state.profile_key);
+						if (riftwii::wii::SetProfileGameTdbEntry(state, entry.id, entry.title, SuggestedTileName(state), error)) {
+							UpdateModCoverIds();
+							if (riftwii::wii::ModTileCoverId(state.profile_key) != previousMatch) ++g_tileMatchChanges;
+							done = true;
+						} else {
+							say(error);
+						}
+					}
+				}
 				changed = false;
 			} else if (ref.what == RowRef::What::CoverSet && !state.game_id.empty()) {
 				// The other set, downloaded on the game page as Cover's is.
@@ -16661,7 +16847,7 @@ static int MenuHome(FrontendState& state)
 		bool known = riftwii::wii::PeekGameInfo(GameInfoKey(state.game_id, state.use_channel), info);
 		if (!known && !state.game_id.empty()) {
 			std::string error;
-			const riftwii::wii::GameInfoResult read = ReadGameInfo(state, info, error);
+			const auto read = ReadGameInfo(state, GameInfoKey(state.game_id, state.use_channel), info, error);
 			known = read == riftwii::wii::GameInfoResult::Found || read == riftwii::wii::GameInfoResult::NotListed;
 			if (!known) logf("Parental controls: no rating could be read for %s, so it needs the PIN\n", state.game_id.c_str());
 		}
@@ -16955,14 +17141,15 @@ static int MenuHome(FrontendState& state)
 				bool askedCover = false;
 				const bool secondBefore = riftwii::wii::CoverSecondSet(state.game_id);
 				const unsigned matchChangesBefore = g_tileMatchChanges;
+				const std::string nameBefore = state.profile_name;
 				if (tile == GameTile::Mods) MenuMods(state, scanStatus);
 				else if (tile == GameTile::Cheats) MenuCheats(state);
 				else MenuGameSettings(state, askedCover);
 				transition::Hold(transition::Kind::SlideBack);
 				mainWindow->Append(&w);
-				// The Mods page renames a profile's tile, or removes it (the
-				// page is the game's own then).
-				if (tile == GameTile::Mods) {
+				const bool matchChanged = g_tileMatchChanges != matchChangesBefore;
+				// Mods can rename or remove the tile; Options can choose another entry.
+				if (tile == GameTile::Mods || matchChanged || state.profile_name != nameBefore) {
 					refreshTitle();
 					hero.SetMadeUpName(GameTitle(state),
 							   riftwii::emulator_cover_id(state.game_id) ? std::string() : state.game_id);
@@ -16977,7 +17164,7 @@ static int MenuHome(FrontendState& state)
 					// (PageBoxAsks::back_from_mods). A rename that kept the match
 					// keeps the earlier try.
 					if (tileCover != state.game_id)
-						boxesAsked.back_from_mods(tileCover, g_tileMatchChanges != matchChangesBefore);
+						boxesAsked.back_from_mods(tileCover, matchChanged);
 					askTileCover(tileCover);
 				} else if (g_coverPicked) {
 					// Choose cover changed the player's own cover.

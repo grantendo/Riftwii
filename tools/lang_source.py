@@ -2318,6 +2318,34 @@ T = {
         "このタイルの名前を変える...",
         "Renomear este bloco...",
         "Rinomina questo riquadro..."),
+    "GameTDB entry": ("Entrada de GameTDB", "GameTDBの項目", "Entrada do GameTDB", "Voce di GameTDB"),
+    "Current entry": ("Entrada actual", "今の項目", "Entrada atual", "Voce attuale"),
+    "Type an ID": ("Escribir un código", "IDを入力", "Digitar um código", "Inserisci un codice"),
+    "Use the tile's name to look for a match.": (
+        "Busca una entrada con el nombre de la casilla.",
+        "タイルの名前で項目を探します。",
+        "Procura uma entrada pelo nome do bloco.",
+        "Cerca una voce con il nome del riquadro."),
+    "Use the tile's name to look for a match. Now: {1}": (
+        "Busca una entrada con el nombre de la casilla. Ahora: {1}",
+        "タイルの名前で項目を探します。今: {1}",
+        "Procura uma entrada pelo nome do bloco. Agora: {1}",
+        "Cerca una voce con il nome del riquadro. Ora: {1}"),
+    "Choose an entry for this tile's cover and About page.": (
+        "Elige una entrada para la portada y la información de esta casilla.",
+        "このタイルのカバーと詳細に使う項目を選びます。",
+        "Escolha uma entrada para a capa e os detalhes deste bloco.",
+        "Scegli una voce per la copertina e le informazioni del riquadro."),
+    "Enter six letters or numbers.": (
+        "Escribe seis letras o números.",
+        "英数字を6文字入力します。",
+        "Digite seis letras ou números.",
+        "Inserisci sei lettere o numeri."),
+    "This ID is not in the GameTDB data on the SD card.": (
+        "Este código no está en los datos de GameTDB de la tarjeta SD.",
+        "このIDはSDカードのGameTDBデータにありません。",
+        "Este código não está nos dados do GameTDB do cartão SD.",
+        "Questo codice non è nei dati di GameTDB sulla scheda SD."),
     "Remove this tile from Home": (
         "Quitar esta casilla del inicio",
         "このタイルをホームから消す",
@@ -4283,6 +4311,14 @@ KO = {
         "이 MOD로 홈 타일 만들기...",
     "Rename this tile...":
         "이 타일 이름 바꾸기...",
+    "GameTDB entry": "GameTDB 항목",
+    "Current entry": "현재 항목",
+    "Type an ID": "ID 입력",
+    "Use the tile's name to look for a match.": "타일 이름으로 맞는 항목을 찾습니다.",
+    "Use the tile's name to look for a match. Now: {1}": "타일 이름으로 맞는 항목을 찾습니다. 지금: {1}",
+    "Choose an entry for this tile's cover and About page.": "이 타일의 표지와 정보에 쓸 항목을 고릅니다.",
+    "Enter six letters or numbers.": "영문자나 숫자 6자를 입력하세요.",
+    "This ID is not in the GameTDB data on the SD card.": "SD 카드의 GameTDB 데이터에 이 ID가 없습니다.",
     "Remove this tile from Home":
         "홈에서 이 타일 제거",
     "Puts this game on Home again as a tile of its own, which starts it with the mods and settings set here.":
@@ -6163,6 +6199,14 @@ FR = {
         "Créer une tuile d'accueil avec ces mods...",
     "Rename this tile...":
         "Renommer cette tuile...",
+    "GameTDB entry": "Fiche GameTDB",
+    "Current entry": "Fiche actuelle",
+    "Type an ID": "Saisir un code",
+    "Use the tile's name to look for a match.": "Cherche une fiche d'après le nom de la tuile.",
+    "Use the tile's name to look for a match. Now: {1}": "Cherche une fiche d'après le nom de la tuile. Maintenant : {1}",
+    "Choose an entry for this tile's cover and About page.": "Choisissez une fiche pour la jaquette et les infos de cette tuile.",
+    "Enter six letters or numbers.": "Saisissez six lettres ou chiffres.",
+    "This ID is not in the GameTDB data on the SD card.": "Ce code ne figure pas dans les données GameTDB de la carte SD.",
     "Remove this tile from Home":
         "Retirer cette tuile de l'accueil",
     "Puts this game on Home again as a tile of its own, which starts it with the mods and settings set here.":
@@ -8731,15 +8775,15 @@ MORE["fr"]["Search and Layout on Home's bar"] = 'Recherche et Disposition sur la
 T['Wider game pages at 16:9'] = ('Páginas de juego más anchas en 16:9', '16:9でゲームページが広く', 'Páginas de jogo mais largas em 16:9', 'Pagine dei giochi più larghe in 16:9')
 MORE["ko"]['Wider game pages at 16:9'] = '16:9에서 더 넓은 게임 페이지'
 MORE["fr"]['Wider game pages at 16:9'] = 'Pages de jeu plus larges en 16:9'
-T['Install WAD files is under Games'] = ('Instalar archivos WAD está en Juegos', 'WADのインストールは「ゲーム」に', 'Instalar WAD fica em Jogos', 'Installa file WAD è in Giochi')
-MORE["ko"]['Install WAD files is under Games'] = 'WAD 설치는 게임 메뉴에'
-MORE["fr"]['Install WAD files is under Games'] = 'Installer des WAD est dans Jeux'
-T['Names sort without case or accents'] = ('Los nombres se ordenan sin mayúsculas ni acentos', '名前は大文字小文字やアクセントを無視して並ぶ', 'Nomes ordenados sem maiúsculas nem acentos', 'Nomi ordinati senza maiuscole né accenti')
-MORE["ko"]['Names sort without case or accents'] = '이름을 대소문자·악센트 없이 정렬'
-MORE["fr"]['Names sort without case or accents'] = 'Noms triés sans casse ni accents'
-T['WAD games go back to RiftWii on a Wii U'] = ('Los juegos WAD vuelven a RiftWii en Wii U', 'Wii UでもWADのゲームからRiftWiiに戻れる', 'Jogos WAD voltam ao RiftWii no Wii U', 'I giochi WAD tornano a RiftWii su Wii U')
-MORE["ko"]['WAD games go back to RiftWii on a Wii U'] = 'Wii U에서도 WAD 게임에서 RiftWii로'
-MORE["fr"]['WAD games go back to RiftWii on a Wii U'] = 'Les jeux WAD reviennent à RiftWii sur Wii U'
+T['USA games play on a Japanese Wii'] = ('Los juegos de EE. UU. funcionan en una Wii japonesa', '北米版のゲームが日本のWiiで遊べる', 'Jogos dos EUA rodam num Wii japonês', 'I giochi USA funzionano su una Wii giapponese')
+MORE["ko"]['USA games play on a Japanese Wii'] = '미국판 게임이 일본 Wii에서 실행됨'
+MORE["fr"]['USA games play on a Japanese Wii'] = 'Les jeux US marchent sur une Wii japonaise'
+T['The pointer works after a Remote wakes up'] = ('El puntero funciona al despertar el mando', 'リモコンが復帰してもポインターが動く', 'O ponteiro funciona quando o Remote acorda', 'Il puntatore funziona quando il telecomando si riattiva')
+MORE["ko"]['The pointer works after a Remote wakes up'] = '리모컨이 다시 켜져도 포인터가 작동'
+MORE["fr"]['The pointer works after a Remote wakes up'] = 'Le pointeur marche quand la télécommande se réveille'
+T["Pick a mod tile's GameTDB entry"] = ('Elige la entrada de GameTDB de una casilla de mods', 'MODのタイルにGameTDBの項目を選べる', 'Escolha a entrada do GameTDB de um bloco de mods', 'Scegli la voce di GameTDB di un riquadro delle mod')
+MORE["ko"]["Pick a mod tile's GameTDB entry"] = 'MOD 타일의 GameTDB 항목 선택'
+MORE["fr"]["Pick a mod tile's GameTDB entry"] = "Choisissez la fiche GameTDB d'une tuile de mods"
 
 # Game management: own display names and visibility, never file renames.
 T['Manage game'] = ('Gestionar juego', 'ゲームの管理', 'Gerenciar jogo', 'Gestisci gioco')
@@ -10339,6 +10383,21 @@ FR.update({
     'Hidden titles': 'Titres masqués',
     'Other titles': 'Autres titres',
     'Emulated + Wii': 'Émulée + Wii',
+})
+T.update({
+    "In a game with no GameCube controller code, only the adapter's controllers play.": (
+        "En un juego sin código para mandos de GameCube, solo juegan los mandos del adaptador.",
+        "ゲームキューブコントローラーに対応していないゲームでは、アダプターのコントローラーだけが使えます。",
+        "Num jogo sem código para controles de GameCube, só jogam os controles do adaptador.",
+        "In un gioco senza codice per i controller GameCube, giocano solo i controller dell'adattatore."),
+})
+KO.update({
+    "In a game with no GameCube controller code, only the adapter's controllers play.":
+        "게임큐브 컨트롤러 코드가 없는 게임에서는 어댑터의 컨트롤러만 쓸 수 있습니다.",
+})
+FR.update({
+    "In a game with no GameCube controller code, only the adapter's controllers play.":
+        "Dans un jeu sans code pour les manettes GameCube, seules les manettes de l'adaptateur jouent.",
 })
 
 if __name__ == "__main__":
