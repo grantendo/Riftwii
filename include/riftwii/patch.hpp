@@ -150,7 +150,7 @@ struct Package {
     std::vector<NetworkServer> networks;
     // RiftWii's own `riftwii-gc-controllers` on <wiidisc>: the GameCube
     // controllers' stand-in form the pack's code expects ("classic",
-    // "nunchuk", "sideways"), empty for none. While the pack is on, a game
+    // "nunchuk", "sideways", "pointing"), empty for none. While the pack is on, a game
     // whose own setting is Off takes it (LaunchModel::pack_gc_controllers);
     // other loaders ignore the attribute.
     std::string gc_controllers;

@@ -406,7 +406,8 @@ std::string LaunchModel::pack_gc_controllers() const {
 }
 
 std::string LaunchModel::effective_gc_controllers() const {
-    if (game.gc_controllers == "classic" || game.gc_controllers == "nunchuk" || game.gc_controllers == "sideways")
+    if (game.gc_controllers == "classic" || game.gc_controllers == "nunchuk" || game.gc_controllers == "sideways" ||
+        game.gc_controllers == "pointing")
         return game.gc_controllers;
     const std::string from_pack = pack_gc_controllers();
     return from_pack.empty() ? "off" : from_pack;

@@ -414,6 +414,8 @@ static void test_saves() {
     model.game.gc_controllers = "pointing";
     prefs.restore(model.save());
     EXPECT_EQ(prefs.game.gc_controllers, std::string("pointing"));
+    // The player's own pointing choice is the one the launch takes.
+    EXPECT_EQ(model.effective_gc_controllers(), std::string("pointing"));
     prefs.restore("*riftwii*\tgccontrollers\tbogus\n");
     EXPECT_EQ(prefs.game.gc_controllers, std::string("off"));
     prefs.restore("*riftwii*\tgccard\tbogus\n");

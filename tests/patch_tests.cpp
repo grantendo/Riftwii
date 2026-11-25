@@ -780,6 +780,11 @@ static void test_gc_controllers_attribute() {
         "<wiidisc version=\"1\" riftwii-gc-controllers=\"classic\"><patch id=\"p\"/></wiidisc>", pkg, err));
     EXPECT_EQ(pkg.gc_controllers, std::string("classic"));
     EXPECT_TRUE(pkg.warnings.empty());
+    riftwii::Package pointing;
+    EXPECT_TRUE(riftwii::parse_package(
+        "<wiidisc version=\"1\" riftwii-gc-controllers=\"pointing\"><patch id=\"p\"/></wiidisc>", pointing, err));
+    EXPECT_EQ(pointing.gc_controllers, std::string("pointing"));
+    EXPECT_TRUE(pointing.warnings.empty());
     riftwii::Package unknown;
     EXPECT_TRUE(riftwii::parse_package(
         "<wiidisc version=\"1\" riftwii-gc-controllers=\"bongos\"><patch id=\"p\"/></wiidisc>", unknown, err));

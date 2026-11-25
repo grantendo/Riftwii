@@ -1356,7 +1356,7 @@ bool parse_package(const std::string& input, Package& output, std::string& error
     // fatal (a newer form this RiftWii doesn't have).
     if (AttrPresent(r, "riftwii-gc-controllers")) {
         const std::string form = AttrValue(r, "riftwii-gc-controllers");
-        if (form == "classic" || form == "nunchuk" || form == "sideways")
+        if (form == "classic" || form == "nunchuk" || form == "sideways" || form == "pointing")
             tmp.gc_controllers = form;
         else
             Warn(ctx, "wiidisc: ignoring riftwii-gc-controllers '" + form + "' (not a stand-in form this RiftWii has)");
