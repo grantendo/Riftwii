@@ -97,6 +97,25 @@ int rtslot_wpad_read(struct rtslot* s, uint32_t slot, int32_t error, int blank);
  * with interrupts on: begin notes where the slot's answers stand, and the
  * recheck's answer counts only if no newer one came meanwhile (CodeRabbit
  * on #610). */
+/* The slot the game should hear the HOME Menu's stand-in on (`home`, or
+ * RTSLOT_NO_SLOT): not one the permanent stand-in holds or has told the
+ * game of, which the game has already. In the Wii Remote forms
+ * (`remote_shapes`) a HOME stand-in that took a free slot in its own
+ * Classic shape keeps that claim while it lasts, though a GameCube
+ * controller plugs in there: the game hears the Classic one gone only when
+ * the HOME Menu ends (CodeRabbit on #610). */
+uint32_t rtslot_home_announced(const struct rtslot* s, uint32_t home, int remote_shapes);
+/* The HOME Menu's stand-in leaving `slot`: "gone" is told unless a real
+ * controller is there now (CodeRabbit on #610). */
+int rtslot_home_may_leave(const struct rtslot* s, uint32_t slot);
+/* One telling at a time: the HOME Menu's news and the permanent
+ * stand-in's (a PADRead nested in the game's callback leaves its own
+ * telling to the one running). A count, not a flag: two threads telling at
+ * once each take off only their own share. */
+int rtslot_tell_busy(const struct rtslot* s);
+void rtslot_tell_take(struct rtslot* s);
+void rtslot_tell_give(struct rtslot* s);
+
 uint32_t rtslot_recheck_begin(const struct rtslot* s, uint32_t slot);
 void rtslot_rechecked(struct rtslot* s, uint32_t slot, int32_t result, uint32_t begun);
 

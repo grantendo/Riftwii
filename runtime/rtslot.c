@@ -250,3 +250,19 @@ uint32_t rtslot_recheck_begin(const struct rtslot* s, uint32_t slot) { return rt
 void rtslot_rechecked(struct rtslot* s, uint32_t slot, int32_t result, uint32_t begun) {
     if (rtslot_probe_count(s, slot) == begun) rtslot_probed(s, slot, result);
 }
+
+uint32_t rtslot_home_announced(const struct rtslot* s, uint32_t home, int remote_shapes) {
+    uint32_t covered;
+    if (home >= RTSLOT_SLOTS) return RTSLOT_NO_SLOT;
+    covered = ((rtslot_standin_slots(s) | s->told) >> home) & 1u;
+    if (covered && (!remote_shapes || rtslot_home_keeps_shape(s, home))) return RTSLOT_NO_SLOT;
+    return home;
+}
+
+int rtslot_home_may_leave(const struct rtslot* s, uint32_t slot) {
+    return slot >= RTSLOT_SLOTS || !((s->real >> slot) & 1u);
+}
+
+int rtslot_tell_busy(const struct rtslot* s) { return s->telling != 0; }
+void rtslot_tell_take(struct rtslot* s) { s->telling += 1; }
+void rtslot_tell_give(struct rtslot* s) { s->telling -= 1; }

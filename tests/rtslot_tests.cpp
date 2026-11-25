@@ -262,6 +262,54 @@ void TestRecheckOlderAnswerLoses() {
     EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_STANDIN);
 }
 
+// The HOME Menu's stand-in on a slot the permanent stand-in holds (or
+// told the game of, its controller just unplugged): the game has a
+// controller there already, so the HOME one isn't announced. In the Wii
+// Remote forms, a HOME stand-in that took a free slot in its Classic shape
+// keeps that claim though a GameCube controller plugs in (#610).
+void TestHomeAnnounced() {
+    rtslot s = fresh();
+    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), 1u);
+    EXPECT_EQ(rtslot_home_announced(&s, kNone, 1), kNone);
+    plug(s, 1);
+    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), kNone);
+    unplug(s, 1);
+    s.told = 1u << 1;
+    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), kNone);
+    s.told = 0;
+    // Wii Remote forms: took slot 2 free (Classic shape), then a pad plugs in.
+    rtslot_home_took(&s, 2);
+    plug(s, 2);
+    EXPECT_EQ(rtslot_home_announced(&s, 2, 1), 2u);
+    // Took a slot the Wii Remote stand-in already held: same shape, the game has it.
+    rtslot_home_took(&s, 2);
+    EXPECT_EQ(rtslot_home_announced(&s, 2, 1), kNone);
+}
+
+// #610 (CodeRabbit): a real Wii Remote took the slot the HOME Menu's
+// stand-in held; the game isn't told "gone" for a controller that's there.
+void TestHomeLeaveNotForReal() {
+    rtslot s = fresh();
+    EXPECT_TRUE(rtslot_home_may_leave(&s, 0));
+    rtslot_probed(&s, 0, 0);
+    EXPECT_TRUE(!rtslot_home_may_leave(&s, 0));
+    EXPECT_TRUE(rtslot_home_may_leave(&s, kNone));
+}
+
+// #609 (Cake's review): while one telling runs, a nested PADRead leaves
+// the permanent stand-in's news to it; a count, so two at once each give
+// back only their own share.
+void TestTellingCount() {
+    rtslot s = fresh();
+    EXPECT_TRUE(!rtslot_tell_busy(&s));
+    rtslot_tell_take(&s);
+    rtslot_tell_take(&s);
+    rtslot_tell_give(&s);
+    EXPECT_TRUE(rtslot_tell_busy(&s));
+    rtslot_tell_give(&s);
+    EXPECT_TRUE(!rtslot_tell_busy(&s));
+}
+
 }  // namespace
 
 int main() {
@@ -279,6 +327,9 @@ int main() {
     TestBlankReportIsNotReal();
     TestWpadReadNoController();
     TestRecheckOlderAnswerLoses();
+    TestHomeAnnounced();
+    TestHomeLeaveNotForReal();
+    TestTellingCount();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;
