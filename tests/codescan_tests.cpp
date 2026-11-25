@@ -29,7 +29,7 @@ std::vector<std::uint8_t> code(const std::vector<std::uint32_t>& words) {
 
 // Runs the tracker over every word; returns it after the last.
 RegTrack run(const std::vector<std::uint8_t>& bytes, unsigned what, unsigned follow) {
-    RegTrack t(bytes.data(), 0, bytes.size() / 4, what);
+    RegTrack t(bytes.data(), bytes.size() / 4, 0, bytes.size() / 4, what);
     if (follow < 32) t.follow(follow);
     for (std::size_t k = 0; k < bytes.size() / 4; ++k) t.step(k);
     return t;
@@ -58,10 +58,31 @@ void TestCopiesAndCalls() {
 // `bl _savegpr` after `addi r11,r1,N` keeps the argument registers: the
 // compiler's register save helpers touch nothing else (every game's
 // WPADSetDataFormat broke when it counted as a call).
+constexpr std::uint32_t kBlPlus8 = 0x48000009u;       // bl +8
+constexpr std::uint32_t kStwR14R11 = 0x91CBFFB8u;     // stw r14,-72(r11): _savegpr_14's first word
+constexpr std::uint32_t kBlr = 0x4E800020u;
+
 void TestSaveHelperKeeps() {
-    const auto bytes = code({kStwu, kMrR5R4, kAddiR11R1, kBl, kStw});
+    // The call's target saves through r11: the helper, which keeps r5.
+    const auto bytes = code({kStwu, kMrR5R4, kAddiR11R1, kBlPlus8, kStw, kStwR14R11, kBlr});
     RegTrack t = run(bytes, RegTrack::kArguments, 4);
     EXPECT_TRUE((t.copies(4) >> 5) & 1u);
+    // The same `addi` before an ordinary call (CodeRabbit CLI): r5 is gone.
+    const auto ordinary = code({kStwu, kMrR5R4, kAddiR11R1, kBlPlus8, kStw, kLiR3, kBlr});
+    RegTrack u = run(ordinary, RegTrack::kArguments, 4);
+    EXPECT_EQ((u.copies(4) >> 5) & 1u, 0u);
+}
+
+// An early error return (`li r3,-1; blr`) doesn't take r3 from the code a
+// branch around it reaches (CodeRabbit CLI); the same write on the path
+// that goes on does.
+void TestEarlyReturnKeepsArgument() {
+    const auto early = code({kStwu, 0x3860FFFFu /* li r3,-1 */, kBlr, 0x5460103Au /* slwi r0,r3,2 */});
+    RegTrack t = run(early, RegTrack::kArguments, 3);
+    EXPECT_TRUE((t.copies(3) >> 3) & 1u);
+    const auto straight = code({kStwu, 0x3860FFFFu, 0x38840001u /* addi r4,r4,1 */, kBlr});
+    RegTrack u = run(straight, RegTrack::kArguments, 3);
+    EXPECT_EQ((u.copies(3) >> 3) & 1u, 0u);
 }
 
 // A call that ends an error path (only `li r3` before the epilogue's
@@ -105,8 +126,8 @@ void TestFunctionEndAtBranch() {
 
 // A call clobbers the volatile register holding a table's block.
 void TestClobbers() {
-    const auto bytes = code({kStwu, kMrR5R4, kBl, kStw, kAddiR11R1, kBl, kStw});
-    RegTrack t(bytes.data(), 0, bytes.size() / 4, RegTrack::kArguments);
+    const auto bytes = code({kStwu, kMrR5R4, kBl, kStw, kAddiR11R1, kBlPlus8, kStw, kStwR14R11, kBlr});
+    RegTrack t(bytes.data(), bytes.size() / 4, 0, bytes.size() / 4, RegTrack::kArguments);
     EXPECT_TRUE(t.clobbers(2, 5));    // an ordinary call: r5 gone
     EXPECT_TRUE(!t.clobbers(2, 31));  // a kept register
     EXPECT_TRUE(!t.clobbers(5, 5));   // a save helper's call
@@ -114,7 +135,7 @@ void TestClobbers() {
     // A call that ends an error path (only `li r3` before the return): the
     // code a branch around it reaches still has r5 (CodeRabbit CLI, rf2).
     const auto error_path = code({kStwu, kMrR5R4, kBl, kLiR3, 0x4E800020u});
-    RegTrack e(error_path.data(), 0, error_path.size() / 4, RegTrack::kArguments);
+    RegTrack e(error_path.data(), error_path.size() / 4, 0, error_path.size() / 4, RegTrack::kArguments);
     EXPECT_TRUE(!e.clobbers(2, 5));
 }
 
@@ -123,6 +144,7 @@ void TestClobbers() {
 int main() {
     TestCopiesAndCalls();
     TestSaveHelperKeeps();
+    TestEarlyReturnKeepsArgument();
     TestErrorPathCall();
     TestAddresses();
     TestEpilogueRestoreKeeps();

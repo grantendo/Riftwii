@@ -27,7 +27,7 @@ bool inside_file(const riftwii::DolSection& sec, std::size_t file_size) {
 }
 
 // One program's line: its path, then each finder's answer (0: not found).
-void scan(const std::string& path) {
+bool scan(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     std::stringstream ss;
     ss << in.rdbuf();
@@ -38,12 +38,12 @@ void scan(const std::string& path) {
     if (riftwii::channel_program_compressed(program.data(), program.size()) &&
         !riftwii::unpack_channel_program(program, error)) {
         std::printf("%s | cannot unpack: %s\n", path.c_str(), error.c_str());
-        return;
+        return false;
     }
     if (!in || (!riftwii::parse_dol_header(program.data(), program.size(), dol, error) &&
                 !riftwii::parse_channel_program(program.data(), program.size(), dol, format, error))) {
         std::printf("%s | unreadable: %s\n", path.c_str(), error.c_str());
-        return;
+        return false;
     }
     std::vector<riftwii::CodeRange> text, all;
     for (std::size_t s = 0; s < riftwii::kDolSections; ++s) {
@@ -78,6 +78,7 @@ void scan(const std::string& path) {
                 riftwii::find_wii_remote_idle_reset(text, probe), riftwii::find_os_sleep_thread(text), small_data,
                 hbm.init, hbm.calc, hbm.select, pad_found ? "ok" : "none", pad.read, pad.read_sites,
                 pad.control_motor, pad.idle_reset);
+    return true;
 }
 
 }  // namespace
@@ -87,6 +88,7 @@ int main(int argc, char** argv) {
         std::cerr << "usage: finderscan <main.dol>... | finderscan @<list>" << std::endl;
         return 2;
     }
+    int failures = 0;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg.size() > 1 && arg[0] == '@') {
@@ -100,15 +102,17 @@ int main(int argc, char** argv) {
             std::string line;
             while (std::getline(list, line)) {
                 if (!line.empty() && line.back() == '\r') line.pop_back();
-                if (!line.empty() && line[0] != '#') scan(line);
+                if (!line.empty() && line[0] != '#' && !scan(line)) ++failures;
             }
             if (list.bad()) {
                 std::cerr << "finderscan: reading the list " << arg.substr(1) << " failed" << std::endl;
                 return 1;
             }
-        } else {
-            scan(arg);
+        } else if (!scan(arg)) {
+            ++failures;
         }
     }
-    return 0;
+    // Every program read, or the run failed: a baseline compared against a
+    // run that skipped some would look like a match (CodeRabbit CLI).
+    return failures == 0 ? 0 : 1;
 }

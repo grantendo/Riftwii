@@ -132,13 +132,29 @@ bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end)
     return false;
 }
 
-// Whether `insn` calls (`bl`, `bcl`, `bctrl`, `blrl` and their forms):
-// the callee may change r0 and r3-r12. Not a call to the compiler's
-// register save or restore helpers (`addi r11,r1,N` just before, `prev`),
-// which leave the argument registers as they were.
-bool calls(std::uint32_t insn, std::uint32_t prev) {
+// Whether the `bl` at word `k` (of `words`) goes to the compiler's register
+// save or restore helpers (_savegpr_N, _restgpr_N): `addi r11,r1,N` just
+// before it, and its target a `stw`, `lwz`, `stfd` or `lfd` through r11. The
+// `addi` alone isn't proof (CodeRabbit CLI): an ordinary call after one is
+// still a call.
+static bool save_helper_call(const std::uint8_t* bytes, std::size_t words, std::size_t k) {
+    const std::uint32_t insn = be32(bytes + 4 * k);
+    if (k == 0 || opcode(insn) != 18 || (insn & 3u) != 1u) return false;
+    const std::uint32_t prev = be32(bytes + 4 * (k - 1));
+    if (opcode(prev) != 14 || reg_d(prev) != 11 || reg_a(prev) != 1) return false;
+    std::int32_t offset = static_cast<std::int32_t>(insn & 0x03FFFFFCu);
+    if (offset & 0x02000000) offset -= 0x04000000;
+    const std::int64_t target = static_cast<std::int64_t>(k) + offset / 4;
+    if (target < 0 || target >= static_cast<std::int64_t>(words)) return false;
+    const std::uint32_t first = be32(bytes + 4 * static_cast<std::size_t>(target));
+    const std::uint32_t op = opcode(first);
+    return reg_a(first) == 11 && (op == 36 || op == 32 || op == 54 || op == 50);
+}
+
+bool calls(const std::uint8_t* bytes, std::size_t words, std::size_t k) {
+    const std::uint32_t insn = be32(bytes + 4 * k);
     if ((insn & 1u) == 0) return false;
-    if (opcode(prev) == 14 && reg_d(prev) == 11 && reg_a(prev) == 1) return false;
+    if (save_helper_call(bytes, words, k)) return false;
     if (opcode(insn) == 18 || opcode(insn) == 16) return true;
     const std::uint32_t xo = (insn >> 1) & 0x3FFu;
     return opcode(insn) == 19 && (xo == 16 || xo == 528);
@@ -163,6 +179,18 @@ bool call_then_returns(const std::uint8_t* bytes, std::size_t k, std::size_t end
     return false;
 }
 
+// Whether the word at `k` sets the return value (`li r3`, `mr r3`) on a path that
+// then leaves the function (call_then_returns from there): an early error
+// return such as `li r3,-1; blr`. The scan reads straight through it into
+// the code a branch around it reaches, where the register still holds what
+// it did, so the write doesn't count there (CodeRabbit CLI).
+static bool return_value_write(const std::uint8_t* bytes, std::size_t k, std::size_t end) {
+    const std::uint32_t w = be32(bytes + 4 * k);
+    const bool li_r3 = opcode(w) == 14 && reg_a(w) == 0 && reg_d(w) == 3;
+    const bool mr_r3 = opcode(w) == 31 && ((w >> 1) & 0x3FFu) == 444 && reg_d(w) == ((w >> 11) & 31u) && reg_a(w) == 3;
+    return (li_r3 || mr_r3) && call_then_returns(bytes, k, end);
+}
+
 // `mask` (registers holding an argument, one bit each) after the word at
 // `k` (before word `end`): a register it writes no longer holds it, unless
 // the write is an `mr` from one that does, and a call leaves it only in the
@@ -170,11 +198,11 @@ bool call_then_returns(const std::uint8_t* bytes, std::size_t k, std::size_t end
 // restored in an epilogue (epilogue_restore) is left as it was: the scan
 // reads straight through an early return's epilogue into the code its
 // branch around it reaches, where the register still holds the argument.
-static std::uint32_t track_argument(const std::uint8_t* bytes, std::size_t k, std::size_t end, std::uint32_t mask) {
+static std::uint32_t track_argument(const std::uint8_t* bytes, std::size_t words, std::size_t k, std::size_t end,
+                                    std::uint32_t mask) {
     const std::uint32_t insn = be32(bytes + 4 * k);
-    if (epilogue_restore(bytes, k, end)) return mask;
-    if (calls(insn, k > 0 ? be32(bytes + 4 * (k - 1)) : 0) && !call_then_returns(bytes, k, end))
-        return mask & ~kVolatileRegisters;
+    if (epilogue_restore(bytes, k, end) || return_value_write(bytes, k, end)) return mask;
+    if (calls(bytes, words, k) && !call_then_returns(bytes, k, end)) return mask & ~kVolatileRegisters;
     const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
                     reg_d(insn) == ((insn >> 11) & 31u);
     const bool copies = mr && ((mask >> reg_d(insn)) & 1u);
@@ -188,15 +216,14 @@ static std::uint32_t track_argument(const std::uint8_t* bytes, std::size_t k, st
 // addresses, per register) after `insn`: what it builds is read from the
 // values before it, then every register it writes (a call: r0, r3-r12)
 // forgets what it held (CodeRabbit on #616).
-static void track_addresses(std::uint32_t insn, std::uint32_t prev, bool call_counts, std::uint32_t high[32],
-                     std::uint32_t address[32]) {
+static void track_addresses(std::uint32_t insn, bool call_counts, std::uint32_t high[32], std::uint32_t address[32]) {
     const std::uint32_t d = reg_d(insn), a = reg_a(insn);
     std::uint32_t new_high = 0, new_address = 0;
     if (opcode(insn) == 15 && a == 0) new_high = (insn & 0xFFFFu) << 16;                  // lis
     if (opcode(insn) == 14 && a != 0 && high[a] != 0)                                     // addi rD,rA,lo
         new_address = high[a] + static_cast<std::uint32_t>(simm(insn));
     for (std::uint32_t g = 0; g < 32; ++g) {
-        if ((call_counts && calls(insn, prev) && ((kVolatileRegisters >> g) & 1u)) || writes_register(insn, g)) {
+        if ((call_counts && ((kVolatileRegisters >> g) & 1u)) || writes_register(insn, g)) {
             high[g] = 0;
             address[g] = 0;
         }
@@ -205,8 +232,11 @@ static void track_addresses(std::uint32_t insn, std::uint32_t prev, bool call_co
     if (new_address != 0) address[d] = new_address;
 }
 
-RegTrack::RegTrack(const std::uint8_t* bytes, std::size_t start, std::size_t end, unsigned what)
-    : bytes_(bytes), start_(start), end_(end), what_(what) {}
+RegTrack::RegTrack(const CodeRange& range, std::size_t start, std::size_t end, unsigned what)
+    : RegTrack(range.bytes, range.size / 4, start, end, what) {}
+
+RegTrack::RegTrack(const std::uint8_t* bytes, std::size_t words, std::size_t start, std::size_t end, unsigned what)
+    : bytes_(bytes), words_(words), start_(start), end_(end), what_(what) {}
 
 void RegTrack::follow(unsigned reg) {
     reg &= 31u;
@@ -218,18 +248,17 @@ bool RegTrack::clobbers(std::size_t k, unsigned reg) const {
     const std::uint32_t insn = be32(bytes_ + 4 * k);
     reg &= 31u;
     if (writes_register(insn, reg)) return true;
-    return ((kVolatileRegisters >> reg) & 1u) && calls(insn, k > 0 ? be32(bytes_ + 4 * (k - 1)) : 0) &&
-           !call_then_returns(bytes_, k, end_);
+    return ((kVolatileRegisters >> reg) & 1u) && calls(bytes_, words_, k) && !call_then_returns(bytes_, k, end_);
 }
 
 void RegTrack::step(std::size_t k) {
     if (what_ & kArguments) {
         for (unsigned reg = 0; reg < 32; ++reg)
-            if ((followed_ >> reg) & 1u) copies_[reg] = track_argument(bytes_, k, end_, copies_[reg]);
+            if ((followed_ >> reg) & 1u) copies_[reg] = track_argument(bytes_, words_, k, end_, copies_[reg]);
     }
-    if ((what_ & kAddresses) && !epilogue_restore(bytes_, k, end_)) {
-        track_addresses(be32(bytes_ + 4 * k), k > start_ ? be32(bytes_ + 4 * (k - 1)) : 0,
-                        !call_then_returns(bytes_, k, end_), high_, address_);
+    if ((what_ & kAddresses) && !epilogue_restore(bytes_, k, end_) && !return_value_write(bytes_, k, end_)) {
+        track_addresses(be32(bytes_ + 4 * k), calls(bytes_, words_, k) && !call_then_returns(bytes_, k, end_), high_,
+                        address_);
     }
 }
 

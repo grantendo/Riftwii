@@ -256,6 +256,11 @@ void TestRecheckOlderAnswerLoses() {
     rtslot_probed(&s, 2, 0);              // the game's own probe, meanwhile
     rtslot_rechecked(&s, 2, -1, begun);   // the recheck's older answer
     EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_REAL);
+    // A KPAD read with samples meanwhile is newer too (CodeRabbit CLI, rall).
+    begun = rtslot_recheck_begin(&s, 2);
+    rtslot_kpad_read(&s, 2, 3, RTSLOT_NO_ERROR, 500);
+    rtslot_rechecked(&s, 2, -1, begun);
+    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_REAL);
     begun = rtslot_recheck_begin(&s, 2);
     rtslot_rechecked(&s, 2, -1, begun);   // nothing newer: it counts
     EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_STANDIN);

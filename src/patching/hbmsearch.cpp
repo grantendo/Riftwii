@@ -308,7 +308,7 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
     // The setter ends at its return: leaf code after it, before the next
     // framed function, isn't counted (function_end).
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
-        RegTrack regs(r.bytes, start, end, RegTrack::kAddresses);
+        RegTrack regs(r, start, end, RegTrack::kAddresses);
         std::uint32_t table = 0;
         std::uint32_t swapped = 0;  // the table whose block's callback was loaded and stored
         int block = -1;
@@ -377,7 +377,7 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
     constexpr std::int32_t kBlockFields = 0x400;  // the callbacks sit past the control block's buffers
     std::vector<std::pair<std::uint32_t, std::int32_t>> setters;
     each_framed_function(text, kMaxSetterWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
-        RegTrack regs(r.bytes, start, end, RegTrack::kArguments | RegTrack::kAddresses);
+        RegTrack regs(r, start, end, RegTrack::kArguments | RegTrack::kAddresses);
         regs.follow(4);  // the new callback, the second argument
         std::uint32_t table = 0;
         const std::size_t first_of_function = setters.size();
@@ -434,7 +434,7 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
     std::uint32_t found = 0;
     bool two = false;
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
-        RegTrack regs(r.bytes, start, end, RegTrack::kAddresses);
+        RegTrack regs(r, start, end, RegTrack::kAddresses);
         bool table = false, several = false;
         std::uint32_t target = 0;
         for (std::size_t k = start; k < end; ++k) {
@@ -483,7 +483,7 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
             // r12, the loaded slot, and its copies (`mr`), over the words up
             // to its call.
             const std::size_t window_end = std::min(words, i + 1 + kCallWindow);
-            RegTrack regs(r.bytes, i + 1, window_end, RegTrack::kArguments);
+            RegTrack regs(r, i + 1, window_end, RegTrack::kArguments);
             regs.follow(12);
             std::size_t last_r4 = 0;  // where r4 was last written
             // Conditional branches on the way (where, and where to): one that
@@ -561,7 +561,7 @@ std::uint32_t find_wpad_read(const std::vector<CodeRange>& text) {
     unsigned matches = 0;
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
         bool index = false, copy = false, corrupt = false, busy = false, error = false;
-        RegTrack regs(r.bytes, start, end, RegTrack::kArguments);
+        RegTrack regs(r, start, end, RegTrack::kArguments);
         regs.follow(3);  // the channel
         regs.follow(4);  // the status
         for (std::size_t k = start; k < end; ++k) {
@@ -591,7 +591,7 @@ std::uint32_t find_wpad_set_format(const std::vector<CodeRange>& text) {
         bool none = false, busy = false, compares = false, stores = false;
         // r4 (the format) and its copies, one bit each; the checks count
         // its copies only, as this setter keeps the format in a copy.
-        RegTrack regs(r.bytes, start, end, RegTrack::kArguments);
+        RegTrack regs(r, start, end, RegTrack::kArguments);
         regs.follow(4);
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);

@@ -190,7 +190,9 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
             /* The Nunchuk's too, where the sample has its part (it shakes
              * with the Wii Remote, rtshape_nunchuk): swinging from the
              * shake's start, at rest before it (CodeRabbit CLI). */
+#ifdef RT_PAD_FORM_NUNCHUK
             if (shaking != 0 && n == RTGCWII_WPAD_FS_BYTES) rtdeliver_put_acc(e + 42, acc);
+#endif
         }
     }
     return count;

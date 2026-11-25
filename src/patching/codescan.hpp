@@ -47,10 +47,12 @@ std::size_t function_end(const std::uint8_t* bytes, std::size_t start, std::size
 // `mtlr`, by the frame's undoing and then a return or tail call.
 bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end);
 
-// Whether `insn` calls (`bl`, `bcl`, `bctrl`, `blrl` and their forms), the
-// callee free to change r0 and r3-r12: not a call to the compiler's register
-// save or restore helpers (`addi r11,r1,N` just before it, `prev`).
-bool calls(std::uint32_t insn, std::uint32_t prev);
+// Whether the word at `k` (of the range's `words`) calls (`bl`, `bcl`,
+// `bctrl`, `blrl` and their forms), the callee free to change r0 and
+// r3-r12: not a call to the compiler's register save or restore helpers
+// (`addi r11,r1,N` just before it, and its target saving or restoring
+// through r11).
+bool calls(const std::uint8_t* bytes, std::size_t words, std::size_t k);
 
 // Whether the call at word `k` ends an error path: only the return value set
 // (`li`, `mr`, `nop`) before the function leaves. The code a branch around
@@ -84,7 +86,7 @@ void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_wo
 // `addi` from it) and, for each argument register the finder follows, the
 // registers holding its value (it and its `mr` copies). Read a word's
 // registers as it finds them, then step() past it:
-//   RegTrack t(bytes, start, end, RegTrack::kAddresses);
+//   RegTrack t(range, start, end, RegTrack::kAddresses);
 //   t.follow(4);
 //   for (k = start; k < end; ++k) { ... t.copies(4), t.address(a) ...; t.step(k); }
 // A register written loses what it held; a call clobbers r0 and r3-r12
@@ -96,7 +98,9 @@ public:
     static constexpr unsigned kArguments = 1u;  // follow() registers' copies
     static constexpr unsigned kAddresses = 2u;  // lis/addi-built addresses
 
-    RegTrack(const std::uint8_t* bytes, std::size_t start, std::size_t end, unsigned what);
+    RegTrack(const CodeRange& range, std::size_t start, std::size_t end, unsigned what);
+    // `bytes` holding `words` words (a call's target is looked at within them).
+    RegTrack(const std::uint8_t* bytes, std::size_t words, std::size_t start, std::size_t end, unsigned what);
 
     // From here on, follow what `reg` holds now (an argument, a loaded slot).
     void follow(unsigned reg);
@@ -112,6 +116,7 @@ public:
 
 private:
     const std::uint8_t* bytes_;
+    std::size_t words_;
     std::size_t start_, end_;
     unsigned what_;
     std::uint32_t followed_ = 0;  // registers whose copies are followed, one bit each
