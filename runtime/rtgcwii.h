@@ -18,15 +18,15 @@
 #include <stdint.h>
 
 #include "rtslot.h"
+#include "rtsrc.h"
 
 #define RTGCWII_CHANNELS 4u
 #define RTGCWII_PAD_BYTES 12u
 
 struct rtgcwii {
     struct rtslot slot;  /* who holds each Wii Remote slot, and what the game was told (rtslot.h) */
-    uint32_t seen[RTGCWII_CHANNELS];  /* when each port last had a controller (low bit set), 0: gone */
-    uint32_t hold[RTGCWII_CHANNELS];       /* each channel's Classic buttons now */
-    uint32_t samples[RTGCWII_CHANNELS];    /* PADRead samples taken for it */
+    struct rtsrc src;    /* each player's controller, one sample per report (rtsrc.h) */
+    uint32_t hold[RTGCWII_CHANNELS];       /* each channel's Wii buttons now, in its shape */
     /* What the game's KPAD read last got (newly pressed and let go are
      * against that, not the sample before: a sample the blob takes at a
      * WPADProbe the game never reads in between, and its press still
@@ -35,7 +35,6 @@ struct rtgcwii {
     uint32_t worked[RTGCWII_CHANNELS];     /* the sample the words below are from */
     uint32_t delivered[RTGCWII_CHANNELS];  /* the buttons the game last got */
     uint32_t trig[RTGCWII_CHANNELS], release[RTGCWII_CHANNELS];
-    uint8_t pad[RTGCWII_CHANNELS][RTGCWII_PAD_BYTES];  /* each port's PADStatus as the last PADRead had it */
     /* Many games that take a Classic Controller never call PADRead (Kamen
      * Rider: Dragon Knight reads only through KPAD), so the adapter would
      * never be read: the blob then calls the game's PADRead itself, once a

@@ -156,18 +156,21 @@ $(OUT)/$(1)/rthome.o: runtime/rthome.c runtime/rthome.h | $(OUT)/$(1)
 $(OUT)/$(1)/rtslot.o: runtime/rtslot.c runtime/rtslot.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
 
-$(OUT)/$(1)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h runtime/rtslot.h runtime/rthome.h | $(OUT)/$(1)
+$(OUT)/$(1)/rtsrc.o: runtime/rtsrc.c runtime/rtsrc.h runtime/rthome.h | $(OUT)/$(1)
+	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
+
+$(OUT)/$(1)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h runtime/rtslot.h runtime/rtsrc.h runtime/rthome.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
 
 $(OUT)/$(1)/rtrestart.o: runtime/rtrestart.c runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -c -o $$@ $$<
 
-$(OUT)/$(1)/riftwii_$(1).elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtslot.o rtrestart.o) $(PADSRC)/pad.ld
+$(OUT)/$(1)/riftwii_$(1).elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtslot.o rtsrc.o rtrestart.o) $(PADSRC)/pad.ld
 	$(CC) $(CFLAGS) -nostdlib -nostartfiles -static -Wl,--build-id=none -Wl,--gc-sections -T $(PADSRC)/pad.ld \
 		-Wl,--defsym,RT_BASE=0x00000000 -o $$@ $$(filter %.o,$$^) -lgcc
 	@$(SIZE) -A $$@ | awk '$$$$1 ~ /^\.(rodata|data|bss)$$$$/ && $$$$2 != 0 { print "runtime: section " $$$$1 " is not empty (" $$$$2 " bytes) in the $(1) pad blob"; bad = 1 } END { exit bad }'
 
-$(OUT)/$(1)/riftwii_$(1)_alt.elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtslot.o rtrestart.o) $(PADSRC)/pad.ld
+$(OUT)/$(1)/riftwii_$(1)_alt.elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtslot.o rtsrc.o rtrestart.o) $(PADSRC)/pad.ld
 	$(CC) $(CFLAGS) -nostdlib -nostartfiles -static -Wl,--build-id=none -Wl,--gc-sections -T $(PADSRC)/pad.ld \
 		-Wl,--defsym,RT_BASE=0x12340000 -o $$@ $$(filter %.o,$$^) -lgcc
 

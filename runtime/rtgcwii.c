@@ -12,12 +12,8 @@
 
 #include "rthome.h"
 
-#define RTGCWII_PAD_ERR 10u
-
 /* Ticks since a time noted with its low bit set (so 0 can mean "none"). */
 static uint32_t rtgcwii_elapsed(uint32_t now, uint32_t noted) { return now - (noted & ~1u); }
-
-static uint32_t rtgcwii_pad_buttons(const uint8_t* s) { return ((uint32_t)s[0] << 8) | s[1]; }
 
 /* PADStatus: buttons (big-endian) at 0, the C-stick at 4 and 5, the
  * analog L and R at 6 and 7. GameCube buttons as rthome.c has them. */
@@ -49,10 +45,10 @@ static uint32_t rtgcwii_pad_buttons(const uint8_t* s) { return ((uint32_t)s[0] <
 #define RTGCWII_TRIGGER_ON 85u  /* of 255: an analog L or R past a third of the way */
 #define RTGCWII_STICK_PRESS 128  /* of RTHOME_AXIS_FULL: the control stick past half way is the D-pad */
 
-uint32_t rtgcwii_map_nunchuk(const uint8_t* pad) {
-    uint32_t b = rtgcwii_pad_buttons(pad), h = 0;
-    if (pad[6] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_L;
-    if (pad[7] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_R;
+static uint32_t rtgcwii_nunchuk_buttons(const struct rtsrc_sample* p) {
+    uint32_t b = p->buttons, h = 0;
+    if (p->trigger[0] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_L;
+    if (p->trigger[1] >= RTGCWII_TRIGGER_ON) b |= RTGCWII_GC_R;
     if (b & RTGCWII_GC_A) h |= RTGCWII_WR_A;
     if (b & RTGCWII_GC_B) h |= RTGCWII_WR_B;
     if (b & RTGCWII_GC_Y) h |= RTGCWII_WR_2;
@@ -67,14 +63,18 @@ uint32_t rtgcwii_map_nunchuk(const uint8_t* pad) {
     return h;
 }
 
-uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
-    uint32_t b = rtgcwii_pad_buttons(pad), h = 0;
-    int32_t axes[6];
-    rthome_classic_axes(pad, axes);
-    if (axes[0] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_LEFT;
-    if (axes[0] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_RIGHT;
-    if (axes[1] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_UP;
-    if (axes[1] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_DOWN;
+uint32_t rtgcwii_map_nunchuk(const uint8_t* pad) {
+    struct rtsrc_sample p;
+    rtsrc_decode(pad, &p);
+    return rtgcwii_nunchuk_buttons(&p);
+}
+
+static uint32_t rtgcwii_sideways_buttons(const struct rtsrc_sample* p) {
+    uint32_t b = p->buttons, h = 0;
+    if (p->axes[0] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_LEFT;
+    if (p->axes[0] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_RIGHT;
+    if (p->axes[1] >= RTGCWII_STICK_PRESS) b |= RTGCWII_GC_UP;
+    if (p->axes[1] <= -RTGCWII_STICK_PRESS) b |= RTGCWII_GC_DOWN;
     if (b & RTGCWII_GC_A) h |= RTGCWII_WR_2;
     if (b & RTGCWII_GC_B) h |= RTGCWII_WR_1;
     if (b & RTGCWII_GC_X) h |= RTGCWII_WR_A;
@@ -87,6 +87,12 @@ uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
     if (b & RTGCWII_GC_UP) h |= RTGCWII_WR_RIGHT;
     if (b & RTGCWII_GC_DOWN) h |= RTGCWII_WR_LEFT;
     return h;
+}
+
+uint32_t rtgcwii_map_sideways(const uint8_t* pad) {
+    struct rtsrc_sample p;
+    rtsrc_decode(pad, &p);
+    return rtgcwii_sideways_buttons(&p);
 }
 
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
@@ -123,16 +129,16 @@ static void rtgcwii_count_shake(struct rtgcwii* w, uint32_t i, uint32_t shaking,
  * only while the game has the camera on: else the C-stick tilts), and the
  * shake counts while its button is held (X; R in the sideways form, also
  * from the analog trigger). */
-static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint32_t now) {
-    int32_t axes[6], k;
+static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const struct rtsrc_sample* s, uint32_t now) {
+    const int32_t* axes = s->axes;  /* the C-stick is axes 2 and 3 */
+    int32_t k;
     uint32_t shaking;
-    rthome_classic_axes(s, axes);  /* the C-stick is axes 2 and 3 */
 #ifdef RT_PAD_FORM_SIDEWAYS
-    shaking = (rtgcwii_pad_buttons(s) & RTGCWII_GC_R) || s[7] >= RTGCWII_TRIGGER_ON;
+    shaking = (s->buttons & RTGCWII_GC_R) || s->trigger[1] >= RTGCWII_TRIGGER_ON;
     rtgcwii_count_shake(w, i, shaking, now);
     if (!((w->camera >> i) & 1u)) return;
 #else
-    shaking = rtgcwii_pad_buttons(s) & RTGCWII_GC_X;
+    shaking = s->buttons & RTGCWII_GC_X;
 #endif
     for (k = 0; k < 2; ++k) {
         /* Up on the C-stick is up on the screen (KPAD's y grows downward). */
@@ -156,29 +162,27 @@ static void rtgcwii_motion(struct rtgcwii* w, uint32_t i, const uint8_t* s, uint
 #endif
 
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
-    uint32_t i, k;
+    uint32_t i;
     for (i = 0; i < RTGCWII_CHANNELS; ++i) {
-        const uint8_t* s = status + i * RTGCWII_PAD_BYTES;
         const uint32_t bit = 1u << i;
-        if ((int8_t)s[RTGCWII_PAD_ERR] == 0) {
-            for (k = 0; k < RTGCWII_PAD_BYTES; ++k) w->pad[i][k] = s[k];
-            w->seen[i] = now | 1u;
+        const enum rtsrc_event event = rtsrc_port(&w->src, i, status + i * RTGCWII_PAD_BYTES, w->slot.grace, now);
+        if (event == RTSRC_ARRIVED || event == RTSRC_REPORT) {
+            struct rtsrc_sample p;
+            rtsrc_latest(&w->src, i, &p);
 #if defined(RT_PAD_FORM_NUNCHUK)
-            w->hold[i] = rtgcwii_map_nunchuk(s);
-            rtgcwii_motion(w, i, s, now);
+            w->hold[i] = rtgcwii_nunchuk_buttons(&p);
+            rtgcwii_motion(w, i, &p, now);
 #elif defined(RT_PAD_FORM_SIDEWAYS)
-            w->hold[i] = rtgcwii_map_sideways(s);
-            rtgcwii_motion(w, i, s, now);
+            w->hold[i] = rtgcwii_sideways_buttons(&p);
+            rtgcwii_motion(w, i, &p, now);
 #else
-            w->hold[i] = rthome_map_classic(rtgcwii_pad_buttons(s), RTHOME_CL_PLUS);
+            w->hold[i] = rthome_map_classic(p.buttons, RTHOME_CL_PLUS);
 #endif
             /* Newly plugged in: what it holds already isn't newly pressed. */
-            if (!(w->slot.present & bit)) w->delivered[i] = w->hold[i];
-            ++w->samples[i];
+            if (event == RTSRC_ARRIVED) w->delivered[i] = w->hold[i];
             w->slot.present |= bit;
-        } else if ((w->slot.present & bit) && rtgcwii_elapsed(now, w->seen[i]) >= w->slot.grace) {
+        } else if (event == RTSRC_GONE) {
             w->slot.present &= ~bit;
-            w->seen[i] = 0;
             w->hold[i] = w->delivered[i] = 0;
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
             w->shake[i] = 0;
@@ -188,11 +192,6 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
              * old mark never reads as recent after the time base wraps. */
             w->pointer_moved[i] = 0;
 #endif
-        } else if (w->slot.present & bit) {
-            /* A dropped report, within the grace period: the buttons stay
-             * as held, but it is a new sample, so a press already given to
-             * the game isn't given again at each read until a report comes. */
-            ++w->samples[i];
         }
     }
 }
@@ -235,8 +234,8 @@ void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own) {
 /* The words for the game's KPAD read: newly pressed and let go against what
  * it last got, worked out once a sample. */
 static void rtgcwii_words(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release) {
-    if (w->worked[channel] != w->samples[channel]) {
-        w->worked[channel] = w->samples[channel];
+    if (w->worked[channel] != w->src.samples[channel]) {
+        w->worked[channel] = w->src.samples[channel];
         w->trig[channel] = w->hold[channel] & ~w->delivered[channel];
         w->release[channel] = w->delivered[channel] & ~w->hold[channel];
         w->delivered[channel] = w->hold[channel];
@@ -255,7 +254,11 @@ void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32
         return;
     }
     rtgcwii_words(w, channel, hold, trig, release);
-    rthome_classic_axes(w->pad[channel], axes);
+    {
+        struct rtsrc_sample p;
+        rtsrc_latest(&w->src, channel, &p);
+        for (i = 0; i < 6; ++i) axes[i] = p.axes[i];
+    }
 }
 
 /* A controller held still: gravity along -Y, as KPAD reports a real one at
@@ -308,7 +311,7 @@ static int32_t rtgcwii_isqrt(int32_t v) {
 }
 
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtgcwii_fs* out) {
-    int32_t axes[6];
+    struct rtsrc_sample p;
     uint32_t shake;
     rtgcwii_still(out->acc, &out->acc_value, &out->acc_speed);
     rtgcwii_still(out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
@@ -320,9 +323,9 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
         return;
     }
     rtgcwii_words(w, channel, &out->hold, &out->trig, &out->release);
-    rthome_classic_axes(w->pad[channel], axes);
-    out->stick[0] = axes[0];
-    out->stick[1] = axes[1];
+    rtsrc_latest(&w->src, channel, &p);
+    out->stick[0] = p.axes[0];
+    out->stick[1] = p.axes[1];
     out->pointer[0] = w->pointer[channel][0];
     out->pointer[1] = w->pointer[channel][1];
     out->pointer_shown = ((w->camera >> channel) & 1u) ||
@@ -340,7 +343,8 @@ void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct r
 }
 
 void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* out) {
-    int32_t axes[6], s;
+    struct rtsrc_sample p;
+    int32_t s;
     rtgcwii_still(out->acc, &out->acc_value, &out->acc_speed);
     rtgcwii_still(out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
     out->stick[0] = out->stick[1] = 0;
@@ -358,8 +362,8 @@ void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtgcwii_fs* ou
     } else {
         /* Tilt: the C-stick held right steers right, gravity turning from
          * -Y towards -Z, its length staying 1 g. */
-        rthome_classic_axes(w->pad[channel], axes);
-        s = -axes[2] * RTGCWII_TILT_SIN / RTHOME_AXIS_FULL;
+        rtsrc_latest(&w->src, channel, &p);
+        s = -p.axes[2] * RTGCWII_TILT_SIN / RTHOME_AXIS_FULL;
         out->acc[2] = s;
         out->acc[1] = -rtgcwii_isqrt(RTHOME_AXIS_FULL * RTHOME_AXIS_FULL - s * s);
     }
