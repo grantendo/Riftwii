@@ -115,14 +115,20 @@ void rtshape_rest(struct rtshape_out* out);
 /* The Wii Remote + Nunchuk's motion on `port` from sample `p` at `now`
  * into `out` (the words are left alone): the Nunchuk's stick, the pointer,
  * and both accelerometers shaking together while the shake's button is
- * held. A read takes the shake's step (its jump in speed). */
-void rtshape_nunchuk(struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, uint32_t now,
+ * held, a new step of it a jump in speed until a read takes it
+ * (rtshape_take_step). */
+void rtshape_nunchuk(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, uint32_t now,
                      struct rtshape_out* out);
 
 /* The sideways Wii Remote's on `port`: the pointer while the game has the
  * camera on, else the tilt the C-stick gives; the shake while its button is
  * held. The Nunchuk's fields stay at rest. */
-void rtshape_sideways(struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out);
+void rtshape_sideways(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out);
+
+/* The game's KPAD read got `port`'s shake step (its jump in speed): the
+ * next read's has none until the shake steps again. A raw report, which has
+ * no speed, leaves it (CodeRabbit CLI, #610). */
+void rtshape_take_step(struct rtshape* sh, uint32_t port);
 
 /* The Wii Remote's acceleration on `port` `ago` ticks before `now`, for a
  * delivery that needs past moments (KPAD's raw samples, each at its own

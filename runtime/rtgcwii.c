@@ -45,11 +45,12 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
 #endif
             rtshape_step(&w->shape, i, &p, now);
             /* Newly plugged in: what it holds already isn't newly pressed. */
-            if (event == RTSRC_ARRIVED) w->delivered[i] = w->hold[i];
+            if (event == RTSRC_ARRIVED) rtdeliver_arrived(&w->deliver, i, w->hold[i]);
             w->slot.present |= bit;
         } else if (event == RTSRC_GONE) {
             w->slot.present &= ~bit;
-            w->hold[i] = w->delivered[i] = 0;
+            w->hold[i] = 0;
+            rtdeliver_gone(&w->deliver, i);
             rtshape_reset(&w->shape, i);
         }
     }
@@ -90,20 +91,6 @@ void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own) {
     if (!own) w->game_read = now | 1u;
 }
 
-/* The words for the game's KPAD read: newly pressed and let go against what
- * it last got, worked out once a sample. */
-static void rtgcwii_words(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release) {
-    if (w->worked[channel] != w->src.samples[channel]) {
-        w->worked[channel] = w->src.samples[channel];
-        w->trig[channel] = w->hold[channel] & ~w->delivered[channel];
-        w->release[channel] = w->delivered[channel] & ~w->hold[channel];
-        w->delivered[channel] = w->hold[channel];
-    }
-    *hold = w->hold[channel];
-    *trig = w->trig[channel];
-    *release = w->release[channel];
-}
-
 void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
                      int32_t axes[6]) {
     uint32_t i;
@@ -112,7 +99,8 @@ void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32
         for (i = 0; i < 6; ++i) axes[i] = 0;
         return;
     }
-    rtgcwii_words(w, channel, hold, trig, release);
+    *hold = w->hold[channel];
+    rtdeliver_take(&w->deliver, channel, w->src.samples[channel], *hold, trig, release);
     {
         struct rtsrc_sample p;
         rtsrc_latest(&w->src, channel, &p);
@@ -120,46 +108,43 @@ void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32
     }
 }
 
-void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out) {
+/* The shape (sideways or with a Nunchuk) whatever the build's: the host
+ * tests take each. */
+static void rtgcwii_shape(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out, uint32_t takes,
+                          int sideways) {
     struct rtsrc_sample p;
     rtshape_rest(out);
-    if (!rtgcwii_on(w, channel)) {
-        out->hold = out->trig = out->release = 0;
-        return;
-    }
-    rtgcwii_words(w, channel, &out->hold, &out->trig, &out->release);
+    out->hold = out->trig = out->release = 0;
+    if (!rtgcwii_on(w, channel)) return;
+    out->hold = w->hold[channel];
+    if (takes & RTGCWII_TAKE_WORDS)
+        rtdeliver_take(&w->deliver, channel, w->src.samples[channel], out->hold, &out->trig, &out->release);
     rtsrc_latest(&w->src, channel, &p);
-    rtshape_nunchuk(&w->shape, channel, &p, now, out);
+    if (sideways) {
+        rtshape_sideways(&w->shape, channel, &p, out);
+    } else {
+        rtshape_nunchuk(&w->shape, channel, &p, now, out);
+    }
+    if (takes & RTGCWII_TAKE_STEP) rtshape_take_step(&w->shape, channel);
+}
+
+void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out) {
+    rtgcwii_shape(w, channel, now, out, RTGCWII_TAKE_WORDS | RTGCWII_TAKE_STEP, 0);
 }
 
 void rtgcwii_sideways(struct rtgcwii* w, uint32_t channel, struct rtshape_out* out) {
-    struct rtsrc_sample p;
-    rtshape_rest(out);
-    if (!rtgcwii_on(w, channel)) {
-        out->hold = out->trig = out->release = 0;
-        return;
-    }
-    rtgcwii_words(w, channel, &out->hold, &out->trig, &out->release);
-    rtsrc_latest(&w->src, channel, &p);
-    rtshape_sideways(&w->shape, channel, &p, out);
+    rtgcwii_shape(w, channel, 0, out, RTGCWII_TAKE_WORDS | RTGCWII_TAKE_STEP, 1);
+}
+
+void rtgcwii_wii_remote(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out, uint32_t takes) {
+#ifdef RT_PAD_FORM_SIDEWAYS
+    rtgcwii_shape(w, channel, now, out, takes, 1);
+#else
+    rtgcwii_shape(w, channel, now, out, takes, 0);
+#endif
 }
 
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) { rtshape_camera(&w->shape, channel, mode); }
-
-uint32_t rtgcwii_float_bits(int32_t numerator) {
-    uint32_t sign = 0, magnitude, top = 0;
-    if (numerator == 0) return 0;
-    /* The size taken unsigned, so the most negative value has one too. */
-    magnitude = (uint32_t)numerator;
-    if (numerator < 0) {
-        sign = 0x80000000u;
-        magnitude = 0u - magnitude;
-    }
-    while (top < 31u && (magnitude >> (top + 1)) != 0) ++top;  /* its highest bit */
-    /* magnitude / 256 = 1.mantissa * 2^(top - 8) */
-    return sign | ((127u + top - 8u) << 23) |
-           ((top <= 23u ? magnitude << (23u - top) : magnitude >> (top - 23u)) & 0x007FFFFFu);
-}
 
 uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
     return rtgcwii_on(w, channel) ? w->hold[channel] : 0u;
@@ -178,98 +163,21 @@ void rtgcwii_heard(struct rtgcwii* w, uint32_t channel) { rtslot_heard(&w->slot,
 void rtgcwii_retell(struct rtgcwii* w, uint32_t now) { rtslot_retell(&w->slot, now); }
 
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
-static void rtgcwii_put16(uint8_t* p, int32_t v) {
-    p[0] = (uint8_t)((uint32_t)v >> 8);
-    p[1] = (uint8_t)v;
-}
-
-/* An acceleration over RTHOME_AXIS_FULL (KPAD's axes: x left, y down along
- * the remote at rest, z its length) as WPAD's three counts (x, y along its
- * length, z up out of its face): KPAD's x, y and z are WPAD's -x, -z and y. */
-static void rtgcwii_put_acc(uint8_t* p, const int32_t acc[3]) {
-    rtgcwii_put16(p, -acc[0] * RTGCWII_ACC_G / RTHOME_AXIS_FULL);
-    rtgcwii_put16(p + 2, acc[2] * RTGCWII_ACC_G / RTHOME_AXIS_FULL);
-    rtgcwii_put16(p + 4, -acc[1] * RTGCWII_ACC_G / RTHOME_AXIS_FULL);
-}
-
-static void rtgcwii_put_dot(uint8_t* o, int32_t x, int32_t y, uint32_t size, uint32_t id) {
-    if (x < 0) x = 0;
-    if (x > 1023) x = 1023;
-    if (y < 0) y = 0;
-    if (y > 767) y = 767;
-    rtgcwii_put16(o, x);
-    rtgcwii_put16(o + 2, y);
-    rtgcwii_put16(o + 4, (int32_t)size);
-    o[6] = (uint8_t)id;
-    o[7] = 0;
-}
-
-/* Data formats with the camera: a bare Wii Remote's and one with a Nunchuk's. */
-#define RTGCWII_FMT_CORE_ACC_DPD 2u
-#define RTGCWII_FMT_FS_FIRST 3u
-#define RTGCWII_FMT_FS_ACC_DPD 5u
-
 uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera) {
     struct rtshape_out f;
-    uint32_t i, format, bytes = RTGCWII_WPAD_CORE_BYTES;
-    int32_t mid_x, mid_y;
+    uint32_t format;
     if (channel >= RTGCWII_CHANNELS || !rtgcwii_on(w, channel)) return 0;
     format = w->format[channel];
-    rtgcwii_camera(w, channel,
-                   kpad_camera || format == RTGCWII_FMT_CORE_ACC_DPD || format == RTGCWII_FMT_FS_ACC_DPD);
-    {
-        /* The report needs only the buttons held: what the game's KPAD reads
-         * were last given (and so what is new at its next one) stays as it
-         * was, as for the HOME Menu's stand-in. */
-        const uint32_t worked = w->worked[channel], delivered = w->delivered[channel];
-        const uint32_t trig = w->trig[channel], release = w->release[channel];
-        const uint32_t jump = w->shape.shake_jump;  /* a raw report has no speed: the next KPAD status keeps it */
-#ifdef RT_PAD_FORM_SIDEWAYS
-        (void)now;
-        rtgcwii_sideways(w, channel, &f);
-#else
-        rtgcwii_nunchuk(w, channel, now, &f);
-#endif
-        /* A format with an extension's part gets a report that long; on the
-         * sideways Wii Remote, which has none, that part stays zeros with
-         * the device type a bare Wii Remote (as WPAD gives a Wii Remote
-         * with nothing in its port), so the success it was told matches
-         * the report (CodeRabbit on #616). */
-        if (format >= RTGCWII_FMT_FS_FIRST && format <= RTGCWII_FMT_FS_ACC_DPD) bytes = RTGCWII_WPAD_FS_BYTES;
-        w->worked[channel] = worked;
-        w->delivered[channel] = delivered;
-        w->trig[channel] = trig;
-        w->release[channel] = release;
-        w->shape.shake_jump = jump;
-    }
-    for (i = 0; i < bytes; ++i) out[i] = 0;
-    rtgcwii_put16(out, (int32_t)(f.hold & 0xFFFFu));
-    rtgcwii_put_acc(out + 2, f.acc);
-    if ((w->shape.camera >> channel) & 1u) {
-        if (f.pointer_shown) {
-            /* The dots move against the pointer: pointing right or down puts
-             * the sensor bar left of or above the camera's centre. */
-            mid_x = 512 - f.pointer[0] * RTGCWII_DOT_RANGE_X / RTHOME_POINTER_FULL;
-            mid_y = 384 - f.pointer[1] * RTGCWII_DOT_RANGE_Y / RTHOME_POINTER_FULL;
-            rtgcwii_put_dot(out + 8, mid_x + RTGCWII_DOT_APART / 2 + 1, mid_y, RTGCWII_DOT_SIZE, 0);
-            rtgcwii_put_dot(out + 16, mid_x - RTGCWII_DOT_APART / 2, mid_y, RTGCWII_DOT_SIZE, 1);
-        } else {
-            rtgcwii_put_dot(out + 8, 0, 767, 0, 0);
-            rtgcwii_put_dot(out + 16, 0, 767, 0, 1);
-        }
-        /* The other two: nothing seen (size 0), as Dolphin's camera gives them. */
-        rtgcwii_put_dot(out + 24, 0, 767, 0, 2);
-        rtgcwii_put_dot(out + 32, 0, 767, 0, 3);
-    }
+    rtgcwii_camera(w, channel, kpad_camera || rtdeliver_format_has_camera(format));
+    /* A look: the report has only the buttons held, so what the game's KPAD
+     * reads were last given (and what is new at its next one) and the
+     * shake's step stay for that read, as for the HOME Menu's stand-in. */
+    rtgcwii_wii_remote(w, channel, now, &f, 0);
 #ifdef RT_PAD_FORM_NUNCHUK
-    out[40] = 1u; /* WPAD_DEV_FREESTYLE */
-    if (bytes == RTGCWII_WPAD_FS_BYTES) {
-        rtgcwii_put_acc(out + 42, f.fs_acc);
-        out[48] = (uint8_t)(int8_t)(f.stick[0] * RTGCWII_FS_STICK_FULL / RTHOME_AXIS_FULL);
-        out[49] = (uint8_t)(int8_t)(f.stick[1] * RTGCWII_FS_STICK_FULL / RTHOME_AXIS_FULL);
-    }
+    return rtdeliver_wpad(&f, format, (int)((w->shape.camera >> channel) & 1u), 1, out);
+#else
+    return rtdeliver_wpad(&f, format, (int)((w->shape.camera >> channel) & 1u), 0, out);
 #endif
-    return bytes;
 }
 
 uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t entry_bytes, uint32_t count,
@@ -289,10 +197,10 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
         {
             int32_t acc[3];
             const int shaking = rtshape_shake_at(&w->shape, channel, now, i * sample_ticks, acc);
-            if (shaking != 0) rtgcwii_put_acc(e + 2, acc);
+            if (shaking != 0) rtdeliver_put_acc(e + 2, acc);
             /* The Nunchuk's too, where the sample has its part (it shakes
              * with the Wii Remote, rtshape_nunchuk), from the shake's start. */
-            if (shaking == 2 && n == RTGCWII_WPAD_FS_BYTES) rtgcwii_put_acc(e + 42, acc);
+            if (shaking == 2 && n == RTGCWII_WPAD_FS_BYTES) rtdeliver_put_acc(e + 42, acc);
         }
     }
     return count;

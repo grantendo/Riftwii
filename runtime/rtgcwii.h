@@ -20,6 +20,7 @@
 #include "rtslot.h"
 #include "rtsrc.h"
 #include "rtshape.h"
+#include "rtdeliver.h"
 
 #define RTGCWII_CHANNELS 4u
 #define RTGCWII_PAD_BYTES 12u
@@ -28,14 +29,7 @@ struct rtgcwii {
     struct rtslot slot;  /* who holds each Wii Remote slot, and what the game was told (rtslot.h) */
     struct rtsrc src;    /* each player's controller, one sample per report (rtsrc.h) */
     uint32_t hold[RTGCWII_CHANNELS];       /* each channel's Wii buttons now, in its shape */
-    /* What the game's KPAD read last got (newly pressed and let go are
-     * against that, not the sample before: a sample the blob takes at a
-     * WPADProbe the game never reads in between, and its press still
-     * counts), worked out once per sample so a second read in a frame
-     * sees the same words. */
-    uint32_t worked[RTGCWII_CHANNELS];     /* the sample the words below are from */
-    uint32_t delivered[RTGCWII_CHANNELS];  /* the buttons the game last got */
-    uint32_t trig[RTGCWII_CHANNELS], release[RTGCWII_CHANNELS];
+    struct rtdeliver deliver;  /* what the game's KPAD read last got on each slot (rtdeliver.h) */
     /* Many games that take a Classic Controller never call PADRead (Kamen
      * Rider: Dragon Knight reads only through KPAD), so the adapter would
      * never be read: the blob then calls the game's PADRead itself, once a
@@ -186,10 +180,7 @@ uint32_t rtgcwii_map_sideways(const uint8_t* pad);
  * after the C-stick moves. */
 void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode);
 
-/* A numerator over RTHOME_AXIS_FULL as a float's bits, as rthome_float_bits
- * but with no cap at 1: the Wii Remote's shake swings past 3 g, and the
- * pointer's distance at rest is about 1.95 (the form's KPAD status). */
-uint32_t rtgcwii_float_bits(int32_t numerator);
+#define rtgcwii_float_bits rtdeliver_float_bits
 
 /* The stand-in's Wii Remote + Nunchuk on `channel` (RT_PAD_FORM_NUNCHUK),
  * for the game's KPAD read at `now`: the same words for every read until
@@ -198,6 +189,17 @@ uint32_t rtgcwii_float_bits(int32_t numerator);
  * isn't on, the buttons, stick and pointer are 0 (pointer hidden), and both
  * accelerometers read a still controller: 1 g along -Y. */
 void rtgcwii_nunchuk(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out);
+
+/* The stand-in's Wii Remote on `channel` in the build's shape (with a
+ * Nunchuk, or sideways) at `now`, into `out`. The game's own KPAD read
+ * takes the words (RTGCWII_TAKE_WORDS: newly pressed and let go against
+ * what it last got) and the shake's step (RTGCWII_TAKE_STEP: its jump in
+ * speed); a look takes neither and leaves them for that read: a raw report
+ * (it has neither) takes 0, and the HOME Menu's stand-in's status in this
+ * shape, whose buttons are its own, takes the step alone. */
+#define RTGCWII_TAKE_WORDS 1u
+#define RTGCWII_TAKE_STEP 2u
+void rtgcwii_wii_remote(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out, uint32_t takes);
 
 /* The stand-in's sideways Wii Remote on `channel` (RT_PAD_FORM_SIDEWAYS),
  * for the game's KPAD read: the words, the acceleration (tilted by the
@@ -289,26 +291,16 @@ int rtgcwii_quiet_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
  * told: one that leaves first is told it's gone. */
 void rtgcwii_retell(struct rtgcwii* w, uint32_t now);
 
-/* WPADStatus, as WPADRead gives it: the buttons (big-endian) at 0, the
- * acceleration at 2, 4 and 6 (signed, RTGCWII_ACC_G a g, the Wii Remote's
- * own axes: lying flat, +z is up), four camera objects at 8 (x and y signed
- * on 1024 x 768, the size, an id and a pad byte; size 0: none), the device
- * type at 40 and the error at 41; a Wii Remote + Nunchuk's WPADFSStatus goes
- * on with the Nunchuk's acceleration at 42, 44 and 46 and its stick at 48
- * and 49 (signed bytes, RTGCWII_FS_STICK_FULL full). */
-#define RTGCWII_WPAD_CORE_BYTES 42u
-#define RTGCWII_WPAD_FS_BYTES 50u
-#define RTGCWII_WPAD_ERR 41u  /* the report's error byte: 0 is a real report */
-#define RTGCWII_ACC_G 104         /* Dolphin's calibration: zero 0x200, one g 0x268 */
-#define RTGCWII_FS_STICK_FULL 100
-/* The camera's two sensor-bar dots: centred on (512, 384) when the pointer
- * is at the screen's centre, moving against the pointer by up to
- * RTGCWII_DOT_RANGE_X / Y at its edge, RTGCWII_DOT_APART apart (Dolphin's
- * emulated Wii Remote at rest: 137 pixels, size 3). */
-#define RTGCWII_DOT_RANGE_X 384
-#define RTGCWII_DOT_RANGE_Y 288
-#define RTGCWII_DOT_APART 137
-#define RTGCWII_DOT_SIZE 3u
+/* The raw report's layout (rtdeliver.h), by its old names. */
+#define RTGCWII_WPAD_CORE_BYTES RTDELIVER_WPAD_CORE_BYTES
+#define RTGCWII_WPAD_FS_BYTES RTDELIVER_WPAD_FS_BYTES
+#define RTGCWII_WPAD_ERR RTDELIVER_WPAD_ERR
+#define RTGCWII_ACC_G RTDELIVER_ACC_G
+#define RTGCWII_FS_STICK_FULL RTDELIVER_FS_STICK_FULL
+#define RTGCWII_DOT_RANGE_X RTDELIVER_DOT_RANGE_X
+#define RTGCWII_DOT_RANGE_Y RTDELIVER_DOT_RANGE_Y
+#define RTGCWII_DOT_APART RTDELIVER_DOT_APART
+#define RTGCWII_DOT_SIZE RTDELIVER_DOT_SIZE
 
 /* The stand-in's raw status on `channel` (the Wii Remote forms) into `out`,
  * for a game that reads WPAD itself: its form's buttons and acceleration

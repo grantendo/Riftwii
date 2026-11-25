@@ -217,7 +217,7 @@ static int32_t rtshape_isqrt(int32_t v) {
     return r;
 }
 
-void rtshape_nunchuk(struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, uint32_t now,
+void rtshape_nunchuk(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, uint32_t now,
                      struct rtshape_out* out) {
     uint32_t shake;
     rtshape_rest(out);
@@ -236,11 +236,10 @@ void rtshape_nunchuk(struct rtshape* sh, uint32_t port, const struct rtsrc_sampl
          * and Nunchuk shaken together). */
         rtshape_shake(shake, jump, out->acc, &out->acc_value, &out->acc_speed);
         rtshape_shake(shake, jump, out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
-        sh->shake_jump &= ~(1u << port);  /* this read took the step's jump */
     }
 }
 
-void rtshape_sideways(struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out) {
+void rtshape_sideways(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out) {
     int32_t s;
     rtshape_rest(out);
     if (port >= RTSHAPE_PORTS) return;
@@ -258,7 +257,6 @@ void rtshape_sideways(struct rtshape* sh, uint32_t port, const struct rtsrc_samp
     if (sh->shake[port] != 0) {
         rtshape_shake(sh->shake[port], (int)((sh->shake_jump >> port) & 1u), out->acc, &out->acc_value,
                       &out->acc_speed);
-        sh->shake_jump &= ~(1u << port);  /* this read took the step's jump */
     }
 }
 
@@ -276,4 +274,8 @@ int rtshape_shake_at(const struct rtshape* sh, uint32_t port, uint32_t now, uint
     }
     rtshape_shake(RTSHAPE_SHAKE_FLIP * ((since - ago) / sh->shake_flip) + 1u, 0, acc, &value, &speed);
     return 2;
+}
+
+void rtshape_take_step(struct rtshape* sh, uint32_t port) {
+    if (port < RTSHAPE_PORTS) sh->shake_jump &= ~(1u << port);
 }

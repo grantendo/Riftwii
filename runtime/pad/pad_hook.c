@@ -849,16 +849,12 @@ static void pad_gcwii_camera_now(struct rt_pad_context* c, uint32_t chan) {
     }
 }
 
-static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
+static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status, uint32_t takes) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     struct rtshape_out f;
     uint32_t i;
     pad_gcwii_camera_now(c, chan);
-#ifdef RT_PAD_FORM_SIDEWAYS
-    rtgcwii_sideways(w, chan, &f);
-#else
-    rtgcwii_nunchuk(w, chan, now(), &f);
-#endif
+    rtgcwii_wii_remote(w, chan, now(), &f, takes);
     for (i = 0; i + 4 <= c->kpad_status_bytes; i += 4) pad_put32(status + i, 0);
     pad_put32(status + PAD_KPAD_HOLD, f.hold);
     pad_put32(status + PAD_KPAD_TRIG, f.trig);
@@ -891,15 +887,8 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
     /* The shape only: the controller's own buttons aren't the game's while
      * the HOME stand-in is, so a press under it (L held as the menu
      * closes) is still new at the game's next read. */
-    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     const uint32_t chan = c->home.channel;
-    const uint32_t worked = w->worked[chan], delivered = w->delivered[chan];
-    const uint32_t trig = w->trig[chan], release = w->release[chan];
-    pad_gcwii_status(c, chan, status);
-    w->worked[chan] = worked;
-    w->delivered[chan] = delivered;
-    w->trig[chan] = trig;
-    w->release[chan] = release;
+    pad_gcwii_status(c, chan, status, RTGCWII_TAKE_STEP);
     pad_put32(status + PAD_KPAD_HOLD, p->remote_hold);
     pad_put32(status + PAD_KPAD_TRIG, p->remote_trig);
     pad_put32(status + PAD_KPAD_RELEASE, p->remote_release);
@@ -920,8 +909,9 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
 #else
 /* The permanent stand-in's status on `chan` (rtgcwii.h): the Classic
  * Controller alone, the Wii Remote's own buttons and pointer at rest. */
-static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
+static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status, uint32_t takes) {
     struct pad_classic p;
+    (void)takes;  /* the Classic Controller's KPAD read takes its words; it has no shake */
     uint32_t i;
     rtgcwii_classic((struct rtgcwii*)(uintptr_t)c->gcwii, chan, &p.hold, &p.trig, &p.release, p.axes);
     p.remote_hold = p.remote_trig = p.remote_release = 0;
@@ -1082,7 +1072,7 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     if (owner != RTSLOT_HOME) {
         /* The permanent stand-in's channel, where no real controller is. */
         if (owner == RTSLOT_STANDIN) {
-            pad_gcwii_status(c, (uint32_t)chan, status);
+            pad_gcwii_status(c, (uint32_t)chan, status, RTGCWII_TAKE_WORDS | RTGCWII_TAKE_STEP);
 #ifdef RT_PAD_FORM_REMOTE
             rtgcwii_heard((struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
 #endif
