@@ -1726,6 +1726,13 @@ static void TestKpadDpdSwitch() {
     // The reading function split across touching entries of the code's view
     // (a pack's patch over one of its words): still read whole (CodeRabbit,
     // fork #23).
+    // The rest of the code in an entry with no bytes behind it: not read,
+    // and nothing found (CodeRabbit CLI, fork #23).
+    for (std::size_t cut : {std::size_t{16}, code.size() - 20}) {
+        text = {{a.base, code.data(), cut}, {a.base + static_cast<std::uint32_t>(cut), nullptr, code.size() - cut}};
+        EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
+        EXPECT_EQ(riftwii::find_kpad_enable_dpd(text).enable, 0u);
+    }
     // The query split the same way (fork #23), after its stwu.
     for (std::size_t cut : {8u, 16u, 24u}) {
         text = {{a.base, code.data(), cut}, {a.base + static_cast<std::uint32_t>(cut), code.data() + cut, code.size() - cut}};
