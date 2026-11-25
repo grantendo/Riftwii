@@ -83,6 +83,11 @@ void TestEarlyReturnKeepsArgument() {
     const auto straight = code({kStwu, 0x3860FFFFu, 0x38840001u /* addi r4,r4,1 */, kBlr});
     RegTrack u = run(straight, RegTrack::kArguments, 3);
     EXPECT_EQ((u.copies(3) >> 3) & 1u, 0u);
+    // A copy made only on that path (`mr r5,r3` before its return) isn't
+    // one on the path that goes on (CodeRabbit CLI, rf3).
+    const auto copied = code({kStwu, 0x3860FFFFu, 0x7C651B78u /* mr r5,r3 */, kBlr});
+    RegTrack v = run(copied, RegTrack::kArguments, 3);
+    EXPECT_EQ(v.copies(3), 1u << 3);
 }
 
 // A call that ends an error path (only `li r3` before the epilogue's
@@ -109,8 +114,8 @@ void TestAddresses() {
 // An early return's epilogue restore (`lwz r31,...(r1)` then the frame
 // undone and `blr`) doesn't end what r31 held for the code after it.
 void TestEpilogueRestoreKeeps() {
-    const auto bytes = code({kStwu, kMrR31R4, 0x83E1001Cu /* lwz r31,28(r1) */, 0x38210020u /* addi r1,r1,32 */,
-                             0x4E800020u});
+    const auto bytes = code({kStwu, kMrR31R4, 0x38A50001u /* addi r5,r5,1 */, 0x83E1001Cu /* lwz r31,28(r1) */,
+                             0x38210020u /* addi r1,r1,32 */, 0x4E800020u});
     RegTrack t = run(bytes, RegTrack::kArguments, 4);
     EXPECT_TRUE((t.copies(4) >> 31) & 1u);
 }

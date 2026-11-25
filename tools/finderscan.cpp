@@ -48,7 +48,13 @@ bool scan(const std::string& path) {
     std::vector<riftwii::CodeRange> text, all;
     for (std::size_t s = 0; s < riftwii::kDolSections; ++s) {
         const riftwii::DolSection& sec = dol.sections[s];
-        if (!sec.used() || !inside_file(sec, program.size())) continue;
+        if (!sec.used()) continue;
+        if (!inside_file(sec, program.size())) {
+            // A section the file cuts short: the finders would miss code, so
+            // the program counts as not scanned (CodeRabbit CLI).
+            std::printf("%s | section %u runs past the end of the file\n", path.c_str(), static_cast<unsigned>(s));
+            return false;
+        }
         const riftwii::CodeRange range{sec.address, program.data() + sec.offset, sec.size};
         all.push_back(range);
         if (s < riftwii::kDolTextSections) text.push_back(range);

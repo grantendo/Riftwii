@@ -911,8 +911,8 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
  * Controller alone, the Wii Remote's own buttons and pointer at rest. */
 static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status, uint32_t takes) {
     struct pad_classic p;
-    (void)takes;  /* the Classic Controller's KPAD read takes its words; it has no shake */
     uint32_t i;
+    (void)takes;  /* the Classic Controller's KPAD read takes its words; it has no shake */
     rtgcwii_classic((struct rtgcwii*)(uintptr_t)c->gcwii, chan, &p.hold, &p.trig, &p.release, p.axes);
     p.remote_hold = p.remote_trig = p.remote_release = 0;
     for (i = 0; i < 2; ++i) p.pointer[i] = 0;
@@ -1015,9 +1015,6 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     return 1;
 }
 #else
-/* The HOME Menu's stand-in's channel, unless a real Wii Remote holds it:
- * there the real one's samples stay, as PADRead's pad_on_read leaves such a
- * channel to it (CodeRabbit on #609). */
 /* Who holds `chan` at `t`: rtslot's one decision (a real controller, then
  * the HOME Menu's stand-in on its own slot, then the permanent stand-in).
  * In a build with the HOME Menu's stand-in only, its slot or nobody. */

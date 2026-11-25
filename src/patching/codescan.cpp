@@ -136,7 +136,8 @@ bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end)
 // save or restore helpers (_savegpr_N, _restgpr_N): `addi r11,r1,N` just
 // before it, and its target a `stw`, `lwz`, `stfd` or `lfd` through r11. The
 // `addi` alone isn't proof (CodeRabbit CLI): an ordinary call after one is
-// still a call.
+// still a call. A target outside the code being read (another section) can't
+// be looked at, and the `addi` decides as before.
 static bool save_helper_call(const std::uint8_t* bytes, std::size_t words, std::size_t k) {
     const std::uint32_t insn = be32(bytes + 4 * k);
     if (k == 0 || opcode(insn) != 18 || (insn & 3u) != 1u) return false;
@@ -145,7 +146,7 @@ static bool save_helper_call(const std::uint8_t* bytes, std::size_t words, std::
     std::int32_t offset = static_cast<std::int32_t>(insn & 0x03FFFFFCu);
     if (offset & 0x02000000) offset -= 0x04000000;
     const std::int64_t target = static_cast<std::int64_t>(k) + offset / 4;
-    if (target < 0 || target >= static_cast<std::int64_t>(words)) return false;
+    if (target < 0 || target >= static_cast<std::int64_t>(words)) return true;
     const std::uint32_t first = be32(bytes + 4 * static_cast<std::size_t>(target));
     const std::uint32_t op = opcode(first);
     return reg_a(first) == 11 && (op == 36 || op == 32 || op == 54 || op == 50);
@@ -179,16 +180,17 @@ bool call_then_returns(const std::uint8_t* bytes, std::size_t k, std::size_t end
     return false;
 }
 
-// Whether the word at `k` sets the return value (`li r3`, `mr r3`) on a path that
-// then leaves the function (call_then_returns from there): an early error
-// return such as `li r3,-1; blr`. The scan reads straight through it into
-// the code a branch around it reaches, where the register still holds what
-// it did, so the write doesn't count there (CodeRabbit CLI).
+// Whether the word at `k` is a `li` or `mr` on a path that then only leaves
+// the function (nothing but more of them before an epilogue or `blr`,
+// call_then_returns from there): an early error return such as `li r3,-1;
+// mr r5,r3; blr`. The scan reads straight through it into the code a branch
+// around it reaches, where nothing it did happened: no register loses what
+// it held, and none becomes a copy (CodeRabbit CLI).
 static bool return_value_write(const std::uint8_t* bytes, std::size_t k, std::size_t end) {
     const std::uint32_t w = be32(bytes + 4 * k);
-    const bool li_r3 = opcode(w) == 14 && reg_a(w) == 0 && reg_d(w) == 3;
-    const bool mr_r3 = opcode(w) == 31 && ((w >> 1) & 0x3FFu) == 444 && reg_d(w) == ((w >> 11) & 31u) && reg_a(w) == 3;
-    return (li_r3 || mr_r3) && call_then_returns(bytes, k, end);
+    const bool li = opcode(w) == 14 && reg_a(w) == 0;
+    const bool mr = opcode(w) == 31 && ((w >> 1) & 0x3FFu) == 444 && reg_d(w) == ((w >> 11) & 31u);
+    return (li || mr) && call_then_returns(bytes, k, end);
 }
 
 // `mask` (registers holding an argument, one bit each) after the word at
