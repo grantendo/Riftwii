@@ -184,6 +184,13 @@ void TestConnectedOnly() {
     EXPECT_EQ(rtgcwii_on(&w, 0), 0);
     rtgcwii_connect_change(&w, &leave, &join);
     EXPECT_EQ(leave, 1u);
+    // A real Wii Remote found on a slot with no GameCube controller behind
+    // it keeps that slot: a GameCube controller plugged in there later
+    // doesn't take it (CodeRabbit CLI).
+    rtgcwii_probed(&w, 1, 0);
+    pads.plug(1, kGcA, 72);
+    rtgcwii_pads(&w, pads.s, 1000 + kGrace + 2);
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
 }
 
 // The HOME Menu's stand-in on a port that already has a permanent one

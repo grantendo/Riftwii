@@ -15,9 +15,11 @@ void rtslot_probed(struct rtslot* s, uint32_t channel, int32_t result) {
     uint32_t bit;
     if (channel >= RTSLOT_SLOTS || result == -2) return;  /* busy: no answer either way */
     ++s->probe_counts[channel];
-    /* Connected only: a controller found is the pack's, not a real one. */
-    if (result == 0 && s->inputless) return;
     bit = 1u << channel;
+    /* Connected only: a controller found on a slot with a GameCube
+     * controller behind it is the pack's, not a real one; on any other slot
+     * it's a real Wii Remote, which keeps its slot (CodeRabbit CLI). */
+    if (result == 0 && s->inputless && (s->present & bit)) return;
     if (result == 0) {
         s->real |= bit;
         /* A controller there now: any count of empty reads starts over. */

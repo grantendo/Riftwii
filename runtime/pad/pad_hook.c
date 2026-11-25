@@ -1530,9 +1530,11 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
      * is, never taken for a real Wii Remote. It was read before the poll
      * below, so it acknowledges what was told before; the poll may tell
      * something newer, which then waits for the next read. */
-    if (w->slot.inputless && (int8_t)status[RTGCWII_WPAD_ERR] == 0) {
+    if (w->slot.inputless && (int8_t)status[RTGCWII_WPAD_ERR] == 0 && rtslot_on(&w->slot, (uint32_t)chan)) {
+        /* (Only on the stand-in's own slot: a report on any other slot is a
+         * real Wii Remote's, noted as usual below; CodeRabbit CLI.) */
         msr = interrupts_off();
-        if (rtslot_on(&w->slot, (uint32_t)chan)) rtgcwii_heard(w, (uint32_t)chan);
+        rtgcwii_heard(w, (uint32_t)chan);
         interrupts_restore(msr);
         pad_gcwii_read_pads(c);
         return;
