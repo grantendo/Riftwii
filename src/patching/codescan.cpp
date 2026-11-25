@@ -143,12 +143,13 @@ static bool helper_word(std::uint32_t first) {
 bool RegTrack::calls(std::size_t k) const {
     const std::uint32_t insn = be32(bytes_ + 4 * k);
     if ((insn & 1u) == 0) return false;
-    if (opcode(insn) == 18 && (insn & 3u) == 1u && k > 0) {
+    if (opcode(insn) == 18) {
         // `bl` right after `addi r11,r1,N`: a register save helper's call
         // only if its target is one, looked up wherever it is in the game's
         // code (another section included). The `addi` alone isn't proof, and
-        // a target found nowhere is an ordinary call (CodeRabbit CLI).
-        const std::uint32_t prev = be32(bytes_ + 4 * (k - 1));
+        // a target found nowhere is an ordinary call (CodeRabbit CLI). A `bl`
+        // at the first word read has no `addi` before it: an ordinary call.
+        const std::uint32_t prev = k > 0 && (insn & 2u) == 0 ? be32(bytes_ + 4 * (k - 1)) : 0;
         if (opcode(prev) == 14 && reg_d(prev) == 11 && reg_a(prev) == 1) {
             std::int32_t offset = static_cast<std::int32_t>(insn & 0x03FFFFFCu);
             if (offset & 0x02000000) offset -= 0x04000000;

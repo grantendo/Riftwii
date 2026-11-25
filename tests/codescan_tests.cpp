@@ -72,6 +72,11 @@ void TestSaveHelperKeeps() {
     const auto external = code({kStwu, kMrR5R4, kAddiR11R1, kBl, kStw});
     RegTrack x = run(external, RegTrack::kArguments, 4);
     EXPECT_EQ((x.copies(4) >> 5) & 1u, 0u);
+    // A `bl` at the first word read is a call (CodeRabbit CLI, rf5).
+    const auto first = code({kBl, kStw});
+    RegTrack f(first.data(), first.size() / 4, 0, first.size() / 4, RegTrack::kArguments);
+    EXPECT_TRUE(f.calls(0));
+    EXPECT_TRUE(!f.calls(1));
     // The same `addi` before an ordinary call (CodeRabbit CLI): r5 is gone.
     const auto ordinary = code({kStwu, kMrR5R4, kAddiR11R1, kBlPlus8, kStw, kLiR3, kBlr});
     RegTrack u = run(ordinary, RegTrack::kArguments, 4);
