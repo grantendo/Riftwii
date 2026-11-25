@@ -3,112 +3,17 @@
 #include "riftwii/hbmsearch.hpp"
 #include "riftwii/byteorder.hpp"
 
+#include "codescan.hpp"
+
 #include <algorithm>
 #include <cstring>
 
 namespace riftwii {
+using namespace codescan;
 namespace {
 
-std::int32_t simm(std::uint32_t insn) { return static_cast<std::int16_t>(insn & 0xFFFFu); }
 
-std::uint32_t opcode(std::uint32_t insn) { return insn >> 26; }
-std::uint32_t reg_d(std::uint32_t insn) { return (insn >> 21) & 31u; }
-std::uint32_t reg_a(std::uint32_t insn) { return (insn >> 16) & 31u; }
 
-// Whether `insn` writes register `reg`, for the common integer instructions:
-// the D-form arithmetic and loads write rD; the logical immediates and the
-// rotates write rA; among the opcode-31 forms, the logical and shift ones
-// write rA, the stores write nothing, and the rest (arithmetic, indexed
-// loads, mfspr) write rD.
-bool writes_register(std::uint32_t insn, std::uint32_t reg) {
-    const std::uint32_t op = opcode(insn);
-    // The update forms (lwzu, lbzu, lhzu, lhau and the stores stwu, stbu,
-    // sthu) also write their base, rA.
-    const bool update = op == 33 || op == 35 || op == 37 || op == 39 || op == 41 || op == 43 || op == 45;
-    if (update && reg_a(insn) == reg) return true;
-    if (op == 46) return reg >= reg_d(insn);  // lmw: rD through r31
-    const bool d_form = op == 7 || op == 8 || op == 12 || op == 13 || op == 14 || op == 15 ||
-                        (op >= 32 && op <= 35) || (op >= 40 && op <= 43);  // mulli..addis, the loads
-    if (d_form) return reg_d(insn) == reg;
-    const bool a_form = op == 20 || op == 21 || op == 23 || (op >= 24 && op <= 29);  // rlwimi..andis.
-    if (a_form) return reg_a(insn) == reg;
-    if (op != 31) return false;
-    const std::uint32_t xo = (insn >> 1) & 0x3FFu;
-    switch (xo) {
-        case 28: case 60: case 124: case 284: case 316: case 412: case 444: case 476:  // and..nand
-        case 24: case 536: case 792: case 824: case 26: case 922: case 954:            // shifts, cntlzw, extsh/b
-            return reg_a(insn) == reg;
-        case 183: case 247: case 439:  // stwux, stbux, sthux: their base
-            return reg_a(insn) == reg;
-        case 55: case 119: case 311: case 375:  // lwzux, lbzux, lhzux, lhaux: rD and their base
-            return reg_d(insn) == reg || reg_a(insn) == reg;
-        case 151: case 215: case 407: case 662: case 918: case 150:  // the other stores
-            return false;
-        case 0: case 32: case 4:                          // cmp, cmpl, tw: compare only
-        case 144: case 146: case 467:                     // mtcrf, mtmsr, mtspr: rS is read
-        case 54: case 86: case 470: case 982: case 1014:  // dcbst, dcbf, dcbi, icbi, dcbz
-            return false;
-        default:
-            return reg_d(insn) == reg;
-    }
-}
-
-constexpr std::uint32_t kStwuR1Mask = 0xFFFF0000u;
-constexpr std::uint32_t kStwuR1 = 0x94210000u;  // stwu r1,d(r1)
-constexpr std::uint32_t kBlr = 0x4E800020u;
-constexpr std::uint32_t kNop = 0x60000000u;
-constexpr std::uint32_t kMtlrR0 = 0x7C0803A6u;
-
-bool is_stwu_r1(std::uint32_t insn) { return (insn & kStwuR1Mask) == kStwuR1; }
-// Where a framed function that starts at word `start` ends, before word
-// `next` (the next `stwu r1`): after its last `blr`, or tail call (a `b` out
-// of the function or a `bctr`), that follows a stack frame's undoing (`addi
-// r1,r1,N` or `lwz r1,...` within the four words before, with no other
-// return or tail call between), else after its first `blr`, else at `next`.
-// Leaf code (no frame of its own) between it and the next framed function
-// isn't counted, so its instructions can't lend the function marks it
-// doesn't have.
-std::size_t function_end(const std::uint8_t* bytes, std::size_t start, std::size_t next) {
-    constexpr std::uint32_t kBlr = 0x4E800020u;
-    constexpr std::uint32_t kBctr = 0x4E800420u;
-    // A tail call: `bctr`, or `b` (no link) to somewhere outside start..next.
-    const auto tail_call = [&](std::size_t k) {
-        const std::uint32_t insn = be32(bytes + 4 * k);
-        if (insn == kBctr) return true;
-        if (opcode(insn) != 18 || (insn & 1u) != 0) return false;
-        if ((insn & 2u) != 0) return true;  // absolute: never this function's own code
-        std::int32_t offset = static_cast<std::int32_t>(insn & 0x03FFFFFCu);
-        if (offset & 0x02000000) offset -= 0x04000000;
-        const std::int64_t target = static_cast<std::int64_t>(k) + offset / 4;
-        return target < static_cast<std::int64_t>(start) || target >= static_cast<std::int64_t>(next);
-    };
-    std::size_t last_framed = 0, first = 0;
-    for (std::size_t k = start; k < next; ++k) {
-        const std::uint32_t word = be32(bytes + 4 * k);
-        const bool ret = word == kBlr;
-        // A plain `b` within start..next counts too, but only just after the
-        // frame's undoing (below): a branch to a shared epilogue comes
-        // before the frame is undone, while one after it can only be a tail
-        // call, here to a leaf placed before the next framed function
-        // (CodeRabbit on #616).
-        const bool near_b = opcode(word) == 18 && (word & 3u) == 0u;
-        if (!ret && !tail_call(k) && !near_b) continue;
-        if (ret && first == 0) first = k + 1;
-        for (std::size_t back = 1; back <= 4 && back <= k - start; ++back) {
-            const std::uint32_t insn = be32(bytes + 4 * (k - back));
-            // Another function's return or tail call: its restore isn't this one's.
-            if (insn == kBlr || tail_call(k - back)) break;
-            const bool restore = (opcode(insn) == 14 && reg_d(insn) == 1 && reg_a(insn) == 1) ||  // addi r1,r1,N
-                                 (opcode(insn) == 32 && reg_d(insn) == 1);                         // lwz r1,...
-            if (restore) {
-                last_framed = k + 1;
-                break;
-            }
-        }
-    }
-    return last_framed != 0 ? last_framed : first != 0 ? first : next;
-}
-bool is_call(std::uint32_t insn) { return opcode(insn) == 18 && (insn & 3u) == 1u; }  // bl
 
 // The word at `address` in any of `ranges`.
 bool word_at(const std::vector<CodeRange>& ranges, std::uint32_t address, std::uint32_t& out) {
@@ -395,213 +300,58 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
     return matches == 1 ? found : 0;
 }
 
-namespace {
-bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end);
-bool call_then_returns(const std::uint8_t* bytes, std::size_t k, std::size_t end);
-void track_addresses(std::uint32_t insn, std::uint32_t prev, bool call_counts, std::uint32_t high[32],
-                     std::uint32_t address[32]);
-}  // namespace
-
 WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
     constexpr std::int32_t kConnectCallback = 2020;  // in the Oct 3 2006 WPAD's control block
     constexpr std::size_t kMaxWords = 40;
     WpadConnect2006 found;
     unsigned matches = 0;
-    for (const CodeRange& r : text) {
-        if (r.bytes == nullptr) continue;
-        const std::size_t words = r.size / 4;
-        std::size_t i = 0;
-        while (i < words) {
-            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
-            if (i >= words) break;
-            const std::size_t start = i++;
-            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
-            // The setter ends at its return: leaf code after it, before the
-            // next framed function, isn't counted.
-            const std::size_t end = function_end(r.bytes, start, i);
-            if (end - start > kMaxWords) continue;
-            std::uint32_t high[32] = {}, address[32] = {};
-            std::uint32_t table = 0;
-            std::uint32_t swapped = 0;  // the table whose block's callback was loaded and stored
-            int block = -1;
-            bool loads = false, stores = false;
-            for (std::size_t k = start; k < end; ++k) {
-                const std::uint32_t insn = be32(r.bytes + 4 * k);
-                const std::uint32_t d = reg_d(insn), a = reg_a(insn);
-                const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
-                const std::uint32_t base = lwzx ? address[a] : 0;  // the table, as it finds it
-                if (!epilogue_restore(r.bytes, k, end))
-                track_addresses(insn, k > start ? be32(r.bytes + 4 * (k - 1)) : 0,
-                                !call_then_returns(r.bytes, k, end), high, address);
-                if (lwzx && base != 0) {
-                    // A new lookup: a load and a store through the block it
-                    // gives count afresh, even from the same table
-                    // (CodeRabbit on #616).
-                    loads = stores = false;
-                    table = base;
-                    block = static_cast<int>(d);
-                    continue;
-                }
-                if (block >= 0 && static_cast<int>(a) == block && simm(insn) == kConnectCallback) {
-                    loads = loads || opcode(insn) == 32;   // lwz
-                    stores = stores || opcode(insn) == 36;  // stw
-                }
-                // The block's register written with anything else (`lwz
-                // r4,8(r1)`): what goes through it after isn't the block.
-                if (block >= 0 && writes_register(insn, static_cast<std::uint32_t>(block)) &&
-                    !epilogue_restore(r.bytes, k, end)) {
-                    block = -1;
-                    loads = stores = false;
-                }
-                // The first table with both keeps them: a later lookup in
-                // another table doesn't take its place.
-                if (swapped == 0 && loads && stores) swapped = table;
+    // The setter ends at its return: leaf code after it, before the next
+    // framed function, isn't counted (function_end).
+    each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
+        RegTrack regs(r.bytes, start, end, RegTrack::kAddresses);
+        std::uint32_t table = 0;
+        std::uint32_t swapped = 0;  // the table whose block's callback was loaded and stored
+        int block = -1;
+        bool loads = false, stores = false;
+        for (std::size_t k = start; k < end; ++k) {
+            const std::uint32_t insn = be32(r.bytes + 4 * k);
+            const std::uint32_t d = reg_d(insn), a = reg_a(insn);
+            const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
+            const std::uint32_t base = lwzx ? regs.address(a) : 0;  // the table, as it finds it
+            regs.step(k);
+            if (lwzx && base != 0) {
+                // A new lookup: a load and a store through the block it
+                // gives count afresh, even from the same table
+                // (CodeRabbit on #616).
+                loads = stores = false;
+                table = base;
+                block = static_cast<int>(d);
+                continue;
             }
-            if (swapped == 0) continue;
-            found.table = swapped;
-            found.offset = static_cast<std::uint32_t>(kConnectCallback);
-            ++matches;
+            if (block >= 0 && static_cast<int>(a) == block && simm(insn) == kConnectCallback) {
+                loads = loads || opcode(insn) == 32;   // lwz
+                stores = stores || opcode(insn) == 36;  // stw
+            }
+            // The block's register written with anything else (`lwz
+            // r4,8(r1)`): what goes through it after isn't the block.
+            if (block >= 0 && writes_register(insn, static_cast<std::uint32_t>(block)) &&
+                !epilogue_restore(r.bytes, k, end)) {
+                block = -1;
+                loads = stores = false;
+            }
+            // The first table with both keeps them: a later lookup in
+            // another table doesn't take its place.
+            if (swapped == 0 && loads && stores) swapped = table;
         }
-    }
+        if (swapped == 0) return;
+        found.table = swapped;
+        found.offset = static_cast<std::uint32_t>(kConnectCallback);
+        ++matches;
+    });
     return matches == 1 ? found : WpadConnect2006{};
 }
 
 namespace {
-
-// Calls `visit(range, start, end)` (word indexes) for each framed function
-// in `text`: from its `stwu r1` to where it ends (function_end: its last
-// return or tail call after the frame is undone, else its first return,
-// else the next `stwu r1`), if that is at most `max_words` long.
-template <typename Visit>
-void each_framed_function(const std::vector<CodeRange>& text, std::size_t max_words, Visit visit) {
-    for (const CodeRange& r : text) {
-        if (r.bytes == nullptr) continue;
-        const std::size_t words = r.size / 4;
-        std::size_t i = 0;
-        while (i < words) {
-            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
-            if (i >= words) break;
-            const std::size_t start = i++;
-            while (i < words && !is_stwu_r1(be32(r.bytes + 4 * i))) ++i;
-            // To its last return after the frame is undone (an early
-            // error return doesn't end it), else its first.
-            const std::size_t end = function_end(r.bytes, start, i);
-            if (end - start <= max_words) visit(r, start, end);
-        }
-    }
-}
-
-// Whether the word at `k` (before word `end`) restores a register in an
-// epilogue: a load off r1 (`lwz`/`lmw`) followed, through nothing but more
-// such loads and `mtlr`, by the frame's undoing (`addi r1,r1,N`, N > 0) and
-// then a return or tail call, within a few words. An ordinary reload
-// through the stack isn't one.
-bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end) {
-    constexpr std::size_t kWithin = 8;
-    const auto restore_load = [](std::uint32_t w) { return (opcode(w) == 32 || opcode(w) == 46) && reg_a(w) == 1; };
-    if (!restore_load(be32(bytes + 4 * k))) return false;
-    for (std::size_t j = k + 1; j < end && j <= k + kWithin; ++j) {
-        const std::uint32_t w = be32(bytes + 4 * j);
-        if (opcode(w) == 14 && reg_d(w) == 1 && reg_a(w) == 1 && simm(w) > 0) {
-            // The frame undone, then the function leaves (a return or a
-            // tail call, maybe after reloading the return address off the
-            // caller's frame and mtlr): only then is it an epilogue.
-            for (std::size_t n = j + 1; n < end && n <= j + 4; ++n) {
-                const std::uint32_t x = be32(bytes + 4 * n);
-                if (x == kBlr || x == 0x4E800420u) return true;
-                if (opcode(x) == 18 && (x & 1u) == 0) {
-                    // A `b` is a tail call only if it leaves the code being
-                    // read: absolute, or to before the restore or past `end`;
-                    // a branch further into the function isn't an epilogue.
-                    if ((x & 2u) != 0) return true;
-                    std::int32_t offset = static_cast<std::int32_t>(x & 0x03FFFFFCu);
-                    if (offset & 0x02000000) offset -= 0x04000000;
-                    const std::int64_t target = static_cast<std::int64_t>(n) + offset / 4;
-                    return target < static_cast<std::int64_t>(k) || target >= static_cast<std::int64_t>(end);
-                }
-                if ((x & 0xFC1FFFFFu) != 0x7C0803A6u && !restore_load(x)) return false;
-            }
-            return false;
-        }
-        const bool mtlr = (w & 0xFC1FFFFFu) == 0x7C0803A6u;
-        if (!restore_load(w) && !mtlr) return false;
-    }
-    return false;
-}
-
-// Whether `insn` calls (`bl`, `bcl`, `bctrl`, `blrl` and their forms):
-// the callee may change r0 and r3-r12. Not a call to the compiler's
-// register save or restore helpers (`addi r11,r1,N` just before, `prev`),
-// which leave the argument registers as they were.
-bool calls(std::uint32_t insn, std::uint32_t prev) {
-    if ((insn & 1u) == 0) return false;
-    if (opcode(prev) == 14 && reg_d(prev) == 11 && reg_a(prev) == 1) return false;
-    if (opcode(insn) == 18 || opcode(insn) == 16) return true;
-    const std::uint32_t xo = (insn >> 1) & 0x3FFu;
-    return opcode(insn) == 19 && (xo == 16 || xo == 528);
-}
-constexpr std::uint32_t kVolatileRegisters = 1u | (0x3FFu << 3);  // r0, r3-r12
-
-// Whether the call at word `k` ends an error path: after it only the
-// return value set (`li`, `mr`, a `nop`) before the function leaves (an
-// epilogue's restores and return, or a plain `blr`). The scan reads straight
-// through such a path, and the code a branch around it reaches never runs
-// its call, so the call clobbers nothing there (CodeRabbit CLI, #616); a
-// call followed by any other work is an ordinary one.
-bool call_then_returns(const std::uint8_t* bytes, std::size_t k, std::size_t end) {
-    constexpr std::size_t kWithin = 8;
-    for (std::size_t j = k + 1; j < end && j <= k + kWithin; ++j) {
-        if (epilogue_restore(bytes, j, end)) return true;
-        const std::uint32_t w = be32(bytes + 4 * j);
-        if (w == kBlr) return true;
-        const bool li = opcode(w) == 14 && reg_a(w) == 0;
-        const bool mr = opcode(w) == 31 && ((w >> 1) & 0x3FFu) == 444 && reg_d(w) == ((w >> 11) & 31u);
-        if (!li && !mr && w != 0x60000000u) return false;
-    }
-    return false;
-}
-
-// `mask` (registers holding an argument, one bit each) after the word at
-// `k` (before word `end`): a register it writes no longer holds it, unless
-// the write is an `mr` from one that does, and a call leaves it only in the
-// registers a callee keeps (r13-r31: CodeRabbit on #616). A register
-// restored in an epilogue (epilogue_restore) is left as it was: the scan
-// reads straight through an early return's epilogue into the code its
-// branch around it reaches, where the register still holds the argument.
-std::uint32_t track_argument(const std::uint8_t* bytes, std::size_t k, std::size_t end, std::uint32_t mask) {
-    const std::uint32_t insn = be32(bytes + 4 * k);
-    if (epilogue_restore(bytes, k, end)) return mask;
-    if (calls(insn, k > 0 ? be32(bytes + 4 * (k - 1)) : 0) && !call_then_returns(bytes, k, end))
-        return mask & ~kVolatileRegisters;
-    const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
-                    reg_d(insn) == ((insn >> 11) & 31u);
-    const bool copies = mr && ((mask >> reg_d(insn)) & 1u);
-    for (std::uint32_t reg = 0; reg < 32; ++reg)
-        if (((mask >> reg) & 1u) && writes_register(insn, reg)) mask &= ~(1u << reg);
-    if (copies) mask |= 1u << reg_a(insn);
-    return mask;
-}
-
-// The table addresses being built (`lis` high halves and `addi`-completed
-// addresses, per register) after `insn`: what it builds is read from the
-// values before it, then every register it writes (a call: r0, r3-r12)
-// forgets what it held (CodeRabbit on #616).
-void track_addresses(std::uint32_t insn, std::uint32_t prev, bool call_counts, std::uint32_t high[32],
-                     std::uint32_t address[32]) {
-    const std::uint32_t d = reg_d(insn), a = reg_a(insn);
-    std::uint32_t new_high = 0, new_address = 0;
-    if (opcode(insn) == 15 && a == 0) new_high = (insn & 0xFFFFu) << 16;                  // lis
-    if (opcode(insn) == 14 && a != 0 && high[a] != 0)                                     // addi rD,rA,lo
-        new_address = high[a] + static_cast<std::uint32_t>(simm(insn));
-    for (std::uint32_t g = 0; g < 32; ++g) {
-        if ((call_counts && calls(insn, prev) && ((kVolatileRegisters >> g) & 1u)) || writes_register(insn, g)) {
-            high[g] = 0;
-            address[g] = 0;
-        }
-    }
-    if (new_high != 0) high[d] = new_high;
-    if (new_address != 0) address[d] = new_address;
-}
 
 bool is_li(std::uint32_t insn, std::int32_t value) { return opcode(insn) == 14 && reg_a(insn) == 0 && simm(insn) == value; }
 
@@ -626,21 +376,19 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
     constexpr std::int32_t kBlockFields = 0x400;  // the callbacks sit past the control block's buffers
     std::vector<std::pair<std::uint32_t, std::int32_t>> setters;
     each_framed_function(text, kMaxSetterWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
-        std::uint32_t high[32] = {}, address[32] = {};
-        std::uint32_t table = 0, from_r4 = 1u << 4;  // r4 and its copies, one bit each
+        RegTrack regs(r.bytes, start, end, RegTrack::kArguments | RegTrack::kAddresses);
+        regs.follow(4);  // the new callback, the second argument
+        std::uint32_t table = 0;
         const std::size_t first_of_function = setters.size();
         int block = -1;
         std::int32_t loaded = -1;
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             const std::uint32_t d = reg_d(insn), a = reg_a(insn);
-            const std::uint32_t r4_here = from_r4;  // as this instruction finds them
-            from_r4 = track_argument(r.bytes, k, end, from_r4);
+            const std::uint32_t r4_here = regs.copies(4);  // as this instruction finds them
             const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
-            const std::uint32_t base = lwzx ? address[a] : 0;  // the table, as it finds it
-            if (!epilogue_restore(r.bytes, k, end))
-                track_addresses(insn, k > start ? be32(r.bytes + 4 * (k - 1)) : 0,
-                                !call_then_returns(r.bytes, k, end), high, address);
+            const std::uint32_t base = lwzx ? regs.address(a) : 0;  // the table, as it finds it
+            regs.step(k);
             if (lwzx && base != 0) {
                 table = base;
                 block = static_cast<int>(d);
@@ -685,28 +433,16 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
     std::uint32_t found = 0;
     bool two = false;
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
-        std::uint32_t high[32] = {};
+        RegTrack regs(r.bytes, start, end, RegTrack::kAddresses);
         bool table = false, several = false;
         std::uint32_t target = 0;
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
-            const std::uint32_t d = reg_d(insn), a = reg_a(insn);
             const bool bl = (insn & 0xFC000003u) == 0x48000001u;
-            // `addi` from the value its register held before it (CodeRabbit
-            // CLI, #616), then what this instruction writes: a `lis` a high
-            // half, anything else forgets it, and a call clobbers r0, r3-r12.
-            if (opcode(insn) == 14 && a != 0 && high[a] != 0 &&
-                high[a] + static_cast<std::uint32_t>(simm(insn)) == block_table)
-                table = true;
-            if (opcode(insn) == 15 && a == 0) {
-                high[d] = (insn & 0xFFFFu) << 16;  // lis
-            } else if (bl) {
-                high[0] = 0;
-                for (std::uint32_t g = 3; g <= 12; ++g) high[g] = 0;
-            } else {
-                for (std::uint32_t g = 0; g < 32; ++g)
-                    if (high[g] != 0 && writes_register(insn, g)) high[g] = 0;
-            }
+            // The table's address built here: an `addi` from a `lis` half,
+            // as the registers were before it (RegTrack).
+            regs.step(k);
+            if (opcode(insn) == 14 && regs.address(reg_d(insn)) == block_table) table = true;
             if (bl && k + 1 < end && be32(r.bytes + 4 * (k + 1)) == kCmpwiR3Busy) {
                 std::uint32_t offset = insn & 0x03FFFFFCu;  // bl: its target
                 if (offset & 0x02000000u) offset |= 0xFC000000u;
@@ -743,7 +479,11 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                                              [&](const auto& s) { return s.second == simm(insn); });
             if (setter == setters.end()) continue;
             bool gone = false, ctr_from_slot = false;
-            std::uint32_t slot_regs = 1u << 12;  // r12 and its copies (`mr`), one bit each
+            // r12, the loaded slot, and its copies (`mr`), over the words up
+            // to its call.
+            const std::size_t window_end = std::min(words, i + 1 + kCallWindow);
+            RegTrack regs(r.bytes, i + 1, window_end, RegTrack::kArguments);
+            regs.follow(12);
             std::size_t last_r4 = 0;  // where r4 was last written
             // Conditional branches on the way (where, and where to): one that
             // lands after r4's last write but not past the call skips that
@@ -766,16 +506,8 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                 }
                 // mtctr rS: from the slot (r12 or a copy of it) or from
                 // anything else.
-                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) ctr_from_slot = ((slot_regs >> reg_d(next)) & 1u) != 0;
-                // `mr rA,rS` (`or rA,rS,rS`) copies the slot; any other write
-                // to a register drops it from the copies.
-                const bool mr = opcode(next) == 31 && ((next >> 1) & 0x3FFu) == 444 && reg_d(next) == ((next >> 11) & 31u);
-                if (mr && ((slot_regs >> reg_d(next)) & 1u)) {
-                    slot_regs |= 1u << reg_a(next);
-                } else {
-                    for (std::uint32_t g = 0; g < 32; ++g)
-                        if (((slot_regs >> g) & 1u) && writes_register(next, g)) slot_regs &= ~(1u << g);
-                }
+                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) ctr_from_slot = ((regs.copies(12) >> reg_d(next)) & 1u) != 0;
+                regs.step(k);
                 // A jump or return, or r12 loaded again: not this slot's call
                 // (the `beq` past it when the slot is empty is fine).
                 if (opcode(next) == 18 || next == kBlr ||
@@ -828,17 +560,19 @@ std::uint32_t find_wpad_read(const std::vector<CodeRange>& text) {
     unsigned matches = 0;
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
         bool index = false, copy = false, corrupt = false, busy = false, error = false;
-        std::uint32_t from_r3 = 1u << 3, from_r4 = 1u << 4;
+        RegTrack regs(r.bytes, start, end, RegTrack::kArguments);
+        regs.follow(3);  // the channel
+        regs.follow(4);  // the status
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             // The checks see the registers as this instruction finds them.
+            const std::uint32_t from_r3 = regs.copies(3), from_r4 = regs.copies(4);
             index = index || indexes_channel(insn, from_r3);
             copy = copy || (is_li(insn, kCoreStatusBytes) && reg_d(insn) == 5);
             corrupt = corrupt || is_cmpwi(insn, -7);
             busy = busy || is_cmpwi(insn, -2);
             error = error || (opcode(insn) == 38 && simm(insn) == kErrorAt && ((from_r4 >> reg_a(insn)) & 1u));
-            from_r3 = track_argument(r.bytes, k, end, from_r3);
-            from_r4 = track_argument(r.bytes, k, end, from_r4);
+            regs.step(k);
         }
         if (!(index && copy && corrupt && busy && error)) return;
         found = r.address + static_cast<std::uint32_t>(4 * start);
@@ -856,11 +590,12 @@ std::uint32_t find_wpad_set_format(const std::vector<CodeRange>& text) {
         bool none = false, busy = false, compares = false, stores = false;
         // r4 (the format) and its copies, one bit each; the checks count
         // its copies only, as this setter keeps the format in a copy.
-        std::uint32_t from_r4 = 1u << 4;
+        RegTrack regs(r.bytes, start, end, RegTrack::kArguments);
+        regs.follow(4);
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
-            const std::uint32_t copies = from_r4 & ~(1u << 4);  // as this instruction finds them
-            from_r4 = track_argument(r.bytes, k, end, from_r4);
+            const std::uint32_t copies = regs.copies(4) & ~(1u << 4);  // as this instruction finds them
+            regs.step(k);
             // "No controller": returned as such, or the probe's result kept
             // and compared with it (The Complete Saga's 2007 WPAD).
             none = none || is_li(insn, -1) || is_cmpwi(insn, -1);
