@@ -611,7 +611,7 @@ static void pad_classic_status(const struct rt_pad_context* c, uint8_t* status, 
 #ifdef RT_PAD_FORM_REMOTE
 static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, const struct pad_classic* p);
 /* Whether the HOME Menu's stand-in on `chan` keeps this stand-in's shape:
- * as it was when the stand-in took the channel (w->home_shaped), not as
+ * as it was when the stand-in took the channel (w->slot.home_shaped), not as
  * the controllers are now, so a GameCube controller plugged into that port
  * while the HOME Menu is open doesn't turn its Classic Controller into a
  * Wii Remote with no disconnect between (Cake's review of #610). */
@@ -643,7 +643,7 @@ static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t 
  * player's and takes no other player's (rthome_pads_own). */
 static uint32_t pad_gcwii_own(const struct rt_pad_context* c) {
     const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
-    return c->gcwii ? w->present & ~w->real : 0u;
+    return c->gcwii ? rtslot_standin_slots(&w->slot) : 0u;
 }
 
 /* At a KPAD read or WPADProbe, at most every 8 ms (about once a frame): the
@@ -670,17 +670,17 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
         for (i = 0; i < RTGCWII_CHANNELS; ++i) {
             uint32_t type = 0;
             int32_t result;
-            uint32_t before;
-            if (!((w->real >> i) & 1u)) continue;
-            /* Interrupts are on through the replay: a hooked probe in that
-             * time may note something newer, which this older answer then
-             * mustn't undo (CodeRabbit on #610). */
+            uint32_t begun;
             msr = interrupts_off();
-            before = rtgcwii_probe_count(w, i);
+            if (rtslot_owner(&w->slot, i, RTSLOT_NO_SLOT) != RTSLOT_REAL) {
+                interrupts_restore(msr);
+                continue;
+            }
+            begun = rtslot_recheck_begin(&w->slot, i);
             interrupts_restore(msr);
             result = pad_replay_probe((int32_t)i, &type);
             msr = interrupts_off();
-            if (rtgcwii_probe_count(w, i) == before) rtgcwii_probed(w, i, result);
+            rtslot_rechecked(&w->slot, i, result, begun);
             interrupts_restore(msr);
         }
     }
@@ -734,16 +734,12 @@ static void pad_gcwii_camera_now(struct rt_pad_context* c, uint32_t chan) {
     }
 }
 
-static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
+static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status, uint32_t takes) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
-    struct rtgcwii_fs f;
+    struct rtshape_out f;
     uint32_t i;
     pad_gcwii_camera_now(c, chan);
-#ifdef RT_PAD_FORM_SIDEWAYS
-    rtgcwii_sideways(w, chan, &f);
-#else
-    rtgcwii_nunchuk(w, chan, now(), &f);
-#endif
+    rtgcwii_wii_remote(w, chan, now(), &f, takes);
     for (i = 0; i + 4 <= c->kpad_status_bytes; i += 4) pad_put32(status + i, 0);
     pad_put32(status + PAD_KPAD_HOLD, f.hold);
     pad_put32(status + PAD_KPAD_TRIG, f.trig);
@@ -760,7 +756,7 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     status[PAD_KPAD_WPAD_ERR] = 0;
     status[PAD_KPAD_DPD_VALID] = (uint8_t)(f.pointer_shown ? PAD_DPD_SEEN : 0u);
     status[PAD_KPAD_DATA_FORMAT] =
-        (uint8_t)((w->camera >> chan) & 1u ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
+        (uint8_t)((w->shape.camera >> chan) & 1u ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
 #ifdef RT_PAD_FORM_NUNCHUK
     pad_put32(status + PAD_KPAD_FS_STICK, rthome_float_bits(f.stick[0]));
     pad_put32(status + PAD_KPAD_FS_STICK + 4, rthome_float_bits(f.stick[1]));
@@ -779,15 +775,8 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
     /* The shape only: the controller's own buttons aren't the game's while
      * the HOME stand-in is, so a press under it (L held as the menu
      * closes) is still new at the game's next read. */
-    struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     const uint32_t chan = c->home.channel;
-    const uint32_t worked = w->worked[chan], delivered = w->delivered[chan];
-    const uint32_t trig = w->trig[chan], release = w->release[chan];
-    pad_gcwii_status(c, chan, status);
-    w->worked[chan] = worked;
-    w->delivered[chan] = delivered;
-    w->trig[chan] = trig;
-    w->release[chan] = release;
+    pad_gcwii_status(c, chan, status, RTGCWII_TAKE_STEP);
     pad_put32(status + PAD_KPAD_HOLD, p->remote_hold);
     pad_put32(status + PAD_KPAD_TRIG, p->remote_trig);
     pad_put32(status + PAD_KPAD_RELEASE, p->remote_release);
@@ -807,9 +796,10 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
 #else
 /* The permanent stand-in's status on `chan` (rtgcwii.h): the Classic
  * Controller alone, the Wii Remote's own buttons and pointer at rest. */
-static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
+static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status, uint32_t takes) {
     struct pad_classic p;
     uint32_t i;
+    (void)takes;  /* the Classic Controller's KPAD read takes its words; it has no shake */
     rtgcwii_classic((struct rtgcwii*)(uintptr_t)c->gcwii, chan, &p.hold, &p.trig, &p.release, p.axes);
     p.remote_hold = p.remote_trig = p.remote_release = 0;
     for (i = 0; i < 2; ++i) p.pointer[i] = 0;
@@ -914,19 +904,19 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     return 1;
 }
 #else
-/* The HOME Menu's stand-in's channel, unless a real Wii Remote holds it:
- * there the real one's samples stay, as PADRead's pad_on_read leaves such a
- * channel to it (CodeRabbit on #609). */
-static uint32_t pad_home_unless_real(const struct rt_pad_context* c, uint32_t stand_in) {
-    if (stand_in != RTHOME_NO_CHANNEL && c->gcwii && stand_in < RTGCWII_CHANNELS &&
-        ((((const struct rtgcwii*)(uintptr_t)c->gcwii)->real >> stand_in) & 1u))
-        return RTHOME_NO_CHANNEL;
-    return stand_in;
+/* Who holds `chan` at `t`: rtslot's one decision (a real controller, then
+ * the HOME Menu's stand-in on its own slot, then the permanent stand-in).
+ * In a build with the HOME Menu's stand-in only, its slot or nobody. */
+static enum rtslot_owner pad_owner(struct rt_pad_context* c, uint32_t chan, uint32_t t) {
+    const uint32_t home = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
+    if (c->gcwii) return rtslot_owner(&((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot, chan, home);
+    return home != RTHOME_NO_CHANNEL && chan == home ? RTSLOT_HOME : RTSLOT_NOBODY;
 }
 
 int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error,
                     int32_t count) {
-    uint32_t msr, t, stand_in;
+    uint32_t msr, t;
+    enum rtslot_owner owner;
     if (!c->home_on && !c->gcwii) return result;
     /* A read asking for no samples (`count`, the caller's room for them)
      * gets none written. */
@@ -949,11 +939,11 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
     }
     msr = interrupts_off();
     t = now();
-    stand_in = pad_home_unless_real(c, c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL);
-    if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
+    owner = pad_owner(c, (uint32_t)chan, t);
+    if (owner != RTSLOT_HOME) {
         /* The permanent stand-in's channel, where no real controller is. */
-        if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
-            pad_gcwii_status(c, (uint32_t)chan, status);
+        if (owner == RTSLOT_STANDIN) {
+            pad_gcwii_status(c, (uint32_t)chan, status, RTGCWII_TAKE_WORDS | RTGCWII_TAKE_STEP);
             if (c->kpad_takes_error && pad_in_ram(error)) *error = 0;
             interrupts_restore(msr);
             return 1;
@@ -1030,15 +1020,16 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
 #else
 int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int32_t result) {
     uint32_t msr, t, stand_in;
+    enum rtslot_owner owner;
     if (c->gcwii && chan >= 0) {
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
         msr = interrupts_off();
-        rtgcwii_probed(w, (uint32_t)chan, result);
+        rtslot_probed(&w->slot, (uint32_t)chan, result);
         interrupts_restore(msr);
         pad_gcwii_read_pads(c);
     }
     if (!c->home_on) {
-        if (c->gcwii && chan >= 0 && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
+        if (chan >= 0 && pad_owner(c, (uint32_t)chan, 0) == RTSLOT_STANDIN) {
             if (pad_in_ram(type)) *type = PAD_DEV_STANDIN;
             return 0;
         }
@@ -1073,10 +1064,10 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
     }
     msr = interrupts_off();
     t = now();  /* again: that PADRead may have noted a later time */
-    stand_in = pad_home_unless_real(c, rthome_stand_in(&c->home, t));
-    if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
+    owner = chan >= 0 ? pad_owner(c, (uint32_t)chan, t) : RTSLOT_NOBODY;
+    if (owner != RTSLOT_HOME) {
         if (chan >= 0) rthome_probed(&c->home, (uint32_t)chan, result);
-        if (c->gcwii && chan >= 0 && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
+        if (owner == RTSLOT_STANDIN) {
             if (pad_in_ram(type)) *type = PAD_DEV_STANDIN;
             interrupts_restore(msr);
             return 0;
@@ -1197,24 +1188,25 @@ static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold, const int32_t* 
 #endif
 
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count) {
-    uint32_t msr, t, stand_in, hold, trig, release, remote_hold, remote_trig, remote_release;
+    uint32_t msr, t, hold, trig, release, remote_hold, remote_trig, remote_release;
     int32_t axes[6], pointer[2], i;
+    enum rtslot_owner owner;
     if ((!c->home_on && !c->gcwii) || c->kpad_unified_bytes < RTHOME_WPAD_STATUS_BYTES || count <= 0 || chan < 0)
         return;
     if (count > 16) count = 16;
     if (!pad_in_ram(status) || !pad_in_ram(status + (uint32_t)count * c->kpad_unified_bytes - 1)) return;
     msr = interrupts_off();
     t = now();
-    stand_in = pad_home_unless_real(c, c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL);
-    if (stand_in == RTHOME_NO_CHANNEL || (uint32_t)chan != stand_in) {
+    owner = pad_owner(c, (uint32_t)chan, t);
+    if (owner != RTSLOT_HOME) {
         /* The permanent stand-in's raw status, in its form's shape. */
-        if (c->gcwii && rtgcwii_on((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan)) {
+        if (owner == RTSLOT_STANDIN) {
             hold = rtgcwii_hold((const struct rtgcwii*)(uintptr_t)c->gcwii, (uint32_t)chan);
 #ifdef RT_PAD_FORM_REMOTE
             const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
             pad_gcwii_camera_now(c, (uint32_t)chan);
-            const int32_t* own = (uint32_t)chan < RTGCWII_CHANNELS && ((w->camera >> (uint32_t)chan) & 1u)
-                                     ? w->pointer[chan]
+            const int32_t* own = (uint32_t)chan < RTGCWII_CHANNELS && ((w->shape.camera >> (uint32_t)chan) & 1u)
+                                     ? w->shape.pointer[chan]
                                      : 0;
             for (i = 0; i < count; ++i)
                 pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, hold, own);
@@ -1236,7 +1228,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
         pad_gcwii_camera_now(c, (uint32_t)chan);
         const int32_t* at = rthome_menu_open(&c->home) ? pointer
-                            : ((w->camera >> (uint32_t)chan) & 1u) ? w->pointer[chan]
+                            : ((w->shape.camera >> (uint32_t)chan) & 1u) ? w->shape.pointer[chan]
                                                                    : 0;
         for (i = 0; i < count; ++i)
             pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);
@@ -1286,58 +1278,45 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     uint32_t msr = interrupts_off(), chan;
     int32_t reason;
-    if (w->telling) {
+    if (rtslot_tell_busy(&w->slot)) {
         interrupts_restore(msr);
         return;
     }
-    w->telling += 1;
+    rtslot_tell_take(&w->slot);
     /* The HOME Menu's stand-in's channel stays connected while it is up
      * (a GameCube controller unplugged with its HOME Menu open); the gone
      * comes once the stand-in has ended. */
     /* Looked at again before each change: a callback (and the PADReads
      * it may make) can start or end the HOME Menu's stand-in. */
-    uint32_t keep, home_channel;
+    uint32_t home_channel;
     /* A channel whose callback isn't set yet is passed over for the rest
      * of this pass (each channel tried once), not left blocking the others;
      * it is tried again at the next PADRead. */
     uint32_t skip = 0;
-    for (;;) {
-        home_channel = c->home_on ? rthome_stand_in(&c->home, now()) : RTHOME_NO_CHANNEL;
-        keep = home_channel != RTHOME_NO_CHANNEL ? 1u << home_channel : 0u;
 #ifdef RT_PAD_FORM_REMOTE
-        /* A HOME Menu stand-in holding a channel as a Classic Controller:
-         * the permanent stand-in's "connected" there waits until it ends
-         * (the PADRead's telling says "gone" first, CodeRabbit on #610). */
-        const uint32_t held = home_channel != RTHOME_NO_CHANNEL && !pad_home_keeps_shape(c, home_channel) ? keep : 0u;
-        if (!rtgcwii_next_change(w, skip | held, keep, &chan, &reason)) break;
+    const int remote_shapes = 1;
 #else
-        if (!rtgcwii_next_change(w, skip, keep, &chan, &reason)) break;
+    const int remote_shapes = 0;
 #endif
+    for (;;) {
         int told;
+        /* What to tell is rtslot's to decide (the HOME Menu's rule
+         * included); the slot is looked at again before each change: a
+         * callback (and the PADReads it may make) can start or end the HOME
+         * Menu's stand-in. */
+        home_channel = c->home_on ? rthome_stand_in(&c->home, now()) : RTHOME_NO_CHANNEL;
+        if (!rtslot_next_tell(&w->slot, home_channel, remote_shapes, skip, &chan, &reason)) break;
         interrupts_restore(msr);
         told = pad_tell_connect(c, chan, reason);
         msr = interrupts_off();
-        if (!told) {
-            /* Still to tell, at the next PADRead. */
-            if (reason == 0) {
-                rtgcwii_not_told(w, chan);
-            } else {
-                rtgcwii_still_told(w, chan);
-            }
-            skip |= 1u << chan;
-            continue;
-        }
-        /* A real controller that arrived while "gone" was being told (its
-         * own "connected" may have come first): the channel has a controller,
-         * so the game hears so last. */
-        if (reason == -1 && ((w->real >> chan) & 1u)) {
+        skip |= 1u << chan;
+        if (rtslot_told(&w->slot, chan, reason, told) == RTSLOT_AFTER_CONNECTED) {
             interrupts_restore(msr);
             (void)pad_tell_connect(c, chan, 0);
             msr = interrupts_off();
         }
-        skip |= 1u << chan;
     }
-    w->telling -= 1;
+    rtslot_tell_give(&w->slot);
     interrupts_restore(msr);
 }
 #endif
@@ -1436,24 +1415,20 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
          * that reads only the channels its connect callback heard of; on a
          * channel the permanent stand-in holds, the game already has it. */
         uint32_t now_channel = c->home_on ? rthome_stand_in(&c->home, t) : RTHOME_NO_CHANNEL;
-        /* On a channel the permanent stand-in holds, or has told the game
-         * about (its controller may have just been unplugged), the game has
-         * it already; the permanent stand-in's telling covers its end. */
-        const uint32_t told_by_gcwii = c->gcwii ? ((const struct rtgcwii*)(uintptr_t)c->gcwii)->told : 0u;
+        /* Where the game hears of it is rtslot's to decide: not on a
+         * channel the permanent stand-in holds or has told the game of (the
+         * game has it already; the permanent stand-in's telling covers its
+         * end), with the Wii Remote forms' rule for a HOME stand-in that
+         * keeps its Classic shape (pad_gcwii_tell holds the Wii Remote's
+         * "connected" back until it ends). */
 #ifdef RT_PAD_FORM_REMOTE
-        /* In the Wii Remote forms a HOME Menu stand-in that took a free
-         * channel as a Classic Controller keeps that claim while it lasts,
-         * though a GameCube controller plugs in there: the game hears the
-         * Classic one gone only when the HOME Menu ends, and the Wii Remote
-         * connected after it (pad_gcwii_tell holds that "connected" back),
-         * not a silent change of type under the menu (CodeRabbit on #610). */
-        if (now_channel != RTHOME_NO_CHANNEL && pad_home_keeps_shape(c, now_channel) &&
-            (((pad_gcwii_own(c) | told_by_gcwii) >> now_channel) & 1u))
-            now_channel = RTHOME_NO_CHANNEL;
+        const int remote_shapes = 1;
 #else
-        if (now_channel != RTHOME_NO_CHANNEL && (((pad_gcwii_own(c) | told_by_gcwii) >> now_channel) & 1u))
-            now_channel = RTHOME_NO_CHANNEL;
+        const int remote_shapes = 0;
 #endif
+        if (c->gcwii && now_channel != RTHOME_NO_CHANNEL)
+            now_channel = rtslot_home_announced(&((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot, now_channel,
+                                                remote_shapes);
 #else
         /* The stand-in comes and goes as a Wii Remote would, for a game
          * that reads only the channels its connect callback heard of. */
@@ -1468,15 +1443,15 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         /* A real Wii Remote took the channel the HOME Menu's stand-in held:
          * its record is cleared, but the game isn't told "gone" for a
          * controller that is there (CodeRabbit on #610). */
-        if (leave != RTHOME_NO_CHANNEL && c->gcwii && leave < RTGCWII_CHANNELS &&
-            ((((const struct rtgcwii*)(uintptr_t)c->gcwii)->real >> leave) & 1u))
+        if (leave != RTHOME_NO_CHANNEL && c->gcwii &&
+            !rtslot_home_may_leave(&((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot, leave))
             leave = RTHOME_NO_CHANNEL;
         /* The telling count taken now, with the change, so a PADRead nested
          * in an SI callback as interrupts come back can't tell the
          * permanent stand-in's news before the HOME Menu's (CodeRabbit on
          * #609); given back once both are told, below. */
         if ((leave != RTHOME_NO_CHANNEL || join != RTHOME_NO_CHANNEL) && c->gcwii)
-            ((struct rtgcwii*)(uintptr_t)c->gcwii)->telling += 1;
+            rtslot_tell_take(&((struct rtgcwii*)(uintptr_t)c->gcwii)->slot);
 #endif
     }
 #endif
@@ -1500,7 +1475,7 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         if (join != RTHOME_NO_CHANNEL) (void)pad_tell_connect(c, join, 0);
         if (gw) {
             flags = interrupts_off();
-            gw->telling -= 1;
+            rtslot_tell_give(&gw->slot);
             interrupts_restore(flags);
         }
     }

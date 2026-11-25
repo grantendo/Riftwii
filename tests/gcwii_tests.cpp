@@ -48,7 +48,7 @@ struct Pads {
 rtgcwii fresh() {
     rtgcwii w;
     std::memset(&w, 0, sizeof(w));
-    w.grace = kGrace;
+    w.slot.grace = kGrace;
     return w;
 }
 
@@ -237,7 +237,7 @@ void TestPressBetweenReadsAndLateCallback() {
     EXPECT_EQ(join, 0u);
     // A channel number past the four is ignored, not shifted out of range.
     rtgcwii_probed(&w, 40, 0);
-    EXPECT_EQ(w.real, 0u);
+    EXPECT_EQ(w.slot.real, 0u);
 }
 
 // The connect callback hears one change at a time, from what is true now;
@@ -338,7 +338,7 @@ void TestEmptyReadsWithoutError() {
     EXPECT_EQ(rtgcwii_on(&w, 1), 0);
     // A channel with no real controller is untouched by empty reads.
     rtgcwii_kpad_read(&w, 3, 0, RTGCWII_NO_ERROR, 30000);
-    EXPECT_EQ(w.empty_since[3], 0u);
+    EXPECT_EQ(w.slot.empty_since[3], 0u);
     // A controller that leaves and another that comes in the middle of a
     // count: the new one's count starts over, so one empty read later,
     // past the old grace period, it is still there.
@@ -424,13 +424,13 @@ static void TestRealCheckDue() {
     rtgcwii w{};
     const std::uint32_t ms = 10;  // ticks per ms
     EXPECT_TRUE(!rtgcwii_real_check_due(&w, 1000, ms));  // no real controller: nothing to check
-    w.real = 1u << 2;
+    w.slot.real = 1u << 2;
     EXPECT_TRUE(rtgcwii_real_check_due(&w, 1000, ms));
     EXPECT_TRUE(!rtgcwii_real_check_due(&w, 1000 + 249 * ms, ms));
     EXPECT_TRUE(rtgcwii_real_check_due(&w, 1000 + 250 * ms, ms));
     // The Wii Remote found gone: the channel is the stand-in's again.
     rtgcwii_probed(&w, 2, -1);
-    EXPECT_TRUE(w.real == 0);
+    EXPECT_TRUE(w.slot.real == 0);
     EXPECT_TRUE(!rtgcwii_real_check_due(&w, 1000 + 600 * ms, ms));
 }
 

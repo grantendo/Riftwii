@@ -47,8 +47,8 @@ struct Pads {
 rtgcwii fresh() {
     rtgcwii w;
     std::memset(&w, 0, sizeof(w));
-    w.grace = kGrace;
-    w.pointer_show = 2000;
+    w.slot.grace = kGrace;
+    w.shape.pointer_show = 2000;
     return w;
 }
 
@@ -95,7 +95,7 @@ void TestTilt() {
     Pads p;
     std::uint8_t* s = p.plug(0);
     rtgcwii_pads(&w, p.s, 1);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_sideways(&w, 0, &f);
     EXPECT_EQ(f.acc[0], 0);
     EXPECT_EQ(f.acc[1], -RTHOME_AXIS_FULL);
@@ -133,7 +133,7 @@ void TestCamera() {
     s[4] = 72;
     rtgcwii_pads(&w, p.s, 1);
     rtgcwii_pads(&w, p.s, 17);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_sideways(&w, 0, &f);
     EXPECT_EQ(f.pointer_shown, 1);
     EXPECT_EQ(f.pointer[0], 2 * RTGCWII_POINTER_STEP);
@@ -153,7 +153,7 @@ void TestShake() {
     Pads p;
     std::uint8_t* s = p.plug(0, kGcX);
     rtgcwii_pads(&w, p.s, 1);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_sideways(&w, 0, &f);
     EXPECT_EQ(f.acc_value, RTHOME_AXIS_FULL);
     p.plug(0, kGcR);
@@ -183,7 +183,7 @@ void TestWords() {
     p.plug(0, kGcA | kGcLeft);
     rtgcwii_pads(&w, p.s, 1);
     rtgcwii_pads(&w, p.s, 17);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_sideways(&w, 0, &f);
     EXPECT_EQ(f.hold, kWr2 | kWrUp);
     rtgcwii_sideways(&w, 1, &f);

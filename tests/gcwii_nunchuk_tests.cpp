@@ -48,8 +48,8 @@ struct Pads {
 rtgcwii fresh() {
     rtgcwii w;
     std::memset(&w, 0, sizeof(w));
-    w.grace = kGrace;
-    w.pointer_show = kShowFor;
+    w.slot.grace = kGrace;
+    w.shape.pointer_show = kShowFor;
     return w;
 }
 
@@ -82,7 +82,7 @@ void TestWords() {
     Pads p;
     p.plug(0);
     rtgcwii_pads(&w, p.s, 1);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_nunchuk(&w, 0, 1, &f);
     EXPECT_EQ(f.hold, 0u);
     p.plug(0, kGcA | kGcL);
@@ -114,7 +114,7 @@ void TestStickAndRest() {
     s[2] = 72;  // full right
     s[3] = static_cast<std::uint8_t>(-72);
     rtgcwii_pads(&w, p.s, 1);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_nunchuk(&w, 0, 1, &f);
     EXPECT_EQ(f.stick[0], RTHOME_AXIS_FULL);
     EXPECT_EQ(f.stick[1], -RTHOME_AXIS_FULL);
@@ -133,7 +133,7 @@ void TestPointer() {
     std::uint8_t* s = p.plug(0);
     s[4] = 59;  // C-stick full right
     rtgcwii_pads(&w, p.s, 100);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_nunchuk(&w, 0, 100, &f);
     EXPECT_EQ(f.pointer[0], RTGCWII_POINTER_STEP);
     EXPECT_EQ(f.pointer[1], 0);
@@ -175,10 +175,10 @@ void TestPointer() {
 void TestShakeKeepsTime() {
     for (std::uint32_t step : {4u, 16u}) {
         rtgcwii w = fresh();
-        w.shake_flip = 33;
+        w.shape.shake_flip = 33;
         Pads p;
         p.plug(0, kGcX);
-        rtgcwii_fs f;
+        rtshape_out f;
         int flips = 0, jumps = 0;
         std::int32_t last = 0;
         for (std::uint32_t t = 1000; t < 1000 + 330; t += step) {
@@ -196,10 +196,10 @@ void TestShakeKeepsTime() {
     // (CodeRabbit CLI, #610).
     {
         rtgcwii w = fresh();
-        w.shake_flip = 40;
+        w.shape.shake_flip = 40;
         Pads p;
         p.plug(0, kGcX);
-        rtgcwii_fs f;
+        rtshape_out f;
         int jumps = 0;
         for (std::uint32_t t = 1000; t < 1000 + 400; t += 10) {
             rtgcwii_pads(&w, p.s, t);
@@ -218,7 +218,7 @@ void TestShake() {
     rtgcwii w = fresh();
     Pads p;
     p.plug(0, kGcX);
-    rtgcwii_fs f;
+    rtshape_out f;
     int flips = 0;
     std::int32_t last = 0;
     for (std::uint32_t i = 0; i < 4 * RTGCWII_SHAKE_FLIP; ++i) {
@@ -259,7 +259,7 @@ void TestCamera() {
     Pads p;
     p.plug(0);
     rtgcwii_pads(&w, p.s, 10);
-    rtgcwii_fs f;
+    rtshape_out f;
     rtgcwii_nunchuk(&w, 0, 10, &f);
     EXPECT_EQ(f.pointer_shown, 0);
     rtgcwii_camera(&w, 0, 1);  // KPADEnableDPD(0)
@@ -272,7 +272,7 @@ void TestCamera() {
     rtgcwii_nunchuk(&w, 0, 5001, &f);
     EXPECT_EQ(f.pointer_shown, 0);
     rtgcwii_camera(&w, 9, 3);  // no such channel: nothing
-    EXPECT_EQ(w.camera, 0u);
+    EXPECT_EQ(w.shape.camera, 0u);
 }
 
 // The status's floats with no cap at 1: the shake's 3.4 g and the

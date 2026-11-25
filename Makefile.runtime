@@ -131,6 +131,10 @@ PADNOHOME := $(OUT)/riftwii_padn.bin $(OUT)/riftwii_padan.bin $(OUT)/riftwii_pad
 # with other USB pads, $(4): the form's (none for the Classic Controller,
 # -DRT_PAD_FORM_NUNCHUK for the Wii Remote + Nunchuk, -DRT_PAD_FORM_SIDEWAYS for the sideways
 # Wii Remote).
+# The stand-in's layer headers (rtgcwii.h includes them): every object that
+# includes rtgcwii.h depends on these too, or a field moved in one of them
+# leaves an object reading the old layout.
+STANDIN_HEADERS := runtime/rtslot.h runtime/rtsrc.h runtime/rtshape.h runtime/rtdeliver.h
 define PAD_STANDIN_BLOB
 $(OUT)/$(1):
 	@mkdir -p $$@
@@ -138,7 +142,7 @@ $(OUT)/$(1):
 $(OUT)/$(1)/pad_entry.o: $(PADSRC)/pad_entry.S $(PADSRC)/pad_hook.h runtime/rtleave.h runtime/rthome.h runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) $(2) -DRT_PAD_STANDIN $(4) -I$(PADSRC) -c -o $$@ $$<
 
-$(OUT)/$(1)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h runtime/rtsiprobe.h runtime/rtrestart.h | $(OUT)/$(1)
+$(OUT)/$(1)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h $(STANDIN_HEADERS) runtime/rtsiprobe.h runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) $(2) -DRT_PAD_STANDIN $(4) -I$(PADSRC) -c -o $$@ $$<
 
 $(OUT)/$(1)/rtgcad.o: runtime/rtgcad.c runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h | $(OUT)/$(1)
@@ -153,18 +157,30 @@ $(OUT)/$(1)/rtleave.o: runtime/rtleave.c runtime/rtleave.h | $(OUT)/$(1)
 $(OUT)/$(1)/rthome.o: runtime/rthome.c runtime/rthome.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
 
-$(OUT)/$(1)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h runtime/rthome.h | $(OUT)/$(1)
+$(OUT)/$(1)/rtslot.o: runtime/rtslot.c runtime/rtslot.h | $(OUT)/$(1)
+	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
+
+$(OUT)/$(1)/rtsrc.o: runtime/rtsrc.c runtime/rtsrc.h runtime/rthome.h | $(OUT)/$(1)
+	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
+
+$(OUT)/$(1)/rtshape.o: runtime/rtshape.c runtime/rtshape.h runtime/rtsrc.h runtime/rthome.h | $(OUT)/$(1)
+	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
+
+$(OUT)/$(1)/rtdeliver.o: runtime/rtdeliver.c runtime/rtdeliver.h | $(OUT)/$(1)
+	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
+
+$(OUT)/$(1)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h $(STANDIN_HEADERS) runtime/rthome.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
 
 $(OUT)/$(1)/rtrestart.o: runtime/rtrestart.c runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -c -o $$@ $$<
 
-$(OUT)/$(1)/riftwii_$(1).elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtrestart.o) $(PADSRC)/pad.ld
+$(OUT)/$(1)/riftwii_$(1).elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtslot.o rtsrc.o rtshape.o rtdeliver.o rtrestart.o) $(PADSRC)/pad.ld
 	$(CC) $(CFLAGS) -nostdlib -nostartfiles -static -Wl,--build-id=none -Wl,--gc-sections -T $(PADSRC)/pad.ld \
 		-Wl,--defsym,RT_BASE=0x00000000 -o $$@ $$(filter %.o,$$^) -lgcc
 	@$(SIZE) -A $$@ | awk '$$$$1 ~ /^\.(rodata|data|bss)$$$$/ && $$$$2 != 0 { print "runtime: section " $$$$1 " is not empty (" $$$$2 " bytes) in the $(1) pad blob"; bad = 1 } END { exit bad }'
 
-$(OUT)/$(1)/riftwii_$(1)_alt.elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtrestart.o) $(PADSRC)/pad.ld
+$(OUT)/$(1)/riftwii_$(1)_alt.elf: $(addprefix $(OUT)/$(1)/,pad_entry.o pad_hook.o rtgcad.o $(3) rtleave.o rthome.o rtgcwii.o rtslot.o rtsrc.o rtshape.o rtdeliver.o rtrestart.o) $(PADSRC)/pad.ld
 	$(CC) $(CFLAGS) -nostdlib -nostartfiles -static -Wl,--build-id=none -Wl,--gc-sections -T $(PADSRC)/pad.ld \
 		-Wl,--defsym,RT_BASE=0x12340000 -o $$@ $$(filter %.o,$$^) -lgcc
 
