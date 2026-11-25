@@ -336,8 +336,13 @@ $(PADSIZES): $(PADBUILDS)
 	   echo '}'; } > $@.tmp && mv $@.tmp $@
 
 .PHONY: all clean
+# The pads plugin's copies of the pad builds, each a zstd frame (with its
+# size): fourteen builds outgrew the plugin arena as plain bytes, and pack
+# to about half (plugins/pads/padsblobs.S).
+PADZST := $(patsubst %.bin,%.zst,$(PADBLOB) $(PADABLOB) $(PADPBLOB) $(PADNOHOME) $(PADSTANDIN))
+
 all: $(BLOB) $(PADBLOB) $(PADABLOB) $(PADPBLOB) $(PADNOHOME) $(PADSTANDIN) $(PADSIZES) $(GCBLOB) $(SHOTBLOB) $(FAULTBLOB) $(WLOGBLOB) $(WLOGTRACEBLOB) $(WLOGTRANSLATEBLOB) $(VSDBLOB) $(RVZBLOB) $(BLOBZST) $(RVZZST) \
-     $(GCRVZBLOB) $(GCRVZZST) $(DOLPACK) $(STUBBLOB)
+     $(GCRVZBLOB) $(GCRVZZST) $(PADZST) $(DOLPACK) $(STUBBLOB)
 
 $(DPOUT):
 	mkdir -p $@
