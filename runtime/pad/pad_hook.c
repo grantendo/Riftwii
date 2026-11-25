@@ -618,6 +618,13 @@ static void pad_gcwii_home_status(struct rt_pad_context* c, uint8_t* status, con
 static int pad_home_keeps_shape(const struct rt_pad_context* c, uint32_t chan) {
     return c->gcwii && rtgcwii_home_keeps_shape((const struct rtgcwii*)(uintptr_t)c->gcwii, chan);
 }
+
+/* The channel the game last heard the HOME Menu's stand-in on, by its own
+ * record (kpad_connect_info's told byte), or RTHOME_NO_CHANNEL. */
+static uint32_t pad_home_told(const struct rt_pad_context* c) {
+    const uint32_t told_byte = (c->kpad_connect_info >> 16) & 0xFFu;
+    return c->kpad_connect == 0 || told_byte == 0 ? RTHOME_NO_CHANNEL : told_byte - 1u;
+}
 #endif
 
 static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t t) {
@@ -1245,9 +1252,13 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
          * HOME Menu's pointer while it is open, else the stand-in's own. */
         const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
         pad_gcwii_camera_now(c, (uint32_t)chan);
-        const int32_t* at = rthome_menu_open(&c->home) ? pointer
-                            : ((w->shape.camera >> (uint32_t)chan) & 1u) ? w->shape.pointer[chan]
-                                                                   : 0;
+        /* Not the stand-in's while it is off there (its GameCube
+         * controller gone under the HOME claim): KPAD's status hides the
+         * pointer then too (CodeRabbit, fork #23). */
+        const int32_t* at =
+            rthome_menu_open(&c->home) ? pointer
+            : (rtslot_on(&w->slot, (uint32_t)chan) && ((w->shape.camera >> (uint32_t)chan) & 1u)) ? w->shape.pointer[chan]
+                                                                                                   : 0;
         for (i = 0; i < count; ++i)
             pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);
         interrupts_restore(msr);
@@ -1323,6 +1334,14 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
          * callback (and the PADReads it may make) can start or end the HOME
          * Menu's stand-in. */
         home_channel = c->home_on ? rthome_stand_in(&c->home, now()) : RTHOME_NO_CHANNEL;
+#ifdef RT_PAD_FORM_REMOTE
+        /* The HOME Menu's stand-in has ended but its "gone" isn't told yet
+         * (it ended in a PADRead nested in this telling, which leaves the
+         * HOME change to a later read): its record still names the
+         * channel, so a "connected" there in another shape waits for that
+         * "gone", which then comes first (CodeRabbit, fork #23). */
+        if (home_channel == RTHOME_NO_CHANNEL) home_channel = pad_home_told(c);
+#endif
         if (!rtslot_next_tell(&w->slot, home_channel, remote_shapes, skip, &chan, &reason)) break;
         interrupts_restore(msr);
         told = pad_tell_connect(c, chan, reason);
@@ -1427,6 +1446,12 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
          * (one nested in a callback the hook makes, too) fills the game's
          * (CodeRabbit on #609). */
         rtgcwii_read_by(w, t, status == c->pad_scratch);
+#ifdef RT_PAD_FORM_REMOTE
+        /* The game's camera switch as it is now, before these samples move
+         * the pointer (a switch turned on or off since the last KPAD read
+         * counts from this sample; CodeRabbit, fork #23). */
+        for (i = 0; i < RTGCWII_CHANNELS; ++i) pad_gcwii_camera_now(c, i);
+#endif
         rtgcwii_pads(w, status, t);
     }
 #endif
