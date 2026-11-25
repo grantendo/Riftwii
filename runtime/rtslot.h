@@ -157,11 +157,15 @@ int rtslot_home_keeps_shape(const struct rtslot* s, uint32_t slot);
  * (`remote_shapes`) a HOME stand-in that took a free slot in its own
  * Classic shape keeps that claim while it lasts, though a GameCube
  * controller plugs in there: the game hears the Classic one gone only when
- * the HOME Menu ends (CodeRabbit on #610). */
+ * the HOME Menu ends (CodeRabbit on #610). Nor one a real Wii Remote
+ * holds, whose library tells the game of it (CodeRabbit, fork #22). */
 uint32_t rtslot_home_announced(const struct rtslot* s, uint32_t home, int remote_shapes);
 
 /* The HOME Menu's stand-in leaving `slot`: "gone" is told unless a real
- * controller is there now (CodeRabbit on #610). */
+ * controller is there now (CodeRabbit on #610), or the permanent stand-in
+ * has told the game it's connected (a GameCube controller there while the
+ * HOME Menu was up: its own "gone" comes when that one leaves; CodeRabbit,
+ * fork #22). */
 int rtslot_home_may_leave(const struct rtslot* s, uint32_t slot);
 
 #endif
