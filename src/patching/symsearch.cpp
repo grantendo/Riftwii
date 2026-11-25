@@ -720,7 +720,12 @@ KpadDpd find_kpad_enable_dpd(const std::vector<CodeRange>& text) {
     KpadDpd found;
     for (const CodeRange& r : text) {
         const std::size_t words = r.size / 4;
+        if (r.bytes == nullptr) continue;
         for (std::size_t i = 0; i < words; ++i) {
+            // Its first word, `mulli r0,r3,stride`, from this entry: only
+            // such a word is read across the view (a game's code and its
+            // packs' patches can be thousands of entries; CodeRabbit).
+            if ((be32(r.bytes + i * 4) & 0xFFFF0000u) != 0x1C030000u) continue;
             const std::uint32_t at = r.address + static_cast<std::uint32_t>(i * 4);
             KpadDpd on;
             if (!kpad_dpd_setter(text, at, 1u, on)) continue;
@@ -814,18 +819,21 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
             const std::uint32_t insn = be32(r.bytes + 4 * call);
             if (!is_bl(insn) || bl_target(at, insn) != is_dpd) continue;
             // The calling function: back to its `stwu r1` (function_start:
-            // a bounded look back, no `blr` between); a call found outside
-            // a framed function isn't the read.
+            // a bounded look back, no `blr` between, every word in the
+            // view); a call found outside a framed function isn't the read.
+            // Its words are read by address, so a function a pack's patch
+            // splits across touching entries of the view is read whole
+            // (CodeRabbit, fork #23).
             const std::uint32_t function = function_start(text, at);
-            if (function < r.address || function >= at) continue;
-            const std::size_t start = (function - r.address) / 4;
+            if (function == 0 || function >= at) continue;
+            const std::size_t before_call = (at - function) / 4;
             // Its channel blocks: base (lis/addi, or a copy by `addi rD,rA,0`) plus a `mulli` of the channel.
             std::uint32_t high[32] = {}, address[32] = {}, stride_of[32] = {};
             std::uint32_t block_base[32] = {}, block_stride[32] = {};
             KpadDpd here;
             bool two_reads = false;
-            for (std::size_t k = start; k < call; ++k) {
-                const std::uint32_t w = be32(r.bytes + 4 * k);
+            for (std::size_t k = 0; k < before_call; ++k) {
+                const std::uint32_t w = word_at(text, function + static_cast<std::uint32_t>(4 * k));
                 const std::uint32_t op = w >> 26, d = (w >> 21) & 31u, a = (w >> 16) & 31u, b = (w >> 11) & 31u;
                 const std::int32_t imm = static_cast<std::int16_t>(w & 0xFFFFu);
                 // A register written here no longer holds a channel block,
@@ -872,13 +880,13 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
                     }
                 }
                 // The switch, read from the block within the last words before the call.
-                if (op == 34 && call - k <= kReadWithin && read_base != 0 && static_cast<std::uint32_t>(imm) >= kMinOffset &&
+                if (op == 34 && before_call - k <= kReadWithin && read_base != 0 && static_cast<std::uint32_t>(imm) >= kMinOffset &&
                     static_cast<std::uint32_t>(imm) < kMaxOffset) {
                     // Two different bytes read before the one call: which is
                     // the switch can't be told.
                     if (here.enable != 0 && (here.base != read_base || here.offset != static_cast<std::uint32_t>(imm)))
                         two_reads = true;
-                    here.enable = r.address + static_cast<std::uint32_t>(4 * start);
+                    here.enable = function;
                     here.base = read_base;
                     here.stride = read_stride;
                     here.offset = static_cast<std::uint32_t>(imm);
