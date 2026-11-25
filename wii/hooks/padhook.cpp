@@ -1531,7 +1531,7 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
              : pack_wraps   ? "it hooks or reroutes the game's Wii controller reads"
                             : "it reads the GameCube ports, in the program file it brings");
         standin = false;
-        out.standin = out.standin_nunchuk = out.standin_sideways = false;
+        out.standin = out.standin_nunchuk = out.standin_sideways = out.standin_pointing = false;
     } else if (pack_ports) {
         // A pack that reads the GameCube ports straight from the hardware
         // over the game's own program (quatric's GameCube controller patches)

@@ -158,6 +158,7 @@ KpadDpd find_kpad_enable_dpd(const std::vector<CodeRange>& text);
 // (`lis`/`addi`) plus the channel times `stride` (`mulli`). `enable` is
 // that reading function. All 0 unless every such read agrees.
 KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text);
+
 // Whether `size` bytes of code (a pack's memory patch, word-aligned) read
 // the GameCube controller ports straight from the hardware: `lis rX,0xCD00`
 // (or 0xCC00, the same registers as a GameCube sees them) and, within the

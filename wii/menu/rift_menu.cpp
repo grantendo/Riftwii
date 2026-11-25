@@ -16019,6 +16019,7 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 					    " " +
 					    tr("An enabled pack asks for {1} while this is Off.", {from_pack == "nunchuk"    ? tr("Wii Remote + Nunchuk")
 					                         : from_pack == "sideways" ? tr("Sideways Wii Remote")
+					                         : from_pack == "pointing" ? tr("Pointing Wii Remote")
 					                                                   : tr("Classic Controller")}));
 				else
 					say(tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller."));

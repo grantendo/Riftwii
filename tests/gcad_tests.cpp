@@ -1845,6 +1845,7 @@ static void TestKpadDpdSwitch() {
     text = {{b.base, code.data(), code.size()}};
     EXPECT_EQ(riftwii::find_kpad_dpd_switch(text).enable, 0u);
 }
+
 // A pack's code that reads the GameCube ports itself (quatric's Excite
 // Truck GameCube patch: `lis r6,0xCD00` then `add r6,r6,r5` and `lwz
 // r8,0x6404(r6)`... here with the access right after): found; other
