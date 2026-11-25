@@ -798,6 +798,22 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
     }
     {
+        // `lwzu r5,4(r11)` moves r11 off the slot's copy before `mtctr r11`:
+        // not the slot's call (CodeRabbit CLI, rf10).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(mr(11, 12));
+        t.put(0x84AB0004u);  // lwzu r5,4(r11)
+        t.put(li(4, -1));
+        t.put(0x7D6903A6u);  // mtctr r11
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
+    }
+    {
         // Two branches, each around one `li r4,-1`: with both taken, r4 is
         // 0 at the call, so not a "no controller" call (CodeRabbit CLI).
         Section t{0x80218000, {}};
