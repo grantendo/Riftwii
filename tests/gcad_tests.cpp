@@ -1740,6 +1740,16 @@ static void TestKpadEnableDpd() {
     code = two.bytes();
     text = {{two.base, code.data(), code.size()}};
     EXPECT_EQ(riftwii::find_kpad_enable_dpd(text).enable, 0u);
+    // The pair split across touching entries of the code's view (a pack's
+    // patch over one of its words, or over the padding): still found; a
+    // gap in the middle of a setter is not (CodeRabbit, fork #23).
+    code = a.bytes();
+    for (std::size_t cut : {8u, 28u, 40u}) {
+        text = {{a.base, code.data(), cut}, {a.base + static_cast<std::uint32_t>(cut), code.data() + cut, code.size() - cut}};
+        EXPECT_EQ(riftwii::find_kpad_enable_dpd(text).enable, on);
+    }
+    text = {{a.base, code.data(), 40u}, {a.base + 44u, code.data() + 44, code.size() - 44}};
+    EXPECT_EQ(riftwii::find_kpad_enable_dpd(text).enable, 0u);
 }
 
 static void TestRemotesIdleReset() {
