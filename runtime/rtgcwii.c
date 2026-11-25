@@ -159,7 +159,7 @@ uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, 
 uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t entry_bytes, uint32_t count,
                          uint32_t now, uint32_t sample_ticks, int kpad_camera) {
     uint8_t first[RTGCWII_WPAD_FS_BYTES];
-    uint32_t i, k, n;
+    uint32_t i, k, n, report_format;
     if (channel >= RTGCWII_CHANNELS || entry_bytes < RTGCWII_WPAD_FS_BYTES + 2u || count == 0) return 0;
     {
         /* KPAD's raw samples: a real Wii Remote + Nunchuk's always carry the
@@ -168,7 +168,7 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
          * whatever format the stand-in saw the game ask for. Donkey Kong
          * Country Returns never asks, and read the Nunchuk's part as zeros
          * (a hard pull, never a shake): its Nunchuk play never started. */
-        uint32_t report_format = w->format[channel];
+        report_format = w->format[channel];
 #ifdef RT_PAD_FORM_NUNCHUK
         if (report_format < RTDELIVER_FMT_FS_FIRST || report_format > RTDELIVER_FMT_FS_ACC_DPD)
             report_format = RTDELIVER_FMT_FS_ACC_DPD;
@@ -180,7 +180,7 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
         uint8_t* e = out + i * entry_bytes;
         for (k = 0; k < entry_bytes; ++k) e[k] = 0;
         for (k = 0; k < n; ++k) e[k] = first[k];
-        e[entry_bytes - 2u] = (uint8_t)w->format[channel];
+        e[entry_bytes - 2u] = (uint8_t)report_format;  /* the format the entry is in (CodeRabbit CLI) */
         /* The shake at each sample's own time: a step every shake_flip
          * ticks from when it began; a sample from before it, at rest. */
         {

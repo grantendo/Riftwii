@@ -363,6 +363,7 @@ void TestUnified() {
         EXPECT_EQ(static_cast<std::int16_t>((e[42] << 8) | e[43]), x);
         const std::int16_t nz = static_cast<std::int16_t>((e[46] << 8) | e[47]);
         EXPECT_TRUE(nz != 0);
+        EXPECT_EQ(e[kBytes - 2], 5);  // the entry says it has the Nunchuk's part
     }
     // Samples from before the shake began: both at rest, the Nunchuk too.
     EXPECT_EQ(rtgcwii_unified(&w, 0, out, kBytes, kCount, 1100, 40, 0), kCount);
