@@ -10354,6 +10354,21 @@ FR.update({
     'Other titles': 'Autres titres',
     'Emulated + Wii': 'Émulée + Wii',
 })
+T.update({
+    "In a game with no GameCube controller code, only the adapter's controllers play.": (
+        "En un juego sin código para mandos de GameCube, solo juegan los mandos del adaptador.",
+        "ゲームキューブコントローラーに対応していないゲームでは、アダプターのコントローラーだけが使えます。",
+        "Num jogo sem código para controles de GameCube, só jogam os controles do adaptador.",
+        "In un gioco senza codice per i controller GameCube, giocano solo i controller dell'adattatore."),
+})
+KO.update({
+    "In a game with no GameCube controller code, only the adapter's controllers play.":
+        "게임큐브 컨트롤러 코드가 없는 게임에서는 어댑터의 컨트롤러만 쓸 수 있습니다.",
+})
+FR.update({
+    "In a game with no GameCube controller code, only the adapter's controllers play.":
+        "Dans un jeu sans code pour les manettes GameCube, seules les manettes de l'adaptateur jouent.",
+})
 
 if __name__ == "__main__":
     main()

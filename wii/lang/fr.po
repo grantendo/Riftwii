@@ -5054,3 +5054,6 @@ msgstr "Autres titres"
 
 msgid "Emulated + Wii"
 msgstr "Émulée + Wii"
+
+msgid "In a game with no GameCube controller code, only the adapter's controllers play."
+msgstr "Dans un jeu sans code pour les manettes GameCube, seules les manettes de l'adaptateur jouent."

@@ -1731,6 +1731,27 @@ static void TestRemotesIdleReset() {
     code = lis_only.bytes();
     text = {{lis_only.base, code.data(), code.size()}};
     EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe2), lone);
+    // The return value loaded before the store, the address in r4 (CodeRabbit
+    // on #609): li r0,0; lis r4,hi; li r3,1; stw r0,lo(r4); blr. Taken; with
+    // the address in r3 the same order would lose it, so not.
+    for (const bool in_r3 : {false, true}) {
+        Asm early{0x80200000u, {}};
+        const std::uint32_t reset = early.here();
+        early.op(0x38000000u);
+        early.op(in_r3 ? 0x3C60809Cu : 0x3C80809Cu);
+        early.op(0x38600001u);
+        early.op(in_r3 ? 0x9003FB48u : 0x9004FB48u);
+        early.blr();
+        const std::uint32_t probe_early = early.here();
+        early.prologue();
+        early.bl(reset);
+        early.op(0x60000000u);
+        early.bl(reset);
+        early.blr();
+        code = early.bytes();
+        text = {{early.base, code.data(), code.size()}};
+        EXPECT_EQ(riftwii::find_wii_remote_idle_reset(text, probe_early), in_r3 ? 0u : reset);
+    }
     // Called only once near WPADProbe: not the library's (CodeRabbit on #609).
     Asm once{0x80200000u, {}};
     const std::uint32_t once_reset = idle_reset_function(once, -0x6034, false);

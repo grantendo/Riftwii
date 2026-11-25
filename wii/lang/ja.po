@@ -5054,3 +5054,6 @@ msgstr "その他のタイトル"
 
 msgid "Emulated + Wii"
 msgstr "仮想NANDとWii"
+
+msgid "In a game with no GameCube controller code, only the adapter's controllers play."
+msgstr "ゲームキューブコントローラーに対応していないゲームでは、アダプターのコントローラーだけが使えます。"

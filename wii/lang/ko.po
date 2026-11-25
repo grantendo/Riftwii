@@ -5054,3 +5054,6 @@ msgstr "기타 타이틀"
 
 msgid "Emulated + Wii"
 msgstr "에뮬레이트 + Wii"
+
+msgid "In a game with no GameCube controller code, only the adapter's controllers play."
+msgstr "게임큐브 컨트롤러 코드가 없는 게임에서는 어댑터의 컨트롤러만 쓸 수 있습니다."

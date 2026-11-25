@@ -15996,7 +15996,8 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 				// said with any choice but Off (CodeRabbit on #609).
 				say(gameSettings.gc_controllers == "classic"
 				        ? std::string(tr("Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.")) +
-				              " " + tr("A code build doesn't use it.")
+				              " " + tr("A code build doesn't use it.") + " " +
+				              tr("In a game with no GameCube controller code, only the adapter's controllers play.")
 				        : std::string(tr("GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.")));
 			else if (ref.what == RowRef::What::RegionStrings)
 				say(tr("For a game from another region (an import): the game sees its own region's country names where it looks for the console's."));

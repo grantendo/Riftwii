@@ -1318,7 +1318,11 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
     if (!gc_adapter && classic_without_usb && !gx_protected) gc_adapter = true;
     if (gc_adapter) {
         std::string why;
-        if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, g_extras.gc_as_classic, usb,
+        // The stand-in only where this launch can take it (not a code
+        // build, nor a game that clears MEM1's top: classic_without_usb), so
+        // a game with no PADRead isn't taken on for a hook it can't get
+        // (CodeRabbit on #609).
+        if (!find_pad_functions(dol, g_extras.gc_adapter == GcAdapterMode::Demo, patches, classic_without_usb, usb,
                                 pad, why)) {
             logf("GameCube adapter: off: %s\n", why.c_str());
             gc_adapter = false;

@@ -164,6 +164,12 @@ void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int3
         /* A read with no error output can't say "no controller": a real
          * controller that brings no samples for a while (and many reads in
          * a row, so a pause in the game's reading doesn't count) has left. */
+        /* Reads that keep coming: a pause longer than `grace` between two
+         * empty ones starts the count over (a burst, a pause and one more
+         * read isn't a controller gone; CodeRabbit on #609). */
+        if (w->empty_since[channel] != 0 && rtgcwii_elapsed(now, w->empty_last[channel]) > w->grace)
+            w->empty_since[channel] = 0;
+        w->empty_last[channel] = now | 1u;
         if (w->empty_since[channel] == 0) {
             w->empty_since[channel] = now | 1u;
             w->empty_reads[channel] = 1;
