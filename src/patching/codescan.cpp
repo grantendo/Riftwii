@@ -144,6 +144,10 @@ bool RegTrack::calls(std::size_t k) const {
     const std::uint32_t insn = be32(bytes_ + 4 * k);
     if ((insn & 1u) == 0) return false;
     if (opcode(insn) == 18) {
+        // `bl +4; mflr rD`: the code's own address taken, nothing called
+        // (CodeRabbit CLI, rf6).
+        if ((insn & 0x03FFFFFEu) == 4u && k + 1 < words_ && (be32(bytes_ + 4 * (k + 1)) & 0xFC1FFFFFu) == 0x7C0802A6u)
+            return false;
         // `bl` right after `addi r11,r1,N`: a register save helper's call
         // only if its target is one, looked up wherever it is in the game's
         // code (another section included). The `addi` alone isn't proof, and

@@ -278,11 +278,19 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
                 command = command || (opcode(insn) == 7 && value == kCommandBytes);  // mulli
                 const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
                                 ((insn >> 21) & 31u) == ((insn >> 11) & 31u);
-                if (mr && ((insn >> 21) & 31u) == 4) {
+                const bool copy4 = mr && ((insn >> 21) & 31u) == 4, copy5 = mr && ((insn >> 21) & 31u) == 5;
+                // A copy written over after it was made (`li r27,0`) no
+                // longer holds the argument (CodeRabbit CLI, #616).
+                // (A store made before that still counts: the epilogue's
+                // restore comes after it.)
+                if (!copy4 && info_reg >= 0 && writes_register(insn, static_cast<std::uint32_t>(info_reg))) info_reg = -1;
+                if (!copy5 && callback_reg >= 0 && writes_register(insn, static_cast<std::uint32_t>(callback_reg)))
+                    callback_reg = -1;
+                if (copy4) {
                     info_reg = static_cast<int>(reg_a(insn));
                     info_kept = false;
                 }
-                if (mr && ((insn >> 21) & 31u) == 5) {
+                if (copy5) {
                     callback_reg = static_cast<int>(reg_a(insn));
                     callback_kept = false;
                 }
@@ -308,14 +316,17 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
     // The setter ends at its return: leaf code after it, before the next
     // framed function, isn't counted (function_end).
     each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
-        RegTrack regs(text, r, start, end, RegTrack::kAddresses);
+        RegTrack regs(text, r, start, end, RegTrack::kArguments | RegTrack::kAddresses);
+        regs.follow(4);  // the new callback, the second argument
         std::uint32_t table = 0;
         std::uint32_t swapped = 0;  // the table whose block's callback was loaded and stored
+        bool two = false;           // another table swapped too: not guessed
         int block = -1;
         bool loads = false, stores = false;
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             const std::uint32_t d = reg_d(insn), a = reg_a(insn);
+            const std::uint32_t r4_here = regs.copies(4);  // as this instruction finds them
             const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
             const std::uint32_t base = lwzx ? regs.address(a) : 0;  // the table, as it finds it
             regs.step(k);
@@ -329,8 +340,10 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
                 continue;
             }
             if (block >= 0 && static_cast<int>(a) == block && simm(insn) == kConnectCallback) {
-                loads = loads || opcode(insn) == 32;   // lwz
-                stores = stores || opcode(insn) == 36;  // stw
+                loads = loads || opcode(insn) == 32;  // lwz
+                // stw of the new callback, not another value (a cleared
+                // slot): CodeRabbit CLI, #616.
+                stores = stores || (opcode(insn) == 36 && ((r4_here >> d) & 1u));
             }
             // The block's register written with anything else (`lwz
             // r4,8(r1)`), or clobbered by a call (CodeRabbit CLI): what
@@ -341,10 +354,15 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
                 loads = stores = false;
             }
             // The first table with both keeps them: a later lookup in
-            // another table doesn't take its place.
-            if (swapped == 0 && loads && stores) swapped = table;
+            // another table doesn't take its place, but a second swap
+            // through another table makes the function ambiguous
+            // (CodeRabbit CLI, #616).
+            if (loads && stores) {
+                if (swapped == 0) swapped = table;
+                else if (table != swapped) two = true;
+            }
         }
-        if (swapped == 0) return;
+        if (swapped == 0 || two) return;
         found.table = swapped;
         found.offset = static_cast<std::uint32_t>(kConnectCallback);
         ++matches;
@@ -382,7 +400,10 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
         std::uint32_t table = 0;
         const std::size_t first_of_function = setters.size();
         int block = -1;
-        std::int32_t loaded = -1;
+        // The block's fields loaded so far (another field read between the
+        // old callback's load and the store doesn't hide it: CodeRabbit
+        // CLI, #616).
+        std::vector<std::int32_t> loaded;
         for (std::size_t k = start; k < end; ++k) {
             const std::uint32_t insn = be32(r.bytes + 4 * k);
             const std::uint32_t d = reg_d(insn), a = reg_a(insn);
@@ -393,7 +414,7 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             if (lwzx && base != 0) {
                 table = base;
                 block = static_cast<int>(d);
-                loaded = -1;  // a load from another block isn't this one's
+                loaded.clear();  // a load from another block isn't this one's
                 continue;
             }
             // The block register written with anything else (a reload from
@@ -407,16 +428,21 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
                 // was for the swap after it.
                 if (!epilogue_restore(r.bytes, k, end)) {
                     block = -1;
-                    loaded = -1;
+                    loaded.clear();
                 }
                 continue;
             }
             if (block < 0 || static_cast<int>(a) != block || simm(insn) < kBlockFields) continue;
-            if (opcode(insn) == 32) loaded = simm(insn);  // lwz: the old callback
-            if (opcode(insn) != 36 || simm(insn) != loaded || !((r4_here >> d) & 1u)) continue;
+            if (opcode(insn) == 32) {  // lwz: the old callback
+                if (std::find(loaded.begin(), loaded.end(), simm(insn)) == loaded.end()) loaded.push_back(simm(insn));
+                continue;
+            }
+            if (opcode(insn) != 36 || std::find(loaded.begin(), loaded.end(), simm(insn)) == loaded.end() ||
+                !((r4_here >> d) & 1u))
+                continue;
             // stw: the new one, the second argument. Once per function, though
             // more than one of its paths swaps the same slot.
-            const std::pair<std::uint32_t, std::int32_t> setter(table, loaded);
+            const std::pair<std::uint32_t, std::int32_t> setter(table, simm(insn));
             if (std::find(setters.begin() + static_cast<std::ptrdiff_t>(first_of_function), setters.end(), setter) ==
                 setters.end())
                 setters.push_back(setter);
@@ -455,6 +481,12 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
             }
         }
         if (!table || target == 0) return;
+        // The target is in the game's code, or it isn't a function to hook
+        // (CodeRabbit CLI, #616).
+        bool in_code = false;
+        for (const CodeRange& c : text)
+            in_code = in_code || (c.bytes != nullptr && target >= c.address && target - c.address + 4 <= c.size);
+        if (!in_code) return;
         // Only a function that makes the table counts, and its own
         // ambiguity with it (CodeRabbit CLI, #616).
         if (several || (found != 0 && found != target)) two = true;
@@ -485,7 +517,8 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
             const std::size_t window_end = std::min(words, i + 1 + kCallWindow);
             RegTrack regs(text, r, i + 1, window_end, RegTrack::kArguments);
             regs.follow(12);
-            std::size_t last_r4 = 0;  // where r4 was last written
+            std::size_t last_r4 = 0;   // where r4 was last written
+            std::size_t last_ctr = 0;  // where CTR was last written
             // Conditional branches on the way (where, and where to): one that
             // lands after r4's last write but not past the call skips that
             // write, so the call may see another r4 (CodeRabbit on #616).
@@ -497,6 +530,11 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                         if (fork.first < last_r4 && fork.second > static_cast<std::int64_t>(last_r4) &&
                             fork.second <= static_cast<std::int64_t>(k))
                             gone = false;
+                        // The same for CTR: a branch around its `mtctr`
+                        // calls whatever CTR held before (CodeRabbit CLI, #616).
+                        if (fork.first < last_ctr && fork.second > static_cast<std::int64_t>(last_ctr) &&
+                            fork.second <= static_cast<std::int64_t>(k))
+                            ctr_from_slot = false;
                     }
                     // The call goes through CTR: only a call whose CTR came
                     // from the loaded slot is the slot's (CodeRabbit CLI, #15).
@@ -507,7 +545,10 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                 }
                 // mtctr rS: from the slot (r12 or a copy of it) or from
                 // anything else.
-                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) ctr_from_slot = ((regs.copies(12) >> reg_d(next)) & 1u) != 0;
+                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) {
+                    ctr_from_slot = ((regs.copies(12) >> reg_d(next)) & 1u) != 0;
+                    last_ctr = k;
+                }
                 regs.step(k);
                 // A jump or return, or r12 loaded again: not this slot's call
                 // (the `beq` past it when the slot is empty is fine).
@@ -672,6 +713,7 @@ KpadUnified find_kpad_unified(const std::vector<CodeRange>& text) {
             bool channel_block = false, limit = false;
             std::int32_t multiples[8] = {}, copies[8] = {};
             unsigned n_multiples = 0, n_copies = 0;
+            std::uint32_t before = 0;  // the word before this one
             each_word(text, start, 80, [&](std::uint32_t, std::uint32_t w) {
                 if (opcode(w) == 7) {  // mulli
                     if (reg_a(w) == 3 && simm(w) >= 256) channel_block = true;
@@ -681,7 +723,10 @@ KpadUnified find_kpad_unified(const std::vector<CodeRange>& text) {
                     if (simm(w) == 16) limit = true;
                     if (reg_d(w) == 5 && n_copies < 8) copies[n_copies++] = simm(w);
                 }
-                if (w == kAddiR0R3By16) limit = true;  // the later KPAD's limit
+                // The later KPAD's limit: the pair, not an `addi r0,r3,16`
+                // alone (CodeRabbit CLI, #616).
+                if (w == kCmplwR5R0 && before == kAddiR0R3By16) limit = true;
+                before = w;
                 return true;
             });
             std::uint32_t size = 0;

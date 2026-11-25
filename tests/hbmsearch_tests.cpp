@@ -317,6 +317,24 @@ void TestWpadGetInfo() {
         t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
     }
+    {
+        // The info's copy written over (`li r27,0`) before the store: the
+        // command doesn't get the info, so not it (CodeRabbit CLI, #616).
+        Section t{0x80030000, {}};
+        t.put(stwu_r1(0x80));
+        t.put(kMflrR0);
+        t.put(kSlwiR0R3By2);
+        t.put(mr(27, 4));
+        t.put(mr(28, 5));
+        t.put(li(27, 0));
+        t.put(li(30, -2));
+        t.put(li(4, 0x15));
+        t.put(mulli(0, 0, 48));
+        t.put(stw(27, 1, 48));
+        t.put(stw(28, 1, 52));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
+    }
 }
 
 // The 2006 WPADSetConnectCallback: the channel's control block from a table
@@ -419,6 +437,42 @@ void TestWpadConnect2006() {
         EXPECT_EQ(found.table, 0x8038F4F0u);
         EXPECT_EQ(found.offset, 2020u);
     }
+    {
+        // The old callback loaded, then the slot cleared (`li r30,0`), not
+        // given the new one: not the setter (CodeRabbit CLI, #616).
+        Section t{0x80040000, {}};
+        t.put(stwu_r1(0x10));
+        t.put(kMflrR0);
+        t.put(mr(30, 4));
+        t.put(lis(4, 0x8039));
+        t.put(addi(4, 4, -2832));
+        t.put(lwzx(4, 4, 0));
+        t.put(lwz(31, 4, 2020));
+        t.put(li(30, 0));
+        t.put(stw(30, 4, 2020));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_2006({t.range()}).table, 0u);
+    }
+    {
+        // The callback swapped through table A, then through table B too:
+        // which one is WPAD's isn't guessed (CodeRabbit CLI, #616).
+        Section t{0x80040000, {}};
+        t.put(stwu_r1(0x10));
+        t.put(kMflrR0);
+        t.put(mr(30, 4));
+        t.put(lis(4, 0x8039));
+        t.put(addi(4, 4, -2832));  // table A, 0x8038F4F0
+        t.put(lwzx(4, 4, 0));
+        t.put(lwz(31, 4, 2020));
+        t.put(stw(30, 4, 2020));
+        t.put(lis(5, 0x8040));
+        t.put(addi(5, 5, 0x100));  // table B, 0x80400100
+        t.put(lwzx(6, 5, 0));
+        t.put(lwz(31, 6, 2020));
+        t.put(stw(30, 6, 2020));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_2006({t.range()}).table, 0u);
+    }
 }
 
 std::uint32_t slwi(std::uint32_t a, std::uint32_t s, std::uint32_t n) {
@@ -479,23 +533,29 @@ void TestWpadGetInfoLater() {
         t.put(addi(1, 1, 0x10));
         t.put(kBlr);
     };
+    // The calls' targets, in another section of the game's code.
+    Section callees{async, {}};
+    for (int i = 0; i < 0x100; ++i) callees.put(kBlr);
     {
         Section t{0x803CD2A4, {}};
         wrapper(t, 0, 0);
-        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), async);
-        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, 0), 0u);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range(), callees.range()}, table), async);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range(), callees.range()}, 0), 0u);
+        // A target in none of the game's code isn't a function to hook
+        // (CodeRabbit CLI, #616).
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), 0u);
     }
     {
         // `lis r3; li r3,0; addi r3,r3,lo` makes lo, not the table (CodeRabbit CLI, #616).
         Section t{0x803CD2A4, {}};
         wrapper(t, 1, 0);
-        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), 0u);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range(), callees.range()}, table), 0u);
     }
     {
         // Two different busy-checked calls in one function: not guessed (CodeRabbit CLI, #616).
         Section t{0x803CD2A4, {}};
         wrapper(t, 0, 0x80100100u);
-        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), 0u);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range(), callees.range()}, table), 0u);
     }
     {
         // An unrelated function with two busy-checked calls and no table
@@ -510,7 +570,7 @@ void TestWpadGetInfoLater() {
         t.put(addi(1, 1, 0x10));
         t.put(kBlr);
         wrapper(t, 0, 0);
-        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range()}, table), async);
+        EXPECT_EQ(riftwii::find_wpad_get_info_later({t.range(), callees.range()}, table), async);
     }
 }
 
@@ -636,6 +696,46 @@ void TestWpadConnectLater() {
         t.put(kBctrl);
         t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
+    }
+    {
+        // Another field read between the old callback's load and the store
+        // (`lwz r0,2232(r31)`): still the setter for 2212 (CodeRabbit CLI,
+        // #616).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(5, 0x803D));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(5, 5, -20720));
+        t.put(mr(29, 4));
+        t.put(lwzx(31, 5, 3));
+        t.put(lwz(30, 31, 2212));
+        t.put(lwz(0, 31, 2232));
+        t.put(stw(29, 31, 2212));
+        t.put(kBlr);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
+    }
+    {
+        // A branch around `mtctr r12` that still reaches the call: CTR
+        // there may be anything, so not the slot's call (CodeRabbit CLI,
+        // #616).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(mr(3, 30));
+        t.put(li(4, -1));
+        t.put(cmpwi(5, 0));
+        t.put(kBeqPlus8Skip);
+        t.put(kMtctrR12);
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
     }
     {
         // A branch that skips `li r4,-1` and still reaches the call (r4 0
@@ -1380,6 +1480,24 @@ void TestKpadUnified() {
         for (std::uint32_t w : kMkwUnified) t.put(w);
         for (std::uint32_t w : kMkwUnified) t.put(w);
         EXPECT_EQ(riftwii::find_kpad_unified({t.range()}).address, 0u);
+    }
+    {
+        // `cmplwi r5,16` with an `addi r0,r3,16` that isn't the later
+        // KPAD's limit (no `cmplw r5,r0` after it) and no `li 16`: not
+        // taken; with the `cmplw`, it is (CodeRabbit CLI, #616).
+        for (bool pair : {false, true}) {
+            Section t{0x80100000, {}};
+            t.put(stwu_r1(0x20));
+            t.put(kMflrR0);
+            t.put(mulli(0, 3, 1336));
+            t.put(cmplwi(5, 16));
+            t.put(addi(0, 3, 16));
+            if (pair) t.put(cmplw(5, 0));
+            t.put(li(5, 56));
+            t.put(mulli(4, 6, 56));
+            t.put(kBlr);
+            EXPECT_EQ(riftwii::find_kpad_unified({t.range()}).address, pair ? 0x80100000u : 0u);
+        }
     }
 }
 

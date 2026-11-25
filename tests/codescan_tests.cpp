@@ -72,6 +72,10 @@ void TestSaveHelperKeeps() {
     const auto external = code({kStwu, kMrR5R4, kAddiR11R1, kBl, kStw});
     RegTrack x = run(external, RegTrack::kArguments, 4);
     EXPECT_EQ((x.copies(4) >> 5) & 1u, 0u);
+    // `bl +4; mflr r31`: the code's own address, no call (CodeRabbit CLI, rf6).
+    const auto pc = code({0x48000005u, 0x7FE802A6u, kStw});
+    RegTrack q(pc.data(), pc.size() / 4, 0, pc.size() / 4, RegTrack::kArguments);
+    EXPECT_TRUE(!q.calls(0));
     // A `bl` at the first word read is a call (CodeRabbit CLI, rf5).
     const auto first = code({kBl, kStw});
     RegTrack f(first.data(), first.size() / 4, 0, first.size() / 4, RegTrack::kArguments);

@@ -209,6 +209,10 @@ void TestReadLeaves() {
     EXPECT_FALSE(rtleave_read_leaves(kOther, kMain, kAsked, 9000, kFallback, 1));
     EXPECT_FALSE(rtleave_read_leaves(kMain, kMain, 0, 9000, kFallback, 1));
     EXPECT_FALSE(rtleave_read_leaves(0, 0, kAsked, 9000, kFallback, 1));
+    // A pad-reading thread that isn't the main one asked: its read leaves,
+    // the main thread's doesn't (CodeRabbit CLI, #616).
+    EXPECT_TRUE(rtleave_read_leaves(kOther, kOther, kAsked, 1500, kFallback, 1));
+    EXPECT_FALSE(rtleave_read_leaves(kMain, kOther, kAsked, 1500, kFallback, 1));
     // The time base's low word wraps: the wait still counts across it.
     EXPECT_FALSE(rtleave_read_leaves(kMain, kMain, 0xFFFFFF01u, 0x000000F0u, kFallback, 1));
     EXPECT_TRUE(rtleave_read_leaves(kMain, kMain, 0xFFFFFF01u, 0x00000200u, kFallback, 1));
