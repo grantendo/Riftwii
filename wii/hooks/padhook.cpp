@@ -1593,8 +1593,8 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         auto* state = reinterpret_cast<rtgcwii*>(out.gcwii_base);
         std::memset(state, 0, sizeof(rtgcwii));
         state->slot.grace = kGcwiiGraceMs * (kBusClock / 4000u);
-        state->pointer_show = kGcwiiPointerShowMs * (kBusClock / 4000u);
-        state->shake_flip = kGcwiiShakeFlipMs * (kBusClock / 4000u);
+        state->shape.pointer_show = kGcwiiPointerShowMs * (kBusClock / 4000u);
+        state->shape.shake_flip = kGcwiiShakeFlipMs * (kBusClock / 4000u);
         state->kpad_dpd = out.kpad_dpd.base;
         state->kpad_dpd_stride = out.kpad_dpd.stride;
         state->kpad_dpd_offset = out.kpad_dpd.offset;

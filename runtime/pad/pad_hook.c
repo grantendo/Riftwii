@@ -851,7 +851,7 @@ static void pad_gcwii_camera_now(struct rt_pad_context* c, uint32_t chan) {
 
 static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* status) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
-    struct rtgcwii_fs f;
+    struct rtshape_out f;
     uint32_t i;
     pad_gcwii_camera_now(c, chan);
 #ifdef RT_PAD_FORM_SIDEWAYS
@@ -872,7 +872,7 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
     pad_put32(status + PAD_KPAD_DIST, rtgcwii_float_bits(PAD_DIST_AT_REST));
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
     pad_put_device(c, status, PAD_DEV_STANDIN, f.pointer_shown ? PAD_DPD_SEEN : 0u,
-                   (w->camera >> chan) & 1u ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
+                   (w->shape.camera >> chan) & 1u ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
 #ifdef RT_PAD_FORM_NUNCHUK
     pad_put32(status + PAD_KPAD_FS_STICK, rthome_float_bits(f.stick[0]));
     pad_put32(status + PAD_KPAD_FS_STICK + 4, rthome_float_bits(f.stick[1]));
@@ -1361,8 +1361,8 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 #ifdef RT_PAD_FORM_REMOTE
             const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
             pad_gcwii_camera_now(c, (uint32_t)chan);
-            const int32_t* own = (uint32_t)chan < RTGCWII_CHANNELS && ((w->camera >> (uint32_t)chan) & 1u)
-                                     ? w->pointer[chan]
+            const int32_t* own = (uint32_t)chan < RTGCWII_CHANNELS && ((w->shape.camera >> (uint32_t)chan) & 1u)
+                                     ? w->shape.pointer[chan]
                                      : 0;
             /* KPAD's raw samples, each at its own time (a sample every
              * 5 ms, rtgcwii_unified): a shake swings through them as a
@@ -1403,7 +1403,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
         pad_gcwii_camera_now(c, (uint32_t)chan);
         const int32_t* at = rthome_menu_open(&c->home) ? pointer
-                            : ((w->camera >> (uint32_t)chan) & 1u) ? w->pointer[chan]
+                            : ((w->shape.camera >> (uint32_t)chan) & 1u) ? w->shape.pointer[chan]
                                                                    : 0;
         for (i = 0; i < count; ++i) {
             pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);

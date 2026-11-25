@@ -52,7 +52,7 @@ endif()
 # The resident runtime is built with its RVZ code (RT_RVZ): the tests cover
 # both blobs' logic, and without an RVZ state the RVZ code stays out of the
 # way. Its Zstandard is the host library here.
-add_library(riftwii_runtime STATIC runtime/rtable.c runtime/rtfat.c runtime/rtfs.c runtime/rtgcad.c runtime/rthid.c runtime/rtrvz.c runtime/rtshot.c runtime/rtfault.c runtime/rtvsd.c runtime/rtvsdra.c runtime/rtpro.c runtime/rtleave.c runtime/rthome.c runtime/rtgcwii.c runtime/rtslot.c runtime/rtsrc.c runtime/rtrestart.c
+add_library(riftwii_runtime STATIC runtime/rtable.c runtime/rtfat.c runtime/rtfs.c runtime/rtgcad.c runtime/rthid.c runtime/rtrvz.c runtime/rtshot.c runtime/rtfault.c runtime/rtvsd.c runtime/rtvsdra.c runtime/rtpro.c runtime/rtleave.c runtime/rthome.c runtime/rtgcwii.c runtime/rtslot.c runtime/rtsrc.c runtime/rtshape.c runtime/rtrestart.c
     runtime/resident/rt_hook.c runtime/resident/rt_zstd.c runtime/vsd/vsd_hook.c runtime/gc/gc_rvz.c)
 target_include_directories(riftwii_runtime PUBLIC runtime runtime/resident runtime/vsd PRIVATE vendor-zstd runtime/gc)
 target_compile_definitions(riftwii_runtime PRIVATE RT_RVZ)
@@ -345,14 +345,14 @@ if(BUILD_TESTING)
     add_test(NAME memorybudget COMMAND memorybudget_tests)
     # The Wii Remote + Nunchuk form (#587): rtgcwii.c and rthome.c built
     # again with its define, as the pad builds that carry it are.
-    add_executable(gcwii_nunchuk_tests tests/gcwii_nunchuk_tests.cpp runtime/rtgcwii.c runtime/rtslot.c runtime/rtsrc.c runtime/rthome.c)
+    add_executable(gcwii_nunchuk_tests tests/gcwii_nunchuk_tests.cpp runtime/rtgcwii.c runtime/rtslot.c runtime/rtsrc.c runtime/rtshape.c runtime/rthome.c)
     target_include_directories(gcwii_nunchuk_tests PRIVATE runtime)
     target_compile_definitions(gcwii_nunchuk_tests PRIVATE RT_PAD_STANDIN RT_PAD_FORM_NUNCHUK)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(gcwii_nunchuk_tests PRIVATE -Wall -Wextra -Werror)
     endif()
     add_test(NAME gcwii_nunchuk COMMAND gcwii_nunchuk_tests)
-    add_executable(gcwii_sideways_tests tests/gcwii_sideways_tests.cpp runtime/rtgcwii.c runtime/rtslot.c runtime/rtsrc.c runtime/rthome.c)
+    add_executable(gcwii_sideways_tests tests/gcwii_sideways_tests.cpp runtime/rtgcwii.c runtime/rtslot.c runtime/rtsrc.c runtime/rtshape.c runtime/rthome.c)
     target_include_directories(gcwii_sideways_tests PRIVATE runtime)
     target_compile_definitions(gcwii_sideways_tests PRIVATE RT_PAD_STANDIN RT_PAD_FORM_SIDEWAYS)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
