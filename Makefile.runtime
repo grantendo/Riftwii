@@ -16,6 +16,11 @@
 ifeq ($(strip $(DEVKITPPC)),)
 $(error "Please set DEVKITPPC in your environment. export DEVKITPPC=<path to>devkitPPC")
 endif
+# A target whose recipe fails (a blob whose .rodata/.data/.bss check rejects it)
+# is deleted, so a later make builds it again instead of reusing it
+# (CodeRabbit, fork #22).
+.DELETE_ON_ERROR:
+
 
 PREFIX  := $(DEVKITPPC)/bin/powerpc-eabi-
 .DEFAULT_GOAL := all

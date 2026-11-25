@@ -168,8 +168,8 @@ void TestHomeOnOwnChannel() {
     for (std::uint32_t c = 0; c < 4; ++c) rthome_probed(&h, c, c < 2 ? -1 : 0);
     Pads pads;
     pads.plug(1, kGcCombo);
-    rthome_pads_own(&h, pads.s, 1000, 1u << 1);  // port 2's controller stands in on channel 1
-    rthome_pads_own(&h, pads.s, 1200, 1u << 1);
+    rthome_pads_own(&h, pads.s, 1000, 1u << 1, 0u);  // port 2's controller stands in on channel 1
+    rthome_pads_own(&h, pads.s, 1200, 1u << 1, 0u);
     EXPECT_EQ(rthome_stand_in(&h, 1200), 1u);
 }
 
@@ -294,9 +294,24 @@ void TestOneChangeAtATimeAndKpadRead() {
     rthome_probed(&h, 0, 0);
     Pads combo;
     combo.plug(0, kGcCombo);
-    rthome_pads_own(&h, combo.s, 1000, 1u << 1);
-    rthome_pads_own(&h, combo.s, 1200, 1u << 1);
+    rthome_pads_own(&h, combo.s, 1000, 1u << 1, 0u);
+    rthome_pads_own(&h, combo.s, 1200, 1u << 1, 0u);
     EXPECT_EQ(rthome_stand_in(&h, 1200), 2u);
+    // A real Wii Remote found on channel 2 by KPAD reads since its last
+    // probe: the HOME stand-in takes channel 3 instead (CodeRabbit, fork #22).
+    rthome r;
+    std::memset(&r, 0, sizeof(r));
+    r.hold = 100;
+    r.press = 50;
+    r.wait = 1000;
+    r.linger = 100;
+    r.channel = RTHOME_NO_CHANNEL;
+    r.selected = RTHOME_NO_SELECTION;
+    rthome_probed(&r, 0, 0);
+    rthome_probed(&r, 2, -1);
+    rthome_pads_own(&r, combo.s, 1000, 1u << 1, 1u << 2);
+    rthome_pads_own(&r, combo.s, 1200, 1u << 1, 1u << 2);
+    EXPECT_EQ(rthome_stand_in(&r, 1200), 3u);
 }
 
 // A KPAD read with no error output: a real controller's reads that bring no

@@ -1447,7 +1447,10 @@ void plan_game_extras(const DolHeader& dol, const ExtrasContext& ctx, GameExtras
         const std::uint32_t resident_stage = resident != nullptr && resident->data_base != resident->stage_base
                                                  ? resident->stage_base : 0;
         out.pad.calibration = g_extras.pad_calibrated ? &g_extras.pad_calibration : nullptr;
-        out.pad.as_classic = g_extras.gc_as_classic;
+        // The same gate as discovery and the fetch (boot_after_unmount): a
+        // game that clears MEM1's top, or a code build, takes no stand-in
+        // (CodeRabbit, fork #22).
+        out.pad.as_classic = g_extras.gc_as_classic && !ctx.clears_mem1_top && !ctx.code_build;
         if (!plan_pad_hook(dol, ctx.arena1_hi, ctx.mem1_floor, ctx.arena2_lo,
                            resident != nullptr ? resident->ioctl_async_original : 0,
                            resident != nullptr ? resident->ioctlv_async_original : 0, patches, out.pad, why,
