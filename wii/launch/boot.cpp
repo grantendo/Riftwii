@@ -1332,8 +1332,11 @@ bool prepare_gc_pads(const DolHeader& dol, bool gc_adapter, bool gx_protected, b
         pad.standin_sideways = pad.standin && g_extras.gc_standin_sideways;
     }
     // No USB for the game (the Wii's own ports only, or the adapter off):
-    // the menu's adapter session is let go.
-    if (!gc_adapter || !usb) close_adapter_session();
+    // the menu's adapter session is let go, except after a launch the pads
+    // plugin refused: the failure screen comes next and needs the adapter
+    // (console, 24 Nov: with the session closed, the screen's adapter
+    // answered -4 to everything).
+    if ((!gc_adapter || !usb) && !pads_plugin_stopped_launch()) close_adapter_session();
     // Settings > GameCube rumble Off: the SDK's PADControlMotor returns at
     // once, for the Wii's own ports and the adapter alike (the adapter's
     // hook is not put on it then).
@@ -2706,6 +2709,12 @@ bool boot_after_unmount(const DiscProbe& probe, BootOptions& options, const Save
     gc_adapter = prepare_gc_pads(dol, gc_adapter, gx_protected, g_extras.gc_standin && !clears_mem1_top && !code_build,
                                  options.memory_patches, extras.pad);
     // Its code from the pads plugin while the card is still RiftWii's.
+    // Refused before the adapter's handle was taken (pads_plugin_usable): the
+    // launch stops here, the adapter left for the failure screen.
+    if (pads_plugin_stopped_launch()) {
+        error = pads_plugin_refusal();
+        return false;
+    }
     if (gc_adapter && !fetch_pad_build(extras.pad, code_build, error)) return false;
     if (!gc_adapter) release_pads_plugin();
 
@@ -4623,7 +4632,11 @@ bool boot_channel(ChannelBootFiles files, std::string& error) {
         prepare_gc_pads(dol, adapter_wanted, gx_protected, g_extras.gc_standin && !clears_mem1_top, {}, extras.pad);
     // Its code from the pads plugin while the card is still RiftWii's
     // (a channel is never a code build).
-    if (extras_context.gc_adapter && !fetch_pad_build(extras.pad, false, error)) {
+    // Refused before the adapter's handle was taken (pads_plugin_usable), or
+    // by the copy itself.
+    const bool refused_early = pads_plugin_stopped_launch();
+    if (refused_early) error = pads_plugin_refusal();
+    if (refused_early || (extras_context.gc_adapter && !fetch_pad_build(extras.pad, false, error))) {
         // d2x's NAND emulation holds the card for the game: it lets go now
         // (writing out what it holds), as after a refused start, and the
         // card comes back for the failure's log and the restart. If d2x

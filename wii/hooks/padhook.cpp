@@ -232,7 +232,23 @@ constexpr std::uint32_t kBuildBytes[kBlobKinds] = RIFTWII_PAD_BUILD_BYTES;
 constexpr char kPadsPlugin[] = "pads";
 std::uint8_t* g_build = nullptr;
 int g_build_kind = -1;
-bool g_pads_refused = false;  // fetch_pad_build stopped this launch
+bool g_pads_refused = false;  // fetch_pad_build (or the check before the adapter's handle) stopped this launch
+std::string g_pads_refusal;   // the sentence for the player when the check before the handle refused
+
+// Whether the pads plugin can be used, asked before the adapter's handle is
+// taken: refused here, the launch stops with the adapter left as the menu had
+// it, so the failure screen can start it (console, 24 Nov: refused after the
+// handle was taken and closed, the screen's adapter answered -4 to everything,
+// and a player with GameCube controllers only couldn't leave it).
+bool pads_plugin_usable() {
+    std::string message;
+    if (plugin::Use(kPadsPlugin, &message) != nullptr) return true;
+    g_pads_refused = true;
+    g_pads_refusal = !message.empty()
+                         ? message
+                         : tr("A part of RiftWii couldn't be used (the {1} add-on). Update RiftWii again.", {kPadsPlugin});
+    return false;
+}
 void forget_build() {
     std::free(g_build);
     g_build = nullptr;
@@ -971,6 +987,13 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         out.ven_fd = -1;
         return true;
     }
+    // The pad code's plugin first: a launch it can't serve stops before the
+    // adapter's handle is taken (pads_plugin_usable).
+    if (!pads_plugin_usable()) {
+        why = "the pads plugin can't be used (its own line above says why); the launch stops before the adapter's "
+              "handle is taken";
+        return false;
+    }
     if (!take_adapter_handle(out.fd, out.version, out.known_dev, why, &out.devices_unknown)) {
         if (!demo) return false;
         logf("GameCube adapter: %s; demo mode goes on without it\n", why.c_str());
@@ -1176,6 +1199,7 @@ PadsPluginForLaunch::PadsPluginForLaunch(bool wanted) {
     // code (fetch_pad_build) can't carry an earlier launch's over to the
     // channel fallback (CodeRabbit CLI, #609).
     g_pads_refused = false;
+    g_pads_refusal.clear();
     if (!wanted) return;
     // A refusal is logged by the loader; fetch_pad_build asks again and
     // stops the launch with the loader's sentence if the game needs it.
@@ -1193,6 +1217,8 @@ PadsPluginForLaunch::~PadsPluginForLaunch() {
 }
 
 bool pads_plugin_stopped_launch() { return g_pads_refused; }
+
+std::string pads_plugin_refusal() { return g_pads_refusal; }
 
 void release_pads_plugin() {
     plugin::ShutdownAll("this game takes no pad code");
@@ -1221,6 +1247,9 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
     request.build = static_cast<std::uint32_t>(kind);
     request.out = g_build;
     request.capacity = bytes;
+    // Only what this launch's loader says reaches the player: an earlier
+    // value of the caller's string never does (CodeRabbit on #616).
+    message.clear();
     const std::int32_t result = plugin::Launch(kPadsPlugin, &request, sizeof(request), message);
     // The copy needs none of the plugin's code: its arena goes back to the
     // heap before anything else of the launch is placed.
@@ -1236,9 +1265,12 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
         return false;
     };
     if (result == -1) {
-        // The loader's own line says why; the player gets a sentence too,
-        // not whatever `message` held (CodeRabbit on #616).
-        message = tr("A part of RiftWii couldn't be used (the {1} add-on). Update RiftWii again.", {kPadsPlugin});
+        // plugin::Launch gives its own sentence for the player with -1 (a
+        // missing plugin: "A part of RiftWii is missing ..."): kept, with a
+        // general one only where it gave none (console, 24 Nov: the general
+        // one had replaced "missing").
+        if (message.empty())
+            message = tr("A part of RiftWii couldn't be used (the {1} add-on). Update RiftWii again.", {kPadsPlugin});
         return fail("the plugin could not be used (its own line above says why)", false);
     }
     if (result != RWP_PADS_COPIED)
