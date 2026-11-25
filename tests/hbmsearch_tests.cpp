@@ -780,6 +780,24 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
     }
     {
+        // Two branches, each around one `li r4,-1`: with both taken, r4 is
+        // 0 at the call, so not a "no controller" call (CodeRabbit CLI).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(li(4, 0));
+        t.put(kMtctrR12);
+        t.put(kBeqPlus8Skip);
+        t.put(li(4, -1));
+        t.put(kBeqPlus8Skip);
+        t.put(li(4, -1));
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
+    }
+    {
         // A branch that skips `li r4,-1` and still reaches the call (r4 0
         // there): not a "no controller" call (CodeRabbit on #616).
         Section t{0x80218000, {}};

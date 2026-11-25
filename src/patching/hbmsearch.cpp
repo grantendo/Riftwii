@@ -515,67 +515,72 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
             const auto setter = std::find_if(setters.begin(), setters.end(),
                                              [&](const auto& s) { return s.second == simm(insn); });
             if (setter == setters.end()) continue;
-            bool gone = false, ctr_from_slot = false;
             // r12, the loaded slot, and its copies (`mr`), over the words up
             // to its call.
             const std::size_t window_end = std::min(words, i + 1 + kCallWindow);
             RegTrack regs(text, r, i + 1, window_end, RegTrack::kArguments);
             regs.follow(12);
-            std::size_t last_r4 = 0;   // where r4 was last written
-            std::size_t last_ctr = 0;  // where CTR was last written
-            // Conditional branches on the way (where, where to, and whether
-            // r4 was -1 and CTR the slot's there): one that lands after r4's
-            // last write but not past the call skips that write, so on that
-            // path the call sees r4 as it was at the branch (CodeRabbit on
-            // #616); the same for CTR (CodeRabbit CLI).
-            struct Fork {
-                std::size_t at;
-                std::int64_t to;
-                bool gone, ctr_from_slot;
+            // What each word on the way does to r4 (the callback's argument:
+            // `li r4,-1` is "no controller", any other write isn't) and to
+            // CTR (an `mtctr` from the slot or a copy, or anything else),
+            // and where a conditional branch goes; then every path from the
+            // load to the call is followed, and the call is the slot's "no
+            // controller" only if each path has both (CodeRabbit on #616,
+            // CodeRabbit CLI: a branch around either write).
+            struct Word {
+                std::int8_t r4 = 0, ctr = 0;  // 0: untouched, 1: -1 / the slot's, 2: anything else
+                std::int64_t to = -1;         // a conditional branch's target word, -1: none
             };
-            std::vector<Fork> forks;
+            std::vector<Word> way;
             for (std::size_t k = i + 1; k < words && k <= i + kCallWindow; ++k) {
                 const std::uint32_t next = be32(r.bytes + 4 * k);
                 if (next == kBctrl) {
-                    for (const Fork& fork : forks) {
-                        const bool lands = fork.to <= static_cast<std::int64_t>(k);
-                        if (lands && fork.at < last_r4 && fork.to > static_cast<std::int64_t>(last_r4))
-                            gone = gone && fork.gone;
-                        // A branch around the last `mtctr` calls what CTR
-                        // held at the branch (CodeRabbit CLI, #616).
-                        if (lands && fork.at < last_ctr && fork.to > static_cast<std::int64_t>(last_ctr))
-                            ctr_from_slot = ctr_from_slot && fork.ctr_from_slot;
+                    bool every = true;
+                    std::vector<std::pair<std::size_t, std::pair<bool, bool>>> paths{{0, {false, false}}};
+                    while (!paths.empty() && every) {
+                        std::size_t p = paths.back().first;
+                        bool gone = paths.back().second.first, ctr = paths.back().second.second;
+                        paths.pop_back();
+                        for (; p < way.size(); ++p) {
+                            const Word& w = way[p];
+                            if (w.r4 != 0) gone = w.r4 == 1;
+                            if (w.ctr != 0) ctr = w.ctr == 1;
+                            if (w.to < 0) continue;
+                            const std::int64_t to = w.to - static_cast<std::int64_t>(i + 1);
+                            // Back, or onto the words before: not followed.
+                            if (to <= static_cast<std::int64_t>(p)) every = false;
+                            // To the call or before it; past it, that path
+                            // doesn't call (the `beq` past it when the slot
+                            // is empty).
+                            else if (to <= static_cast<std::int64_t>(way.size()))
+                                paths.push_back({static_cast<std::size_t>(to), {gone, ctr}});
+                        }
+                        every = every && gone && ctr;
                     }
                     // The call goes through CTR: only a call whose CTR came
                     // from the loaded slot is the slot's (CodeRabbit CLI, #15).
-                    if (gone && ctr_from_slot &&
-                        std::find(told_gone.begin(), told_gone.end(), setter->second) == told_gone.end())
+                    if (every && std::find(told_gone.begin(), told_gone.end(), setter->second) == told_gone.end())
                         told_gone.push_back(setter->second);
                     break;
                 }
+                Word w;
                 // mtctr rS: from the slot (r12 or a copy of it) or from
                 // anything else.
-                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) {
-                    ctr_from_slot = ((regs.copies(12) >> reg_d(next)) & 1u) != 0;
-                    last_ctr = k;
-                }
+                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) w.ctr = ((regs.copies(12) >> reg_d(next)) & 1u) != 0 ? 1 : 2;
                 regs.step(k);
                 // A jump or return, or r12 loaded again: not this slot's call
                 // (the `beq` past it when the slot is empty is fine).
                 if (opcode(next) == 18 || next == kBlr ||
                     ((opcode(next) == 32 || opcode(next) == 14) && reg_d(next) == 12))
                     break;
-                // r4, the callback's argument, as the call will see it: -1
-                // ("no controller") only if its last write was `li r4,-1`.
-                if (writes_register(next, 4)) {
-                    gone = is_li(next, -1);
-                    last_r4 = k;
-                }
+                if (writes_register(next, 4)) w.r4 = is_li(next, -1) ? 1 : 2;
                 if (opcode(next) == 16 && (next & 3u) == 0) {  // bc, relative, no link
                     std::int32_t offset = static_cast<std::int32_t>(next & 0xFFFCu);
                     if (offset & 0x8000) offset -= 0x10000;
-                    forks.push_back({k, static_cast<std::int64_t>(k) + offset / 4, gone, ctr_from_slot});
+                    w.to = static_cast<std::int64_t>(k) + offset / 4;
+                    if ((((next >> 21) & 31u) & 4u) == 0) w.ctr = 2;  // bdnz and kin count CTR down
                 }
+                way.push_back(w);
             }
         }
     }
