@@ -17,14 +17,13 @@
 
 #include <stdint.h>
 
+#include "rtslot.h"
+
 #define RTGCWII_CHANNELS 4u
 #define RTGCWII_PAD_BYTES 12u
 
 struct rtgcwii {
-    uint32_t grace;    /* ticks a port may report no controller before its channel's goes (loader-filled) */
-    uint32_t present;  /* channels with a GameCube controller behind them, one bit each */
-    uint32_t real;     /* channels where WPADProbe last found a real controller: the stand-in steps aside */
-    uint32_t told;     /* channels the game's connect callback last heard are connected (by this) */
+    struct rtslot slot;  /* who holds each Wii Remote slot, and what the game was told (rtslot.h) */
     uint32_t seen[RTGCWII_CHANNELS];  /* when each port last had a controller (low bit set), 0: gone */
     uint32_t hold[RTGCWII_CHANNELS];       /* each channel's Classic buttons now */
     uint32_t samples[RTGCWII_CHANNELS];    /* PADRead samples taken for it */
@@ -44,16 +43,11 @@ struct rtgcwii {
     uint32_t game_read;  /* when the game itself last called PADRead (low bit set), 0: never */
     uint32_t own_read;   /* when the blob last called it (low bit set), 0: never */
     uint32_t reading;    /* the blob's own PADRead call is under way */
-    uint32_t telling;    /* how many tellings of the game's connect callback are under way (PADReads meanwhile leave it to them) */
     /* A real controller's KPAD reads with no error output that brought no
      * samples: since when (low bit set; 0: the last read brought some) and
      * how many in a row. */
-    uint32_t empty_since[RTGCWII_CHANNELS];
-    uint32_t empty_reads[RTGCWII_CHANNELS];
-    uint32_t empty_last[RTGCWII_CHANNELS];  /* the last empty read (low bit set): a gap past `grace` starts over */
     /* When a real controller's channels were last checked with the game's
      * own WPADProbe (low bit set), 0: never (rtgcwii_real_check_due). */
-    uint32_t real_checked;
     /* The Wii Remote + Nunchuk form (RT_PAD_FORM_NUNCHUK; unused by the
      * Classic one, but every build has the same layout, which the loader
      * fills). */
@@ -78,7 +72,6 @@ struct rtgcwii {
      * as this stand-in's as the HOME stand-in took it, 0: a Classic one.
      * It keeps that shape until the next time it takes a channel, though
      * the controller unplugs under the menu (the Wii Remote forms only). */
-    uint32_t home_shaped;
     /* A 2006 KPAD game's WPADGetInfoAsync callback, answered for the
      * stand-in and told at the game's next KPAD read on that channel (as a
      * real Wii Remote's answer comes later), 0: none waiting. */
@@ -104,14 +97,9 @@ struct rtgcwii {
      * or WPADRead given the stand-in there) is told again every
      * retell_ticks, at most RTGCWII_RETELLS times. retell_ticks 0: never
      * (loader-filled, only where WPADRead is hooked). */
-    uint32_t retell_ticks;
-    uint32_t heard;                         /* channels read since they were told, one bit each */
-    uint32_t told_at[RTGCWII_CHANNELS];     /* when each was told (low bit set), 0: not noted yet */
-    uint32_t retells[RTGCWII_CHANNELS];     /* times told again since its controller came */
     /* Channels due to be told "connected" again (rtgcwii_retell), one bit
      * each: apart from `told`, which stays set, so a controller unplugged
      * before the telling is still told it's gone. */
-    uint32_t retell;
     /* wpad_connect_table is the later WPAD's (find_wpad_connect_later): the
      * game's sleeps read the pads for the stand-in only while the game
      * itself is quiet (rtgcwii_quiet_due, pad_hook.c's pad_reads_at_sleep).
@@ -120,19 +108,16 @@ struct rtgcwii {
     /* When the game last read a Wii controller through a hook (its KPAD
      * read, WPADProbe or WPADRead; low bit set), 0: never; and when the
      * first sleep that asked was (low bit set), 0: none yet. */
-    uint32_t wii_read, quiet_from;
     /* Quiet already reached: kept until the next Wii controller read, so the
      * time base wrapping round can't make an old timestamp look recent. */
-    uint32_t quiet_reached;
     /* WPAD's extension callbacks (the game's, WPADSetExtensionCallback):
      * the table of the channels' control blocks and the callback's place in
      * one (just before the connect callback's), 0: none. Told the stand-in's
      * attachment after its "connected" (pad_tell_extension). Loader-filled. */
     uint32_t wpad_ext_table, wpad_ext_offset;
-    uint32_t probe_counts[RTGCWII_CHANNELS];  /* rtgcwii_probe_count */
 };
 
-#define RTGCWII_RETELLS 30u
+#define RTGCWII_RETELLS RTSLOT_RETELLS
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
  * will see them (the adapter's already in): a port with a controller keeps
@@ -304,8 +289,8 @@ int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_
  * so: there, a real controller whose reads bring no samples for `grace`
  * ticks and RTGCWII_EMPTY_READS reads in a row has left too (a game that
  * stops calling WPADProbe would otherwise keep the stand-in away). */
-#define RTGCWII_NO_ERROR 0x7FFFFFFF
-#define RTGCWII_EMPTY_READS 30
+#define RTGCWII_NO_ERROR RTSLOT_NO_ERROR
+#define RTGCWII_EMPTY_READS RTSLOT_EMPTY_READS
 void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now);
 
 /* At a KPAD read or WPADProbe: whether the blob should call the game's

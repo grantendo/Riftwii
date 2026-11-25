@@ -1,0 +1,180 @@
+/* SPDX-FileCopyrightText: 2026 RiftWii contributors */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Who holds each Wii Remote slot, and what the game has been told
+ * (rtslot.h): the stand-ins' one place for those decisions. */
+#include "rtslot.h"
+
+/* Ticks since a time noted with its low bit set (so 0 can mean "none"). */
+static uint32_t rtslot_elapsed(uint32_t now, uint32_t noted) { return now - (noted & ~1u); }
+
+uint32_t rtslot_probe_count(const struct rtslot* s, uint32_t channel) {
+    return channel < RTSLOT_SLOTS ? s->probe_counts[channel] : 0u;
+}
+
+void rtslot_probed(struct rtslot* s, uint32_t channel, int32_t result) {
+    uint32_t bit;
+    if (channel >= RTSLOT_SLOTS || result == -2) return;  /* busy: no answer either way */
+    ++s->probe_counts[channel];
+    bit = 1u << channel;
+    if (result == 0) {
+        s->real |= bit;
+        /* A controller there now: any count of empty reads starts over. */
+        s->empty_since[channel] = 0;
+        s->empty_reads[channel] = 0;
+    } else if (s->real & bit) {
+        /* The real controller left, and the game's library told the game
+         * so: the stand-in is announced again. */
+        s->real &= ~bit;
+        s->told &= ~bit;
+        s->empty_since[channel] = 0;
+        s->empty_reads[channel] = 0;
+    }
+}
+
+int rtslot_on(const struct rtslot* s, uint32_t channel) {
+    if (channel >= RTSLOT_SLOTS) return 0;
+    return ((s->present & ~s->real) >> channel) & 1u;
+}
+
+uint32_t rtslot_shaped(const struct rtslot* s) { return (s->present & ~s->real) | s->told | s->home_shaped; }
+
+void rtslot_home_took(struct rtslot* s, uint32_t channel) {
+    s->home_shaped = 0;
+    if (channel < RTSLOT_SLOTS) s->home_shaped = rtslot_shaped(s) & (1u << channel);
+}
+
+int rtslot_home_keeps_shape(const struct rtslot* s, uint32_t channel) {
+    return channel < RTSLOT_SLOTS && ((s->home_shaped >> channel) & 1u);
+}
+
+void rtslot_connect_change(struct rtslot* s, uint32_t* leave, uint32_t* join) {
+    const uint32_t now_on = s->present & ~s->real;
+    *join = now_on & ~s->told;
+    /* Only channels it was told about and no real controller holds. */
+    *leave = s->told & ~now_on & ~s->real;
+    s->told = (s->told | *join) & ~*leave;
+}
+
+void rtslot_wii_read(struct rtslot* s, uint32_t now) {
+    s->wii_read = now | 1u;
+    s->quiet_reached = 0;
+}
+
+int rtslot_quiet_due(struct rtslot* s, uint32_t now, uint32_t ticks_per_ms) {
+    if (s->quiet_reached) return 1;
+    if (s->wii_read != 0) {
+        s->quiet_reached = rtslot_elapsed(now, s->wii_read) >= 3000u * ticks_per_ms;
+        return (int)s->quiet_reached;
+    }
+    if (s->quiet_from == 0) {
+        s->quiet_from = now | 1u;
+        return 0;
+    }
+    s->quiet_reached = rtslot_elapsed(now, s->quiet_from) >= 5000u * ticks_per_ms;
+    return (int)s->quiet_reached;
+}
+
+int rtslot_real_check_due(struct rtslot* s, uint32_t now, uint32_t ticks_per_ms) {
+    if (s->real == 0) return 0;
+    if (s->real_checked != 0 && rtslot_elapsed(now, s->real_checked) < 250u * ticks_per_ms) return 0;
+    s->real_checked = now | 1u;
+    return 1;
+}
+
+int rtslot_next_change(struct rtslot* s, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason) {
+    uint32_t leave = 0, join = 0, i;
+    const uint32_t now_on = s->present & ~s->real;
+    /* A channel due to be told again is told "connected" once more; one
+     * that left before that is told it's gone (it still counts as told). */
+    join = now_on & (~s->told | s->retell) & ~skip;
+    leave = s->told & ~now_on & ~s->real & ~skip & ~keep;
+    s->retell &= now_on;
+    for (i = 0; i < RTSLOT_SLOTS; ++i) {
+        const uint32_t bit = 1u << i;
+        if (!((join | leave) & bit)) continue;
+        *channel = i;
+        *reason = (join & bit) ? 0 : -1;
+        if (join & bit) {
+            s->told |= bit;
+            s->retell &= ~bit;
+            /* A new "connected": only a read after it says the game heard
+             * it (a WPADRead before the callback was told doesn't). */
+            s->heard &= ~bit;
+        } else {
+            s->told &= ~bit;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+void rtslot_kpad_read(struct rtslot* s, uint32_t channel, int32_t result, int32_t error, uint32_t now) {
+    uint32_t bit;
+    if (channel >= RTSLOT_SLOTS) return;
+    bit = 1u << channel;
+    if (result > 0) {
+        s->empty_since[channel] = 0;
+        s->empty_reads[channel] = 0;
+        rtslot_probed(s, channel, 0);
+    } else if (error == -1) {
+        s->empty_since[channel] = 0;
+        s->empty_reads[channel] = 0;
+        rtslot_probed(s, channel, -1);
+    } else if (error == RTSLOT_NO_ERROR && (s->real & bit)) {
+        /* A read with no error output can't say "no controller": a real
+         * controller that brings no samples for a while (and many reads in
+         * a row, so a pause in the game's reading doesn't count) has left. */
+        /* Reads that keep coming: a pause longer than `grace` between two
+         * empty ones starts the count over (a burst, a pause and one more
+         * read isn't a controller gone; CodeRabbit on #609). */
+        if (s->empty_since[channel] != 0 && rtslot_elapsed(now, s->empty_last[channel]) > s->grace)
+            s->empty_since[channel] = 0;
+        s->empty_last[channel] = now | 1u;
+        if (s->empty_since[channel] == 0) {
+            s->empty_since[channel] = now | 1u;
+            s->empty_reads[channel] = 1;
+        } else if (++s->empty_reads[channel] >= RTSLOT_EMPTY_READS &&
+                   rtslot_elapsed(now, s->empty_since[channel]) >= s->grace) {
+            s->empty_since[channel] = 0;
+            s->empty_reads[channel] = 0;
+            rtslot_probed(s, channel, -1);
+        }
+    }
+}
+
+void rtslot_still_told(struct rtslot* s, uint32_t channel) {
+    if (channel < RTSLOT_SLOTS) s->told |= 1u << channel;
+}
+
+void rtslot_not_told(struct rtslot* s, uint32_t channel) {
+    if (channel < RTSLOT_SLOTS) s->told &= ~(1u << channel);
+}
+
+void rtslot_heard(struct rtslot* s, uint32_t channel) {
+    if (channel < RTSLOT_SLOTS) s->heard |= 1u << channel;
+}
+
+void rtslot_retell(struct rtslot* s, uint32_t now) {
+    uint32_t i;
+    if (s->retell_ticks == 0) return;
+    for (i = 0; i < RTSLOT_SLOTS; ++i) {
+        const uint32_t bit = 1u << i;
+        if (!rtslot_on(s, i)) {
+            /* Gone (or a real controller's): the next controller starts afresh. */
+            s->heard &= ~bit;
+            s->retell &= ~bit;
+            s->told_at[i] = 0;
+            s->retells[i] = 0;
+            continue;
+        }
+        if (!(s->told & bit) || (s->heard & bit) || (s->retell & bit)) continue;  /* still to tell, heard, or due */
+        if (s->told_at[i] == 0) {
+            s->told_at[i] = now | 1u;
+            continue;
+        }
+        if (rtslot_elapsed(now, s->told_at[i]) < s->retell_ticks || s->retells[i] >= RTSLOT_RETELLS) continue;
+        s->retell |= bit;
+        s->told_at[i] = 0;
+        ++s->retells[i];
+    }
+}

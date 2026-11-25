@@ -1592,7 +1592,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         out.gcwii_base = out.state_base + gcwii_at;
         auto* state = reinterpret_cast<rtgcwii*>(out.gcwii_base);
         std::memset(state, 0, sizeof(rtgcwii));
-        state->grace = kGcwiiGraceMs * (kBusClock / 4000u);
+        state->slot.grace = kGcwiiGraceMs * (kBusClock / 4000u);
         state->pointer_show = kGcwiiPointerShowMs * (kBusClock / 4000u);
         state->shake_flip = kGcwiiShakeFlipMs * (kBusClock / 4000u);
         state->kpad_dpd = out.kpad_dpd.base;
@@ -1942,7 +1942,7 @@ bool install_pad_hook(PadHook& hook, std::string& why) {
         // A game that reads WPAD itself is told of the stand-in again until
         // it reads it (rtgcwii_retell); every other game is told once.
         auto* state = reinterpret_cast<rtgcwii*>(ctx->gcwii);
-        state->retell_ticks = kGcwiiRetellMs * ctx->ticks_per_ms;
+        state->slot.retell_ticks = kGcwiiRetellMs * ctx->ticks_per_ms;
         DCFlushRange(state, sizeof(*state));
     }
     ctx->home_on = home && !hook.home_combo_off ? 1u : 0u;

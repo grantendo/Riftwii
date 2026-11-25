@@ -48,7 +48,7 @@ struct Pads {
 rtgcwii fresh() {
     rtgcwii w;
     std::memset(&w, 0, sizeof(w));
-    w.grace = kGrace;
+    w.slot.grace = kGrace;
     w.pointer_show = kShowFor;
     return w;
 }

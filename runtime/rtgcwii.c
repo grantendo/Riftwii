@@ -173,11 +173,11 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
             w->hold[i] = rthome_map_classic(rtgcwii_pad_buttons(s), RTHOME_CL_PLUS);
 #endif
             /* Newly plugged in: what it holds already isn't newly pressed. */
-            if (!(w->present & bit)) w->delivered[i] = w->hold[i];
+            if (!(w->slot.present & bit)) w->delivered[i] = w->hold[i];
             ++w->samples[i];
-            w->present |= bit;
-        } else if ((w->present & bit) && rtgcwii_elapsed(now, w->seen[i]) >= w->grace) {
-            w->present &= ~bit;
+            w->slot.present |= bit;
+        } else if ((w->slot.present & bit) && rtgcwii_elapsed(now, w->seen[i]) >= w->slot.grace) {
+            w->slot.present &= ~bit;
             w->seen[i] = 0;
             w->hold[i] = w->delivered[i] = 0;
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
@@ -188,7 +188,7 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
              * old mark never reads as recent after the time base wraps. */
             w->pointer_moved[i] = 0;
 #endif
-        } else if (w->present & bit) {
+        } else if (w->slot.present & bit) {
             /* A dropped report, within the grace period: the buttons stay
              * as held, but it is a new sample, so a press already given to
              * the game isn't given again at each read until a report comes. */
@@ -197,79 +197,25 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     }
 }
 
-uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel) {
-    return channel < RTGCWII_CHANNELS ? w->probe_counts[channel] : 0u;
-}
+uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel) { return rtslot_probe_count(&w->slot, channel); }
 
-void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result) {
-    uint32_t bit;
-    if (channel >= RTGCWII_CHANNELS || result == -2) return;  /* busy: no answer either way */
-    ++w->probe_counts[channel];
-    bit = 1u << channel;
-    if (result == 0) {
-        w->real |= bit;
-        /* A controller there now: any count of empty reads starts over. */
-        w->empty_since[channel] = 0;
-        w->empty_reads[channel] = 0;
-    } else if (w->real & bit) {
-        /* The real controller left, and the game's library told the game
-         * so: the stand-in is announced again. */
-        w->real &= ~bit;
-        w->told &= ~bit;
-        w->empty_since[channel] = 0;
-        w->empty_reads[channel] = 0;
-    }
-}
+void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result) { rtslot_probed(&w->slot, channel, result); }
 
-int rtgcwii_on(const struct rtgcwii* w, uint32_t channel) {
-    if (channel >= RTGCWII_CHANNELS) return 0;
-    return ((w->present & ~w->real) >> channel) & 1u;
-}
+int rtgcwii_on(const struct rtgcwii* w, uint32_t channel) { return rtslot_on(&w->slot, channel); }
 
-uint32_t rtgcwii_shaped(const struct rtgcwii* w) { return (w->present & ~w->real) | w->told | w->home_shaped; }
+uint32_t rtgcwii_shaped(const struct rtgcwii* w) { return rtslot_shaped(&w->slot); }
 
-void rtgcwii_home_took(struct rtgcwii* w, uint32_t channel) {
-    w->home_shaped = 0;
-    if (channel < RTGCWII_CHANNELS) w->home_shaped = rtgcwii_shaped(w) & (1u << channel);
-}
+void rtgcwii_home_took(struct rtgcwii* w, uint32_t channel) { rtslot_home_took(&w->slot, channel); }
 
-int rtgcwii_home_keeps_shape(const struct rtgcwii* w, uint32_t channel) {
-    return channel < RTGCWII_CHANNELS && ((w->home_shaped >> channel) & 1u);
-}
+int rtgcwii_home_keeps_shape(const struct rtgcwii* w, uint32_t channel) { return rtslot_home_keeps_shape(&w->slot, channel); }
 
-void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join) {
-    const uint32_t now_on = w->present & ~w->real;
-    *join = now_on & ~w->told;
-    /* Only channels it was told about and no real controller holds. */
-    *leave = w->told & ~now_on & ~w->real;
-    w->told = (w->told | *join) & ~*leave;
-}
+void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join) { rtslot_connect_change(&w->slot, leave, join); }
 
-void rtgcwii_wii_read(struct rtgcwii* w, uint32_t now) {
-    w->wii_read = now | 1u;
-    w->quiet_reached = 0;
-}
+void rtgcwii_wii_read(struct rtgcwii* w, uint32_t now) { rtslot_wii_read(&w->slot, now); }
 
-int rtgcwii_quiet_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
-    if (w->quiet_reached) return 1;
-    if (w->wii_read != 0) {
-        w->quiet_reached = rtgcwii_elapsed(now, w->wii_read) >= 3000u * ticks_per_ms;
-        return (int)w->quiet_reached;
-    }
-    if (w->quiet_from == 0) {
-        w->quiet_from = now | 1u;
-        return 0;
-    }
-    w->quiet_reached = rtgcwii_elapsed(now, w->quiet_from) >= 5000u * ticks_per_ms;
-    return (int)w->quiet_reached;
-}
+int rtgcwii_quiet_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) { return rtslot_quiet_due(&w->slot, now, ticks_per_ms); }
 
-int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
-    if (w->real == 0) return 0;
-    if (w->real_checked != 0 && rtgcwii_elapsed(now, w->real_checked) < 250u * ticks_per_ms) return 0;
-    w->real_checked = now | 1u;
-    return 1;
-}
+int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) { return rtslot_real_check_due(&w->slot, now, ticks_per_ms); }
 
 int rtgcwii_should_read(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
     if (w->reading) return 0;
@@ -452,103 +398,17 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
     return rtgcwii_on(w, channel) ? w->hold[channel] : 0u;
 }
 
-int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason) {
-    uint32_t leave = 0, join = 0, i;
-    const uint32_t now_on = w->present & ~w->real;
-    /* A channel due to be told again is told "connected" once more; one
-     * that left before that is told it's gone (it still counts as told). */
-    join = now_on & (~w->told | w->retell) & ~skip;
-    leave = w->told & ~now_on & ~w->real & ~skip & ~keep;
-    w->retell &= now_on;
-    for (i = 0; i < RTGCWII_CHANNELS; ++i) {
-        const uint32_t bit = 1u << i;
-        if (!((join | leave) & bit)) continue;
-        *channel = i;
-        *reason = (join & bit) ? 0 : -1;
-        if (join & bit) {
-            w->told |= bit;
-            w->retell &= ~bit;
-            /* A new "connected": only a read after it says the game heard
-             * it (a WPADRead before the callback was told doesn't). */
-            w->heard &= ~bit;
-        } else {
-            w->told &= ~bit;
-        }
-        return 1;
-    }
-    return 0;
-}
+int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason) { return rtslot_next_change(&w->slot, skip, keep, channel, reason); }
 
-void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now) {
-    uint32_t bit;
-    if (channel >= RTGCWII_CHANNELS) return;
-    bit = 1u << channel;
-    if (result > 0) {
-        w->empty_since[channel] = 0;
-        w->empty_reads[channel] = 0;
-        rtgcwii_probed(w, channel, 0);
-    } else if (error == -1) {
-        w->empty_since[channel] = 0;
-        w->empty_reads[channel] = 0;
-        rtgcwii_probed(w, channel, -1);
-    } else if (error == RTGCWII_NO_ERROR && (w->real & bit)) {
-        /* A read with no error output can't say "no controller": a real
-         * controller that brings no samples for a while (and many reads in
-         * a row, so a pause in the game's reading doesn't count) has left. */
-        /* Reads that keep coming: a pause longer than `grace` between two
-         * empty ones starts the count over (a burst, a pause and one more
-         * read isn't a controller gone; CodeRabbit on #609). */
-        if (w->empty_since[channel] != 0 && rtgcwii_elapsed(now, w->empty_last[channel]) > w->grace)
-            w->empty_since[channel] = 0;
-        w->empty_last[channel] = now | 1u;
-        if (w->empty_since[channel] == 0) {
-            w->empty_since[channel] = now | 1u;
-            w->empty_reads[channel] = 1;
-        } else if (++w->empty_reads[channel] >= RTGCWII_EMPTY_READS &&
-                   rtgcwii_elapsed(now, w->empty_since[channel]) >= w->grace) {
-            w->empty_since[channel] = 0;
-            w->empty_reads[channel] = 0;
-            rtgcwii_probed(w, channel, -1);
-        }
-    }
-}
+void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now) { rtslot_kpad_read(&w->slot, channel, result, error, now); }
 
-void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel) {
-    if (channel < RTGCWII_CHANNELS) w->told |= 1u << channel;
-}
+void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel) { rtslot_still_told(&w->slot, channel); }
 
-void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel) {
-    if (channel < RTGCWII_CHANNELS) w->told &= ~(1u << channel);
-}
+void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel) { rtslot_not_told(&w->slot, channel); }
 
-void rtgcwii_heard(struct rtgcwii* w, uint32_t channel) {
-    if (channel < RTGCWII_CHANNELS) w->heard |= 1u << channel;
-}
+void rtgcwii_heard(struct rtgcwii* w, uint32_t channel) { rtslot_heard(&w->slot, channel); }
 
-void rtgcwii_retell(struct rtgcwii* w, uint32_t now) {
-    uint32_t i;
-    if (w->retell_ticks == 0) return;
-    for (i = 0; i < RTGCWII_CHANNELS; ++i) {
-        const uint32_t bit = 1u << i;
-        if (!rtgcwii_on(w, i)) {
-            /* Gone (or a real controller's): the next controller starts afresh. */
-            w->heard &= ~bit;
-            w->retell &= ~bit;
-            w->told_at[i] = 0;
-            w->retells[i] = 0;
-            continue;
-        }
-        if (!(w->told & bit) || (w->heard & bit) || (w->retell & bit)) continue;  /* still to tell, heard, or due */
-        if (w->told_at[i] == 0) {
-            w->told_at[i] = now | 1u;
-            continue;
-        }
-        if (rtgcwii_elapsed(now, w->told_at[i]) < w->retell_ticks || w->retells[i] >= RTGCWII_RETELLS) continue;
-        w->retell |= bit;
-        w->told_at[i] = 0;
-        ++w->retells[i];
-    }
-}
+void rtgcwii_retell(struct rtgcwii* w, uint32_t now) { rtslot_retell(&w->slot, now); }
 
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
 static void rtgcwii_put16(uint8_t* p, int32_t v) {

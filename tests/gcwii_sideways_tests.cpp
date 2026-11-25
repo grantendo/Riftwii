@@ -47,7 +47,7 @@ struct Pads {
 rtgcwii fresh() {
     rtgcwii w;
     std::memset(&w, 0, sizeof(w));
-    w.grace = kGrace;
+    w.slot.grace = kGrace;
     w.pointer_show = 2000;
     return w;
 }
@@ -313,24 +313,24 @@ void TestRetell() {
     EXPECT_EQ(reason, 0);
     rtgcwii_retell(&w, 10);  // off
     rtgcwii_retell(&w, 100000);
-    EXPECT_EQ(w.told, 1u);
-    w.retell_ticks = 100;
+    EXPECT_EQ(w.slot.told, 1u);
+    w.slot.retell_ticks = 100;
     rtgcwii_retell(&w, 200);  // notes when
     rtgcwii_retell(&w, 299);
-    EXPECT_EQ(w.told, 1u);
+    EXPECT_EQ(w.slot.told, 1u);
     rtgcwii_retell(&w, 300);
-    EXPECT_EQ(w.told, 1u);  // still told...
-    EXPECT_EQ(w.retell, 1u);  // ...and due to be told again
-    EXPECT_EQ(w.retells[0], 1u);
+    EXPECT_EQ(w.slot.told, 1u);  // still told...
+    EXPECT_EQ(w.slot.retell, 1u);  // ...and due to be told again
+    EXPECT_EQ(w.slot.retells[0], 1u);
     EXPECT_EQ(rtgcwii_next_change(&w, 0, 0, &chan, &reason), 1);
     EXPECT_EQ(reason, 0);
     // Read now: never again.
     rtgcwii_heard(&w, 0);
     rtgcwii_retell(&w, 400);
     rtgcwii_retell(&w, 1000);
-    EXPECT_EQ(w.told, 1u);
+    EXPECT_EQ(w.slot.told, 1u);
     // At most RTGCWII_RETELLS times while it stays.
-    w.heard = 0;
+    w.slot.heard = 0;
     std::uint32_t t = 2000;
     for (unsigned i = 0; i < 2 * RTGCWII_RETELLS; ++i) {
         rtgcwii_retell(&w, t);
@@ -338,13 +338,13 @@ void TestRetell() {
         rtgcwii_next_change(&w, 0, 0, &chan, &reason);
         t += 200;
     }
-    EXPECT_EQ(w.retells[0], RTGCWII_RETELLS);
+    EXPECT_EQ(w.slot.retells[0], RTGCWII_RETELLS);
     // Unplugged: forgotten, so the next controller is told again as new.
     Pads none;
     rtgcwii_pads(&w, none.s, t + kGrace);
     rtgcwii_retell(&w, t + kGrace);
-    EXPECT_EQ(w.retells[0], 0u);
-    EXPECT_EQ(w.heard, 0u);
+    EXPECT_EQ(w.slot.retells[0], 0u);
+    EXPECT_EQ(w.slot.heard, 0u);
     // A read before the callback was told (a WPADRead) doesn't count as
     // heard once it is: the new "connected" clears it.
     {
@@ -354,7 +354,7 @@ void TestRetell() {
         rtgcwii_pads(&w3, p3.s, 1);
         rtgcwii_heard(&w3, 0);
         EXPECT_EQ(rtgcwii_next_change(&w3, 0, 0, &chan, &reason), 1);
-        EXPECT_EQ(w3.heard, 0u);
+        EXPECT_EQ(w3.slot.heard, 0u);
     }
     // Due to be told again, but unplugged first: told it's gone, not left
     // connected in the game (CodeRabbit CLI, #15).
@@ -364,10 +364,10 @@ void TestRetell() {
         p4.plug(0);
         rtgcwii_pads(&w4, p4.s, 1);
         EXPECT_EQ(rtgcwii_next_change(&w4, 0, 0, &chan, &reason), 1);
-        w4.retell_ticks = 100;
+        w4.slot.retell_ticks = 100;
         rtgcwii_retell(&w4, 200);
         rtgcwii_retell(&w4, 300);
-        EXPECT_EQ(w4.retell, 1u);
+        EXPECT_EQ(w4.slot.retell, 1u);
         Pads none4;
         rtgcwii_pads(&w4, none4.s, 300 + 2 * kGrace);
         EXPECT_EQ(rtgcwii_on(&w4, 0), 0);
@@ -376,17 +376,17 @@ void TestRetell() {
         EXPECT_EQ(rtgcwii_next_change(&w4, 0, 0, &chan, &reason), 1);
         EXPECT_EQ(chan, 0u);
         EXPECT_EQ(reason, -1);
-        EXPECT_EQ(w4.told, 0u);
-        EXPECT_EQ(w4.retell, 0u);
+        EXPECT_EQ(w4.slot.told, 0u);
+        EXPECT_EQ(w4.slot.retell, 0u);
     }
     // A channel still to be told isn't counted.
     rtgcwii w2 = fresh();
-    w2.retell_ticks = 100;
+    w2.slot.retell_ticks = 100;
     rtgcwii_pads(&w2, p.s, 1);
     rtgcwii_retell(&w2, 1);
     rtgcwii_retell(&w2, 500);
-    EXPECT_EQ(w2.retells[0], 0u);
-    EXPECT_EQ(w2.told_at[0], 0u);
+    EXPECT_EQ(w2.slot.retells[0], 0u);
+    EXPECT_EQ(w2.slot.told_at[0], 0u);
 }
 
 }  // namespace
