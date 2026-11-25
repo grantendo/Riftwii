@@ -335,6 +335,30 @@ void TestWpadGetInfo() {
         t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), 0u);
     }
+    {
+        // An early return restoring r27/r28, branched around: the copies
+        // still hold the arguments at the stores after it (CodeRabbit CLI).
+        Section t{0x80030000, {}};
+        const std::uint32_t info = t.here();
+        t.put(stwu_r1(0x80));
+        t.put(kMflrR0);
+        t.put(kSlwiR0R3By2);
+        t.put(mr(27, 4));
+        t.put(mr(28, 5));
+        t.put(0x41820014u);  // beq +20, past the early return
+        t.put(lwz(27, 1, 0x6C));
+        t.put(lwz(28, 1, 0x70));
+        t.put(addi(1, 1, 0x80));
+        t.put(kBlr);
+        t.put(li(30, -2));
+        t.put(li(4, 0x15));
+        t.put(mulli(0, 0, 48));
+        t.put(stw(27, 1, 48));
+        t.put(stw(28, 1, 52));
+        t.put(addi(1, 1, 0x80));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_get_info({t.range()}), info);
+    }
 }
 
 // The 2006 WPADSetConnectCallback: the channel's control block from a table
@@ -736,6 +760,24 @@ void TestWpadConnectLater() {
         t.put(kBctrl);
         t.put(kBlr);
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
+    }
+    {
+        // CTR already the slot's before the branch, so the `mtctr` it skips
+        // changes nothing: both paths call the slot (CodeRabbit CLI).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(lwz(12, 29, 2212));
+        t.put(mr(3, 30));
+        t.put(li(4, -1));
+        t.put(kMtctrR12);
+        t.put(cmpwi(5, 0));
+        t.put(kBeqPlus8Skip);
+        t.put(kMtctrR12);
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
     }
     {
         // A branch that skips `li r4,-1` and still reaches the call (r4 0

@@ -281,10 +281,14 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
                 const bool copy4 = mr && ((insn >> 21) & 31u) == 4, copy5 = mr && ((insn >> 21) & 31u) == 5;
                 // A copy written over after it was made (`li r27,0`) no
                 // longer holds the argument (CodeRabbit CLI, #616).
-                // (A store made before that still counts: the epilogue's
-                // restore comes after it.)
-                if (!copy4 && info_reg >= 0 && writes_register(insn, static_cast<std::uint32_t>(info_reg))) info_reg = -1;
-                if (!copy5 && callback_reg >= 0 && writes_register(insn, static_cast<std::uint32_t>(callback_reg)))
+                // A store made before that still counts, and an early
+                // return's restore (epilogue_restore) a branch goes around
+                // doesn't end the copy (CodeRabbit CLI).
+                const bool restore = epilogue_restore(r.bytes, k, end);
+                if (!copy4 && !restore && info_reg >= 0 && writes_register(insn, static_cast<std::uint32_t>(info_reg)))
+                    info_reg = -1;
+                if (!copy5 && !restore && callback_reg >= 0 &&
+                    writes_register(insn, static_cast<std::uint32_t>(callback_reg)))
                     callback_reg = -1;
                 if (copy4) {
                     info_reg = static_cast<int>(reg_a(insn));
@@ -519,22 +523,28 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
             regs.follow(12);
             std::size_t last_r4 = 0;   // where r4 was last written
             std::size_t last_ctr = 0;  // where CTR was last written
-            // Conditional branches on the way (where, and where to): one that
-            // lands after r4's last write but not past the call skips that
-            // write, so the call may see another r4 (CodeRabbit on #616).
-            std::vector<std::pair<std::size_t, std::int64_t>> forks;
+            // Conditional branches on the way (where, where to, and whether
+            // r4 was -1 and CTR the slot's there): one that lands after r4's
+            // last write but not past the call skips that write, so on that
+            // path the call sees r4 as it was at the branch (CodeRabbit on
+            // #616); the same for CTR (CodeRabbit CLI).
+            struct Fork {
+                std::size_t at;
+                std::int64_t to;
+                bool gone, ctr_from_slot;
+            };
+            std::vector<Fork> forks;
             for (std::size_t k = i + 1; k < words && k <= i + kCallWindow; ++k) {
                 const std::uint32_t next = be32(r.bytes + 4 * k);
                 if (next == kBctrl) {
-                    for (const auto& fork : forks) {
-                        if (fork.first < last_r4 && fork.second > static_cast<std::int64_t>(last_r4) &&
-                            fork.second <= static_cast<std::int64_t>(k))
-                            gone = false;
-                        // The same for CTR: a branch around its `mtctr`
-                        // calls whatever CTR held before (CodeRabbit CLI, #616).
-                        if (fork.first < last_ctr && fork.second > static_cast<std::int64_t>(last_ctr) &&
-                            fork.second <= static_cast<std::int64_t>(k))
-                            ctr_from_slot = false;
+                    for (const Fork& fork : forks) {
+                        const bool lands = fork.to <= static_cast<std::int64_t>(k);
+                        if (lands && fork.at < last_r4 && fork.to > static_cast<std::int64_t>(last_r4))
+                            gone = gone && fork.gone;
+                        // A branch around the last `mtctr` calls what CTR
+                        // held at the branch (CodeRabbit CLI, #616).
+                        if (lands && fork.at < last_ctr && fork.to > static_cast<std::int64_t>(last_ctr))
+                            ctr_from_slot = ctr_from_slot && fork.ctr_from_slot;
                     }
                     // The call goes through CTR: only a call whose CTR came
                     // from the loaded slot is the slot's (CodeRabbit CLI, #15).
@@ -564,7 +574,7 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                 if (opcode(next) == 16 && (next & 3u) == 0) {  // bc, relative, no link
                     std::int32_t offset = static_cast<std::int32_t>(next & 0xFFFCu);
                     if (offset & 0x8000) offset -= 0x10000;
-                    forks.push_back({k, static_cast<std::int64_t>(k) + offset / 4});
+                    forks.push_back({k, static_cast<std::int64_t>(k) + offset / 4, gone, ctr_from_slot});
                 }
             }
         }
