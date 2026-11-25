@@ -220,6 +220,32 @@ void TestQuietLatch() {
     EXPECT_EQ(rtslot_quiet_due(&s, 9100, 1), 0);
 }
 
+// Mario Strikers Charged's WPAD copies an untouched, all-zero report with
+// error 0 on a slot no Wii Remote ever had: not a real one, the stand-in
+// keeps the slot. A blank report where a real one is known stays real.
+void TestBlankReportIsNotReal() {
+    rtslot s = fresh();
+    plug(s, 0);
+    EXPECT_EQ(rtslot_wpad_read(&s, 0, 0, 1), 0);
+    EXPECT_EQ(rtslot_owner(&s, 0, kNone), RTSLOT_STANDIN);
+    EXPECT_EQ(rtslot_wpad_read(&s, 0, 0, 0), 1);
+    EXPECT_EQ(rtslot_owner(&s, 0, kNone), RTSLOT_REAL);
+    EXPECT_EQ(rtslot_wpad_read(&s, 0, 0, 1), 1);
+    EXPECT_EQ(rtslot_owner(&s, 0, kNone), RTSLOT_REAL);
+}
+
+// Punch-Out!! reads only WPAD: "no controller" there is how it learns a
+// real Wii Remote left, and the stand-in comes back (and is told again).
+void TestWpadReadNoController() {
+    rtslot s = fresh();
+    plug(s, 1);
+    EXPECT_EQ(rtslot_wpad_read(&s, 1, 0, 0), 1);
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
+    EXPECT_EQ(rtslot_wpad_read(&s, 1, -1, 1), 0);
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_STANDIN);
+    EXPECT_EQ(rtslot_wpad_read(&s, 7, 0, 0), 0);  // no such slot
+}
+
 }  // namespace
 
 int main() {
@@ -234,6 +260,8 @@ int main() {
     TestEmptyReads();
     TestHeardAndRetell();
     TestQuietLatch();
+    TestBlankReportIsNotReal();
+    TestWpadReadNoController();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

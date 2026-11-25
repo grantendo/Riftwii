@@ -223,3 +223,24 @@ enum rtslot_after rtslot_told(struct rtslot* s, uint32_t slot, int32_t reason, i
     if ((s->real >> slot) & 1u) return RTSLOT_AFTER_CONNECTED;
     return RTSLOT_AFTER_NOTHING;
 }
+
+int rtslot_wpad_read(struct rtslot* s, uint32_t slot, int32_t error, int blank) {
+    if (slot >= RTSLOT_SLOTS) return 0;
+    if (error == 0) {
+        /* A real Wii Remote's report: the stand-in steps aside, as when
+         * WPADProbe finds one. Not a blank report on a slot no real one is
+         * known on: a WPAD whose slot never had one copies its untouched
+         * entry, error 0 (Mario Strikers Charged), and no real Wii Remote's
+         * report is blank (its accelerometer never reads 0, 0, 0). */
+        if (!blank || ((s->real >> slot) & 1u)) {
+            rtslot_probed(s, slot, 0);
+            return 1;
+        }
+    } else if (error == -1) {
+        /* "No controller": a real Wii Remote that was there has left, which
+         * a game reading only WPAD learns no other way; the stand-in can
+         * come back. */
+        rtslot_probed(s, slot, -1);
+    }
+    return 0;
+}

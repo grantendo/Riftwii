@@ -88,6 +88,11 @@ int rtslot_next_tell(struct rtslot* s, uint32_t home, int remote_shapes, uint32_
  * the attachment is told too. Delivered "gone" on a slot a real controller
  * took meanwhile: "connected" again, so the game hears last that a
  * controller is there. */
+/* The game's own WPADRead of `slot` answered `error` (0: a report, -1: no
+ * controller), its report blank (all zeros) or not. Returns 1 when a real
+ * Wii Remote holds the slot by that answer (its report stays). */
+int rtslot_wpad_read(struct rtslot* s, uint32_t slot, int32_t error, int blank);
+
 enum rtslot_after { RTSLOT_AFTER_NOTHING, RTSLOT_AFTER_EXTENSION, RTSLOT_AFTER_CONNECTED };
 enum rtslot_after rtslot_told(struct rtslot* s, uint32_t slot, int32_t reason, int delivered);
 
