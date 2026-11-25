@@ -408,7 +408,11 @@ uint32_t pad_on_kpad_enter(struct rt_pad_context* c) {
     /* A fresh sample first, when one is due: a combo let go while the game
      * wasn't polling cancels the ask there (pad_leave_check) before this
      * takes it; one still held leaves as before (CodeRabbit on #616). */
-    if (c->gcwii) pad_gcwii_read_pads(c);
+    /* Only from a call made with interrupts on (as the leave itself needs,
+     * rtleave_read_leaves): the sample may run the game's PADRead, WPADProbe
+     * and connect callbacks, which expect them on (CodeRabbit CLI, #616). */
+    __asm__ volatile("mfmsr %0" : "=r"(msr));
+    if (c->gcwii && (msr & 0x8000u) != 0) pad_gcwii_read_pads(c);
     msr = interrupts_off();
     t = now();
     if (c->leave_asked != RT_PAD_LEAVE_ASKED ||
