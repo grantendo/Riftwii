@@ -232,7 +232,7 @@ void TestTilt() {
     // Every C-stick position: the tilt never past a full push (the root
     // rounded up; fork #23).
     for (int cx = -80; cx <= 80; ++cx) {
-        for (int cy = -80; cy <= 80; cy += 2) {
+        for (int cy = -80; cy <= 80; ++cy) {
             s[4] = s8(cx);
             s[5] = s8(cy);
             rtgcwii_pads(&w, p.s, t);
