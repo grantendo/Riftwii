@@ -359,6 +359,14 @@ if(BUILD_TESTING)
         target_compile_options(gcwii_sideways_tests PRIVATE -Wall -Wextra -Werror)
     endif()
     add_test(NAME gcwii_sideways COMMAND gcwii_sideways_tests)
+    # Slot ownership (runtime/rtslot.h): the stand-in restructure's spec,
+    # one test per past review finding.
+    add_executable(rtslot_tests tests/rtslot_tests.cpp runtime/rtslot.c)
+    target_include_directories(rtslot_tests PRIVATE runtime)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(rtslot_tests PRIVATE -Wall -Wextra -Werror)
+    endif()
+    add_test(NAME rtslot COMMAND rtslot_tests)
     # The adapter-only pad blob's driver (runtime/pad, wiiu#45): the
     # adapter's tests again, against rtgcad.c built without the other USB
     # pads' code. Its own copy of rtgcad.c takes the library's place.

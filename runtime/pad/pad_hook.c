@@ -758,7 +758,7 @@ static void pad_home_status(struct rt_pad_context* c, uint8_t* status, uint32_t 
  * player's and takes no other player's (rthome_pads_own). */
 static uint32_t pad_gcwii_own(const struct rt_pad_context* c) {
     const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
-    return c->gcwii ? w->slot.present & ~w->slot.real : 0u;
+    return c->gcwii ? rtslot_standin_slots(&w->slot) : 0u;
 }
 
 /* At a KPAD read or WPADProbe, at most every 8 ms (about once a frame): the
@@ -1029,10 +1029,8 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
  * there the real one's samples stay, as PADRead's pad_on_read leaves such a
  * channel to it (CodeRabbit on #609). */
 static uint32_t pad_home_unless_real(const struct rt_pad_context* c, uint32_t stand_in) {
-    if (stand_in != RTHOME_NO_CHANNEL && c->gcwii && stand_in < RTGCWII_CHANNELS &&
-        ((((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot.real >> stand_in) & 1u))
-        return RTHOME_NO_CHANNEL;
-    return stand_in;
+    if (!c->gcwii) return stand_in;
+    return rtslot_home_unless_real(&((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot, stand_in);
 }
 
 int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t result, int32_t* error,
@@ -1640,55 +1638,41 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
      * comes once the stand-in has ended. */
     /* Looked at again before each change: a callback (and the PADReads
      * it may make) can start or end the HOME Menu's stand-in. */
-    uint32_t keep, home_channel;
+    uint32_t home_channel;
     /* A channel whose callback isn't set yet is passed over for the rest
      * of this pass (each channel tried once), not left blocking the others;
      * it is tried again at the next PADRead. */
     uint32_t skip = 0;
-    for (;;) {
-        home_channel = c->home_on ? rthome_stand_in(&c->home, now()) : RTHOME_NO_CHANNEL;
-        keep = home_channel != RTHOME_NO_CHANNEL ? 1u << home_channel : 0u;
 #ifdef RT_PAD_FORM_REMOTE
-        /* A HOME Menu stand-in holding a channel as a Classic Controller:
-         * the permanent stand-in's "connected" there waits until it ends
-         * (the PADRead's telling says "gone" first, CodeRabbit on #610). */
-        const uint32_t held = home_channel != RTHOME_NO_CHANNEL && !pad_home_keeps_shape(c, home_channel) ? keep : 0u;
-        if (!rtgcwii_next_change(w, skip | held, keep, &chan, &reason)) break;
+    const int remote_shapes = 1;
 #else
-        if (!rtgcwii_next_change(w, skip, keep, &chan, &reason)) break;
+    const int remote_shapes = 0;
 #endif
+    for (;;) {
+        enum rtslot_after after;
         int told;
+        /* What to tell is rtslot's to decide (the HOME Menu's rule
+         * included); the slot is looked at again before each change: a
+         * callback (and the PADReads it may make) can start or end the HOME
+         * Menu's stand-in. */
+        home_channel = c->home_on ? rthome_stand_in(&c->home, now()) : RTHOME_NO_CHANNEL;
+        if (!rtslot_next_tell(&w->slot, home_channel, remote_shapes, skip, &chan, &reason)) break;
         interrupts_restore(msr);
         told = pad_tell_connect(c, chan, reason);
         msr = interrupts_off();
-        if (!told) {
-            /* Still to tell, at the next PADRead. */
-            if (reason == 0) {
-                rtgcwii_not_told(w, chan);
-            } else {
-                rtgcwii_still_told(w, chan);
-            }
-            skip |= 1u << chan;
-            continue;
-        }
-        /* Connected: then what is plugged into it, as WPAD tells it once
-         * it has read the Wii Remote's extension; only while the channel is
-         * still the stand-in's (a real Wii Remote found during the connect
-         * callback tells its own). */
-        if (reason == 0 && rtgcwii_on(w, chan)) {
+        after = rtslot_told(&w->slot, chan, reason, told);
+        skip |= 1u << chan;
+        if (after == RTSLOT_AFTER_EXTENSION) {
+            /* What is plugged into it, as WPAD tells it once it has read the
+             * Wii Remote's extension. */
             interrupts_restore(msr);
             pad_tell_extension(c, chan);
             msr = interrupts_off();
-        }
-        /* A real controller that arrived while "gone" was being told (its
-         * own "connected" may have come first): the channel has a controller,
-         * so the game hears so last. */
-        if (reason == -1 && ((w->slot.real >> chan) & 1u)) {
+        } else if (after == RTSLOT_AFTER_CONNECTED) {
             interrupts_restore(msr);
             (void)pad_tell_connect(c, chan, 0);
             msr = interrupts_off();
         }
-        skip |= 1u << chan;
     }
     w->slot.telling -= 1;
     interrupts_restore(msr);

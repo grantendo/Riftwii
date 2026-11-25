@@ -55,4 +55,40 @@ void rtslot_not_told(struct rtslot* s, uint32_t slot);
 void rtslot_heard(struct rtslot* s, uint32_t slot);
 void rtslot_retell(struct rtslot* s, uint32_t now);
 
+/* Who holds a slot, decided in one place for every hook: a real controller
+ * first (its samples are the game's, the HOME Menu's stand-in included:
+ * CodeRabbit on #609), then the HOME Menu's stand-in on its own slot
+ * (`home`: rthome_stand_in's slot, RTSLOT_NO_SLOT for none), then the
+ * permanent stand-in where a controller is plugged in, else nobody. */
+#define RTSLOT_NO_SLOT 0xFFFFFFFFu
+enum rtslot_owner { RTSLOT_NOBODY, RTSLOT_REAL, RTSLOT_HOME, RTSLOT_STANDIN };
+enum rtslot_owner rtslot_owner(const struct rtslot* s, uint32_t slot, uint32_t home);
+
+/* The HOME Menu's stand-in's slot, or RTSLOT_NO_SLOT where a real
+ * controller holds it. */
+uint32_t rtslot_home_unless_real(const struct rtslot* s, uint32_t home);
+
+/* The slots the permanent stand-in holds (plugged in, no real controller),
+ * one bit each. */
+uint32_t rtslot_standin_slots(const struct rtslot* s);
+
+/* The next "connected" (0) or "gone" (-1) for the game's connect callback,
+ * from what is true now, as rtslot_next_change, with the HOME Menu's rule
+ * applied here: its slot (`home`) is never told "gone" while it is up, and
+ * where it holds the slot in another shape than the permanent stand-in's
+ * (`remote_shapes`: the Wii Remote forms, whose HOME stand-in may be a
+ * Classic Controller), the permanent stand-in's "connected" there waits until
+ * it ends (CodeRabbit on #610 and #616). `skip`: slots passed over this pass. */
+int rtslot_next_tell(struct rtslot* s, uint32_t home, int remote_shapes, uint32_t skip, uint32_t* slot,
+                     int32_t* reason);
+
+/* After the hook tried to tell `slot` `reason` (`delivered`: the game had a
+ * callback to take it): what comes next. Not delivered: it stays to be told
+ * at the next pass. Delivered "connected" on a slot still the stand-in's:
+ * the attachment is told too. Delivered "gone" on a slot a real controller
+ * took meanwhile: "connected" again, so the game hears last that a
+ * controller is there. */
+enum rtslot_after { RTSLOT_AFTER_NOTHING, RTSLOT_AFTER_EXTENSION, RTSLOT_AFTER_CONNECTED };
+enum rtslot_after rtslot_told(struct rtslot* s, uint32_t slot, int32_t reason, int delivered);
+
 #endif

@@ -178,3 +178,48 @@ void rtslot_retell(struct rtslot* s, uint32_t now) {
         ++s->retells[i];
     }
 }
+
+enum rtslot_owner rtslot_owner(const struct rtslot* s, uint32_t slot, uint32_t home) {
+    uint32_t bit;
+    if (slot >= RTSLOT_SLOTS) return RTSLOT_NOBODY;
+    bit = 1u << slot;
+    if (s->real & bit) return RTSLOT_REAL;
+    if (slot == home) return RTSLOT_HOME;
+    if (s->present & bit) return RTSLOT_STANDIN;
+    return RTSLOT_NOBODY;
+}
+
+uint32_t rtslot_home_unless_real(const struct rtslot* s, uint32_t home) {
+    if (home < RTSLOT_SLOTS && ((s->real >> home) & 1u)) return RTSLOT_NO_SLOT;
+    return home;
+}
+
+uint32_t rtslot_standin_slots(const struct rtslot* s) { return s->present & ~s->real; }
+
+int rtslot_next_tell(struct rtslot* s, uint32_t home, int remote_shapes, uint32_t skip, uint32_t* slot,
+                     int32_t* reason) {
+    const uint32_t keep = home < RTSLOT_SLOTS ? 1u << home : 0u;
+    /* A HOME Menu stand-in holding the slot in another shape: the permanent
+     * stand-in's "connected" there waits until it ends (the "gone" for the
+     * HOME stand-in's own shape is told first, by its end). */
+    const uint32_t held = remote_shapes && keep != 0 && !rtslot_home_keeps_shape(s, home) ? keep : 0u;
+    return rtslot_next_change(s, skip | held, keep, slot, reason);
+}
+
+enum rtslot_after rtslot_told(struct rtslot* s, uint32_t slot, int32_t reason, int delivered) {
+    if (slot >= RTSLOT_SLOTS) return RTSLOT_AFTER_NOTHING;
+    if (!delivered) {
+        /* Still to tell, at the next pass. */
+        if (reason == 0) {
+            rtslot_not_told(s, slot);
+        } else {
+            rtslot_still_told(s, slot);
+        }
+        return RTSLOT_AFTER_NOTHING;
+    }
+    if (reason == 0) return rtslot_on(s, slot) ? RTSLOT_AFTER_EXTENSION : RTSLOT_AFTER_NOTHING;
+    /* A real controller that came while "gone" was told: its own "connected"
+     * may have come first, so the game hears last that one is there. */
+    if ((s->real >> slot) & 1u) return RTSLOT_AFTER_CONNECTED;
+    return RTSLOT_AFTER_NOTHING;
+}
