@@ -74,6 +74,10 @@ endif()
 # Host tool: the IPC search on a dumped main.dol (tools/ipcscan.cpp).
 add_executable(ipcscan tools/ipcscan.cpp)
 target_link_libraries(ipcscan PRIVATE riftwii)
+# Host tool: every controller finder over dumped game programs, one line each,
+# to compare against a saved run before a finder change (tools/finderscan.cpp).
+add_executable(finderscan tools/finderscan.cpp)
+target_link_libraries(finderscan PRIVATE riftwii)
 # Host timing of the in-game RVZ decoder against the vendored one (both -Os).
 add_executable(rtzstd_bench tools/rtzstd_bench.cpp runtime/rtzstd.c)
 target_include_directories(rtzstd_bench PRIVATE runtime vendor-zstd)
