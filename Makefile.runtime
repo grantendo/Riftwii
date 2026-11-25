@@ -131,6 +131,11 @@ PADNOHOME := $(OUT)/riftwii_padn.bin $(OUT)/riftwii_padan.bin $(OUT)/riftwii_pad
 # with other USB pads, $(4): the form's (none for the Classic Controller,
 # -DRT_PAD_FORM_NUNCHUK for the Wii Remote + Nunchuk, -DRT_PAD_FORM_SIDEWAYS for the sideways
 # Wii Remote).
+# The stand-in's layer headers (rtgcwii.h includes them): every object that
+# includes rtgcwii.h depends on these too, or a field moved in one of them
+# leaves an object reading the old layout (Super Mario Galaxy 2's Nunchuk
+# was never told: the restructure's own review build).
+STANDIN_HEADERS := runtime/rtslot.h runtime/rtsrc.h runtime/rtshape.h runtime/rtdeliver.h
 define PAD_STANDIN_BLOB
 $(OUT)/$(1):
 	@mkdir -p $$@
@@ -138,7 +143,7 @@ $(OUT)/$(1):
 $(OUT)/$(1)/pad_entry.o: $(PADSRC)/pad_entry.S $(PADSRC)/pad_hook.h runtime/rtleave.h runtime/rthome.h runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) $(2) -DRT_PAD_STANDIN $(4) -I$(PADSRC) -c -o $$@ $$<
 
-$(OUT)/$(1)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h runtime/rtsiprobe.h runtime/rtrestart.h | $(OUT)/$(1)
+$(OUT)/$(1)/pad_hook.o: $(PADSRC)/pad_hook.c $(PADSRC)/pad_hook.h runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h runtime/rtleave.h runtime/rthome.h runtime/rtgcwii.h $(STANDIN_HEADERS) runtime/rtsiprobe.h runtime/rtrestart.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) $(2) -DRT_PAD_STANDIN $(4) -I$(PADSRC) -c -o $$@ $$<
 
 $(OUT)/$(1)/rtgcad.o: runtime/rtgcad.c runtime/rtgcad.h runtime/rtpadcal.h runtime/rthid.h | $(OUT)/$(1)
@@ -162,7 +167,7 @@ $(OUT)/$(1)/rtsrc.o: runtime/rtsrc.c runtime/rtsrc.h runtime/rthome.h | $(OUT)/$
 $(OUT)/$(1)/rtshape.o: runtime/rtshape.c runtime/rtshape.h runtime/rtsrc.h runtime/rthome.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
 
-$(OUT)/$(1)/rtdeliver.o: runtime/rtdeliver.c runtime/rtdeliver.h runtime/rtshape.h runtime/rthome.h | $(OUT)/$(1)
+$(OUT)/$(1)/rtdeliver.o: runtime/rtdeliver.c runtime/rtdeliver.h runtime/rtshape.h runtime/rtsrc.h runtime/rthome.h | $(OUT)/$(1)
 	$(CC) $(CFLAGS) -DRT_PAD_STANDIN $(4) -c -o $$@ $$<
 
 $(OUT)/$(1)/rtgcwii.o: runtime/rtgcwii.c runtime/rtgcwii.h runtime/rtslot.h runtime/rtsrc.h runtime/rtshape.h runtime/rtdeliver.h runtime/rthome.h | $(OUT)/$(1)
