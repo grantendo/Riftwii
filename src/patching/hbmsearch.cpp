@@ -397,7 +397,9 @@ std::uint32_t find_wpad_get_info(const std::vector<CodeRange>& text) {
 
 namespace {
 bool epilogue_restore(const std::uint8_t* bytes, std::size_t k, std::size_t end);
-void track_addresses(std::uint32_t insn, std::uint32_t prev, std::uint32_t high[32], std::uint32_t address[32]);
+bool call_then_returns(const std::uint8_t* bytes, std::size_t k, std::size_t end);
+void track_addresses(std::uint32_t insn, std::uint32_t prev, bool call_counts, std::uint32_t high[32],
+                     std::uint32_t address[32]);
 }  // namespace
 
 WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
@@ -428,7 +430,9 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
                 const std::uint32_t d = reg_d(insn), a = reg_a(insn);
                 const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
                 const std::uint32_t base = lwzx ? address[a] : 0;  // the table, as it finds it
-                track_addresses(insn, k > start ? be32(r.bytes + 4 * (k - 1)) : 0, high, address);
+                if (!epilogue_restore(r.bytes, k, end))
+                track_addresses(insn, k > start ? be32(r.bytes + 4 * (k - 1)) : 0,
+                                !call_then_returns(r.bytes, k, end), high, address);
                 if (lwzx && base != 0) {
                     // A new lookup: a load and a store through the block it
                     // gives count afresh, even from the same table
@@ -538,6 +542,25 @@ bool calls(std::uint32_t insn, std::uint32_t prev) {
 }
 constexpr std::uint32_t kVolatileRegisters = 1u | (0x3FFu << 3);  // r0, r3-r12
 
+// Whether the call at word `k` ends an error path: after it only the
+// return value set (`li`, `mr`, a `nop`) before the function leaves (an
+// epilogue's restores and return, or a plain `blr`). The scan reads straight
+// through such a path, and the code a branch around it reaches never runs
+// its call, so the call clobbers nothing there (CodeRabbit CLI, #616); a
+// call followed by any other work is an ordinary one.
+bool call_then_returns(const std::uint8_t* bytes, std::size_t k, std::size_t end) {
+    constexpr std::size_t kWithin = 8;
+    for (std::size_t j = k + 1; j < end && j <= k + kWithin; ++j) {
+        if (epilogue_restore(bytes, j, end)) return true;
+        const std::uint32_t w = be32(bytes + 4 * j);
+        if (w == kBlr) return true;
+        const bool li = opcode(w) == 14 && reg_a(w) == 0;
+        const bool mr = opcode(w) == 31 && ((w >> 1) & 0x3FFu) == 444 && reg_d(w) == ((w >> 11) & 31u);
+        if (!li && !mr && w != 0x60000000u) return false;
+    }
+    return false;
+}
+
 // `mask` (registers holding an argument, one bit each) after the word at
 // `k` (before word `end`): a register it writes no longer holds it, unless
 // the write is an `mr` from one that does, and a call leaves it only in the
@@ -548,7 +571,8 @@ constexpr std::uint32_t kVolatileRegisters = 1u | (0x3FFu << 3);  // r0, r3-r12
 std::uint32_t track_argument(const std::uint8_t* bytes, std::size_t k, std::size_t end, std::uint32_t mask) {
     const std::uint32_t insn = be32(bytes + 4 * k);
     if (epilogue_restore(bytes, k, end)) return mask;
-    if (calls(insn, k > 0 ? be32(bytes + 4 * (k - 1)) : 0)) return mask & ~kVolatileRegisters;
+    if (calls(insn, k > 0 ? be32(bytes + 4 * (k - 1)) : 0) && !call_then_returns(bytes, k, end))
+        return mask & ~kVolatileRegisters;
     const bool mr = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 444 && (insn & 1u) == 0 &&
                     reg_d(insn) == ((insn >> 11) & 31u);
     const bool copies = mr && ((mask >> reg_d(insn)) & 1u);
@@ -562,14 +586,15 @@ std::uint32_t track_argument(const std::uint8_t* bytes, std::size_t k, std::size
 // addresses, per register) after `insn`: what it builds is read from the
 // values before it, then every register it writes (a call: r0, r3-r12)
 // forgets what it held (CodeRabbit on #616).
-void track_addresses(std::uint32_t insn, std::uint32_t prev, std::uint32_t high[32], std::uint32_t address[32]) {
+void track_addresses(std::uint32_t insn, std::uint32_t prev, bool call_counts, std::uint32_t high[32],
+                     std::uint32_t address[32]) {
     const std::uint32_t d = reg_d(insn), a = reg_a(insn);
     std::uint32_t new_high = 0, new_address = 0;
     if (opcode(insn) == 15 && a == 0) new_high = (insn & 0xFFFFu) << 16;                  // lis
     if (opcode(insn) == 14 && a != 0 && high[a] != 0)                                     // addi rD,rA,lo
         new_address = high[a] + static_cast<std::uint32_t>(simm(insn));
     for (std::uint32_t g = 0; g < 32; ++g) {
-        if ((calls(insn, prev) && ((kVolatileRegisters >> g) & 1u)) || writes_register(insn, g)) {
+        if ((call_counts && calls(insn, prev) && ((kVolatileRegisters >> g) & 1u)) || writes_register(insn, g)) {
             high[g] = 0;
             address[g] = 0;
         }
@@ -613,7 +638,9 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             from_r4 = track_argument(r.bytes, k, end, from_r4);
             const bool lwzx = opcode(insn) == 31 && ((insn >> 1) & 0x3FFu) == 23;
             const std::uint32_t base = lwzx ? address[a] : 0;  // the table, as it finds it
-            track_addresses(insn, k > start ? be32(r.bytes + 4 * (k - 1)) : 0, high, address);
+            if (!epilogue_restore(r.bytes, k, end))
+                track_addresses(insn, k > start ? be32(r.bytes + 4 * (k - 1)) : 0,
+                                !call_then_returns(r.bytes, k, end), high, address);
             if (lwzx && base != 0) {
                 table = base;
                 block = static_cast<int>(d);

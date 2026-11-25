@@ -516,6 +516,32 @@ void TestWpadGetInfoLater() {
 
 void TestWpadConnectLater() {
     {
+        // The table built in r31, an early error return restoring r29-r31
+        // branched over, then the lookup through r31 and the swap: the
+        // bypassed restore doesn't lose the table (CodeRabbit CLI, #616).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(lis(31, 0x803D));
+        t.put(slwi(3, 3, 2));
+        t.put(addi(31, 31, -20720));
+        t.put(mr(29, 4));
+        t.put(0x41820010u);  // beq +16, to the lookup
+        t.put(0xBBA10008u);  // lmw r29,8(r1)
+        t.put(addi(1, 1, 0x20));
+        t.put(kBlr);
+        t.put(lwzx(31, 31, 3));
+        t.put(lwz(30, 31, 2212));
+        t.put(stw(29, 31, 2212));
+        t.put(addi(1, 1, 0x20));
+        t.put(kBlr);
+        t.put(stwu_r1(0x40));
+        put_slot_call(t, 2212, -1);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
+    }
+    {
         // The setter's table register replaced (`mr r5,r6`) before its
         // lookup: the block isn't the table's, so no setter for 2212 and no
         // slot (CodeRabbit on #616).
@@ -1067,6 +1093,33 @@ void TestWpadSetFormat() {
         put_set_format(t, true, true);
         put_set_format(t, true, true);
         EXPECT_EQ(riftwii::find_wpad_set_format({t.range()}), 0u);
+    }
+    {
+        // The format copied to r11, an error block with a call that returns
+        // (branched over), then r11 compared and stored: the call never runs
+        // on that path, so r11 is still the format (CodeRabbit CLI, #616).
+        Section t{0x80218000, {}};
+        t.put(stwu_r1(0x20));
+        t.put(kMflrR0);
+        t.put(kSlwiR0R3By2);
+        t.put(mr(11, 4));
+        t.put(lwzx(31, 5, 0));
+        t.put(lwz(30, 31, 2236));
+        t.put(lwz(28, 31, 2232));
+        t.put(cmpwi(30, -1));
+        t.put(0x4082001Cu);  // bne +28, over the error block
+        t.put(li(3, -1));
+        t.put(bl(t.here(), 0x80200000u));
+        t.put(lwz(0, 1, 0x24));
+        t.put(0x7C0803A6u);  // mtlr r0
+        t.put(addi(1, 1, 0x20));
+        t.put(kBlr);
+        t.put(li(30, -2));
+        t.put(cmplw(28, 11));
+        t.put(stw(11, 31, 2232));
+        t.put(addi(1, 1, 0x20));
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_set_format({t.range()}), 0x80218000u);
     }
     {
         // The format copied to r11 (volatile), a call, then r11 compared and
