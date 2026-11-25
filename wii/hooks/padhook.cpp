@@ -146,6 +146,10 @@ std::uint32_t align_up(std::uint32_t v) { return (v + 31) & ~31u; }
 // before an IOS reload (hidsession.hpp).
 OwnHidHandle g_own;
 HidDeviceHandoff g_handoff_devices;
+// The handle take_adapter_handle took from g_own for this launch, -1:
+// none (it opened its own, or took nothing). A launch refused before the
+// game starts gives that one back (give_back_or_close).
+std::int32_t g_handed_fd = -1;
 
 // For usb_open_matrix only: the same request with its buffer in MEM1.
 std::uint32_t g_mem1_probe[8] ATTRIBUTE_ALIGN(32);
@@ -1124,6 +1128,7 @@ bool take_adapter_handle(std::int32_t& fd, std::uint32_t& version, std::int32_t&
     fd = -1;
     version = 0;
     known_dev = -1;
+    g_handed_fd = -1;
     if (list_unknown != nullptr) *list_unknown = false;
     if (g_own.fd >= 0 && g_own.version == 5) {
         // The launch's own handle (look_for_gc_adapter), never shut down.
@@ -1131,6 +1136,7 @@ bool take_adapter_handle(std::int32_t& fd, std::uint32_t& version, std::int32_t&
         version = 5;
         known_dev = g_own.device;
         g_own.hand_over();  // the game's now
+        g_handed_fd = fd;
         logf("GameCube adapter: %s v5 fd %d (opened before libogc's USB), adapter device %d\n", g_usb_path_used,
              static_cast<int>(fd), static_cast<int>(known_dev));
         return true;
@@ -1202,6 +1208,21 @@ void close_pad_handles(PadHook& out) {
     if (out.ven_fd >= 0) IOS_Close(out.ven_fd);
     out.fd = -1;
     out.ven_fd = -1;
+}
+
+// A launch the pads plugin refused after the adapter's handle was taken:
+// a handle that was the menu's session (take_adapter_handle) goes back to
+// it, still open, for the failure screen (players with only GameCube
+// controllers read it with them); any other handle is closed.
+void give_back_or_close(PadHook& out) {
+    if (out.fd >= 0 && out.fd == g_handed_fd) {
+        g_own.take_back(out.fd, out.version, out.known_dev);
+        logf("GameCube adapter: the launch stopped; fd %d goes back to the menu's adapter session\n",
+             static_cast<int>(out.fd));
+        out.fd = -1;
+    }
+    g_handed_fd = -1;
+    close_pad_handles(out);
 }
 
 }  // namespace
@@ -1327,6 +1348,11 @@ PadsPluginForLaunch::~PadsPluginForLaunch() {
 
 bool pads_plugin_stopped_launch() { return g_pads_refused; }
 
+void pads_plugin_forget_refusal() {
+    g_pads_refused = false;
+    g_pads_refusal.clear();
+}
+
 std::string pads_plugin_refusal() { return g_pads_refusal; }
 
 void release_pads_plugin() {
@@ -1347,7 +1373,7 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
         logf("GameCube adapter and USB controllers: no memory for the pad code's copy (%u bytes)\n",
              static_cast<unsigned>(bytes));
         message = tr("There was not enough memory for the {1} add-on. Restart RiftWii and try again.", {kPadsPlugin});
-        close_pad_handles(hook);
+        give_back_or_close(hook);
         g_pads_refused = true;
         return false;
     }
@@ -1368,7 +1394,7 @@ bool fetch_pad_build(PadHook& hook, bool code_build, std::string& message) {
              "plugin in %s: %s\n",
              kPadsPlugin, plugin::Directory().c_str(), why.c_str());
         if (damaged) message = tr("A part of RiftWii is damaged (the {1} add-on). Update RiftWii again.", {kPadsPlugin});
-        close_pad_handles(hook);
+        give_back_or_close(hook);
         forget_build();
         g_pads_refused = true;
         return false;
