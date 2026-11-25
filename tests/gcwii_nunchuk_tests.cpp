@@ -365,12 +365,25 @@ void TestUnified() {
         EXPECT_TRUE(nz != 0);
         EXPECT_EQ(e[kBytes - 2], 5);  // the entry says it has the Nunchuk's part
     }
-    // Samples from before the shake began: both at rest, the Nunchuk too.
+    // Samples from before the shake began: the Wii Remote at rest (1 g on z),
+    // the Nunchuk's part all zeros: the slot never had a real Nunchuk, so
+    // the game has no calibration for one and any steady value reads as
+    // the Nunchuk moving (Batman: The Brave and the Bold's heavy attack).
     EXPECT_EQ(rtgcwii_unified(&w, 0, out, kBytes, kCount, 1100, 40, 0), kCount);
     {
         const std::uint8_t* old = out + (kCount - 1) * kBytes;  // 600 ticks back
-        EXPECT_EQ(static_cast<std::int16_t>((old[42] << 8) | old[43]), 0);
-        EXPECT_EQ(static_cast<std::int16_t>((old[46] << 8) | old[47]), static_cast<int>(RTGCWII_ACC_G));
+        EXPECT_EQ(static_cast<std::int16_t>((old[6] << 8) | old[7]), static_cast<int>(RTGCWII_ACC_G));
+        for (int k = 42; k < 48; ++k) EXPECT_EQ(old[k], 0);
+    }
+    // No shake at all: the Nunchuk's part stays zeros in every sample.
+    {
+        rtgcwii q = fresh();
+        Pads still;
+        still.plug(0);
+        for (std::uint32_t t = 1000; t <= 1100; t += 10) rtgcwii_pads(&q, still.s, t);
+        EXPECT_EQ(rtgcwii_unified(&q, 0, out, kBytes, kCount, 1100, 5, 0), kCount);
+        for (std::uint32_t i = 0; i < kCount; ++i)
+            for (int k = 42; k < 48; ++k) EXPECT_EQ(out[i * kBytes + k], 0);
     }
     // WPADRead still gets exactly the format the game asked for.
     std::uint8_t report[RTGCWII_WPAD_FS_BYTES + 1] = {};

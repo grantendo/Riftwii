@@ -187,11 +187,19 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
             int32_t acc[3];
             const int shaking = rtshape_shake_at(&w->shape, channel, now, i * sample_ticks, acc);
             if (shaking != 0) rtdeliver_put_acc(e + 2, acc);
-            /* The Nunchuk's too, where the sample has its part (it shakes
-             * with the Wii Remote, rtshape_nunchuk): swinging from the
-             * shake's start, at rest before it (CodeRabbit CLI). */
+            /* The Nunchuk's part, where the sample has it: zeros, except
+             * while the shake swings it with the Wii Remote (rtshape_nunchuk).
+             * The stand-in's slot never had a real Nunchuk, so the game has
+             * no calibration for one: any other steady value reads as the
+             * Nunchuk moving. Batman: The Brave and the Bold's heavy attack
+             * (a Wii Remote shake) fails against a steady 1 g there, and
+             * Donkey Kong Country Returns' Nunchuk play still needs the
+             * swing (Dolphin, 25 Nov). */
 #ifdef RT_PAD_FORM_NUNCHUK
-            if (shaking != 0 && n == RTGCWII_WPAD_FS_BYTES) rtdeliver_put_acc(e + 42, acc);
+            if (n == RTGCWII_WPAD_FS_BYTES) {
+                for (k = 42; k < 48; ++k) e[k] = 0;
+                if (shaking == 2) rtdeliver_put_acc(e + 42, acc);
+            }
 #endif
         }
     }
