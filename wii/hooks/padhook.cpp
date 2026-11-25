@@ -1354,6 +1354,17 @@ bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackW
     }
     found = PadSymbols{};
     if (writes.empty()) return false;
+    // A byte around a write as the plan leaves it: the game's, unless a
+    // planned write (plain or search, the latest wins) covers it (CodeRabbit
+    // CLI, fork #16).
+    const auto planned_byte = [&](std::uint32_t address) {
+        std::uint8_t value = *reinterpret_cast<const volatile std::uint8_t*>(address);
+        for (const PackWrite& w : plan.writes) {
+            const std::vector<std::uint8_t>& bytes = patches[w.patch].value;
+            if (address >= w.at && address - w.at < bytes.size()) value = bytes[address - w.at];
+        }
+        return value;
+    };
     // Each write's bytes are as they end up (write_as_left), so where two
     // overlap they agree.
     std::stable_sort(writes.begin(), writes.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
@@ -1366,7 +1377,7 @@ bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackW
             // bytes between: both are widened to whole words below).
             if (w.first <= ((end + 3u) & ~std::uint64_t(3))) {
                 for (std::uint64_t at = end; at < w.first; ++at)
-                    last.second.push_back(static_cast<std::uint8_t>(*reinterpret_cast<const volatile std::uint8_t*>(static_cast<std::uint32_t>(at))));
+                    last.second.push_back(planned_byte(static_cast<std::uint32_t>(at)));
                 const std::uint64_t w_end = std::uint64_t(w.first) + w.second.size();
                 if (w_end > end) last.second.resize(static_cast<std::size_t>(w_end - last.first));
                 std::copy(w.second.begin(), w.second.end(), last.second.begin() + (w.first - last.first));
@@ -1382,10 +1393,10 @@ bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackW
         const std::uint32_t lead = span.first & 3u;
         std::vector<std::uint8_t> whole;
         for (std::uint32_t b = 0; b < lead; ++b)
-            whole.push_back(static_cast<std::uint8_t>(*reinterpret_cast<const volatile std::uint8_t*>(span.first - lead + b)));
+            whole.push_back(planned_byte(span.first - lead + b));
         whole.insert(whole.end(), span.second.begin(), span.second.end());
         const std::uint32_t end = span.first + static_cast<std::uint32_t>(span.second.size());
-        for (std::uint32_t at = end; (at & 3u) != 0; ++at) whole.push_back(static_cast<std::uint8_t>(*reinterpret_cast<const volatile std::uint8_t*>(at)));
+        for (std::uint32_t at = end; (at & 3u) != 0; ++at) whole.push_back(planned_byte(at));
         span.first -= lead;
         span.second = std::move(whole);
     }
@@ -1494,8 +1505,11 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         pad.read_sites = searched.read_sites;
         out.read = pad.read;
         out.read_in_patch = true;
-        search_view = text;
+        // The writes first: a lookup takes the first range that holds an
+        // address, and a write replaces the game's text there (CodeRabbit
+        // CLI, fork #16).
         for (const auto& span : search_spans) search_view.push_back({span.first, span.second.data(), span.second.size()});
+        search_view.insert(search_view.end(), text.begin(), text.end());
     }
     const bool program_pad = standin && !pack_reads_pad && program_from_pack && pad.read != 0;
     // (Below: a pack with more memory writes than the checks follow counts
