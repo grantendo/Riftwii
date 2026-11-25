@@ -111,6 +111,11 @@ void TestClobbers() {
     EXPECT_TRUE(!t.clobbers(2, 31));  // a kept register
     EXPECT_TRUE(!t.clobbers(5, 5));   // a save helper's call
     EXPECT_TRUE(t.clobbers(1, 5));    // mr r5,r4 writes it
+    // A call that ends an error path (only `li r3` before the return): the
+    // code a branch around it reaches still has r5 (CodeRabbit CLI, rf2).
+    const auto error_path = code({kStwu, kMrR5R4, kBl, kLiR3, 0x4E800020u});
+    RegTrack e(error_path.data(), 0, error_path.size() / 4, RegTrack::kArguments);
+    EXPECT_TRUE(!e.clobbers(2, 5));
 }
 
 }  // namespace
