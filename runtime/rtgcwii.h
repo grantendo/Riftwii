@@ -6,37 +6,33 @@
  * plugged in, so a game that takes a Classic Controller plays from it. The
  * HOME Menu's stand-in (rthome.h) does the same for a moment; this one stays.
  *
- * The decisions, kept free of the hardware so the host tests can run them;
- * the pad blob (runtime/pad) calls them from its PADRead, KPAD read and
- * WPADProbe hooks, and writes the Classic Controller's status into the
- * game's KPAD buffer as it does for the HOME Menu's stand-in. The state
- * lives in MEM2 next to the adapter driver's (the blob's context has no
- * room for four ports), and the context holds its address. */
+ * The stand-in is four layers (notes in #587): sources (rtsrc.h: each
+ * controller, one sample per report), shapes (rtshape.h: a sample as the
+ * Wii controller the game expects), slot ownership (rtslot.h: who holds
+ * each slot, what the game was told) and delivery (rtdeliver.h: what the
+ * game asked for, in its library's layout). This file joins them: the one
+ * state the loader places, and the calls the pad blob's hooks make. Free of
+ * the hardware, so the host tests run it. The state lives in MEM2 next to
+ * the adapter driver's (the blob's context has no room for four ports), and
+ * the context holds its address. */
 #ifndef RIFTWII_RTGCWII_H
 #define RIFTWII_RTGCWII_H
 
 #include <stdint.h>
 
+#include "rtslot.h"
+#include "rtsrc.h"
+#include "rtshape.h"
+#include "rtdeliver.h"
+
 #define RTGCWII_CHANNELS 4u
 #define RTGCWII_PAD_BYTES 12u
 
 struct rtgcwii {
-    uint32_t grace;    /* ticks a port may report no controller before its channel's goes (loader-filled) */
-    uint32_t present;  /* channels with a GameCube controller behind them, one bit each */
-    uint32_t real;     /* channels where WPADProbe last found a real controller: the stand-in steps aside */
-    uint32_t told;     /* channels the game's connect callback last heard are connected (by this) */
-    uint32_t seen[RTGCWII_CHANNELS];  /* when each port last had a controller (low bit set), 0: gone */
-    uint32_t hold[RTGCWII_CHANNELS];       /* each channel's Classic buttons now */
-    uint32_t samples[RTGCWII_CHANNELS];    /* PADRead samples taken for it */
-    /* What the game's KPAD read last got (newly pressed and let go are
-     * against that, not the sample before: a sample the blob takes at a
-     * WPADProbe the game never reads in between, and its press still
-     * counts), worked out once per sample so a second read in a frame
-     * sees the same words. */
-    uint32_t worked[RTGCWII_CHANNELS];     /* the sample the words below are from */
-    uint32_t delivered[RTGCWII_CHANNELS];  /* the buttons the game last got */
-    uint32_t trig[RTGCWII_CHANNELS], release[RTGCWII_CHANNELS];
-    uint8_t pad[RTGCWII_CHANNELS][RTGCWII_PAD_BYTES];  /* each port's PADStatus as the last PADRead had it */
+    struct rtslot slot;        /* who holds each Wii Remote slot, and what the game was told (rtslot.h) */
+    struct rtsrc src;          /* each player's controller, one sample per report (rtsrc.h) */
+    uint32_t hold[RTGCWII_CHANNELS];  /* each channel's Wii buttons now, in its shape */
+    struct rtdeliver deliver;  /* what the game's KPAD read last got on each slot (rtdeliver.h) */
     /* Many games that take a Classic Controller never call PADRead (Kamen
      * Rider: Dragon Knight reads only through KPAD), so the adapter would
      * never be read: the blob then calls the game's PADRead itself, once a
@@ -44,17 +40,6 @@ struct rtgcwii {
     uint32_t game_read;  /* when the game itself last called PADRead (low bit set), 0: never */
     uint32_t own_read;   /* when the blob last called it (low bit set), 0: never */
     uint32_t reading;    /* the blob's own PADRead call is under way */
-    uint32_t telling;    /* how many tellings of the game's connect callback are under way (PADReads meanwhile leave it to them) */
-    /* A real controller's KPAD reads with no error output that brought no
-     * samples: since when (low bit set; 0: the last read brought some) and
-     * how many in a row. */
-    uint32_t empty_since[RTGCWII_CHANNELS];
-    uint32_t empty_reads[RTGCWII_CHANNELS];
-    uint32_t empty_last[RTGCWII_CHANNELS];  /* the last empty read (low bit set): a gap past `grace` starts over */
-    /* When a real controller's channels were last checked with the game's
-     * own WPADProbe (low bit set), 0: never (rtgcwii_real_check_due). */
-    uint32_t real_checked;
-    uint32_t probe_counts[RTGCWII_CHANNELS];  /* rtgcwii_probe_count */
 };
 
 /* At each PADRead, the four ports' statuses (12 bytes each) as the game
@@ -64,74 +49,17 @@ struct rtgcwii {
  * pad's dropped report) never unplugs the player. */
 void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
 
-/* WPADProbe(`channel`) answered `result` (0 a controller, -1 none, -2
- * busy) before the blob's own answer: a real controller there wins over
- * the stand-in. When it goes again, the stand-in is announced afresh (the
- * game's library told the game that channel's controller left). */
-void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result);
-
-/* How many probe results `channel` has had (rtgcwii_probed counts them):
- * taken before a probe whose answer is applied later, so a newer result in
- * between isn't undone by the older one. */
-uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel);
-
-/* Whether the channels a real controller holds are due a check of their
- * own (the game's WPADProbe, answered through rtgcwii_probed): some games
- * stop reading a channel once their library reports it gone, so its
- * hooked reads and probes never tell the stand-in the Wii Remote turned
- * off, and the GameCube controller would stay locked out. Every 250 ms
- * while a channel is real; `now` is noted when it is due. */
-int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
-
-/* Whether the stand-in answers on `channel` now. */
-int rtgcwii_on(const struct rtgcwii* w, uint32_t channel);
-
-/* The game's connect callback: the channels to report gone (*leave) and
- * connected (*join), one bit each, since it was last told. A channel a real
- * controller took is neither: the game's own library tells it about that. */
-void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join);
-
 /* The stand-in's Classic Controller on `channel`, for the game's KPAD read:
  * its hold, trig (newly pressed since the game last got it) and release
  * words, the same for every read until the next sample, and its sticks and
- * triggers as numerators over RTHOME_AXIS_FULL
- * (rthome_classic_axes). The default layout of #587: the control stick and
- * C-stick as the two sticks, A B X Y as a b x y, L and R as themselves, Z
- * as ZR, Start as +, the D-pad as the D-pad. */
+ * triggers as numerators over RTHOME_AXIS_FULL (rthome_classic_axes), in
+ * #587's default layout (rtshape_classic_buttons). */
 void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32_t* trig, uint32_t* release,
                      int32_t axes[6]);
 
 /* Its buttons alone, for a raw status (KPADGetUnifiedWpadStatus), which
  * moves nothing on; 0 where the stand-in doesn't answer. */
 uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel);
-
-/* The connect callback could not be told `channel` joined (the game hasn't
- * set one yet): it is told again at the next PADRead. */
-void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel);
-
-/* The same for "gone": it stays to be told (the channel counts as told
- * connected until then). */
-void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel);
-
-/* The next change the game's connect callback should hear, one at a time
- * from what is true now (so a PADRead nested in another, from an SI
- * callback, can't leave a stale "gone" last): 1 with `channel` and
- * `reason` (0 connected, -1 gone), noted as told; 0 when there is none.
- * Channels in `skip` (one bit each) are passed over this time; channels in
- * `keep` are never reported gone (the HOME Menu's stand-in has them now,
- * and its own end tells the game). */
-int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason);
-
-/* A KPAD read on `channel` returned `result` samples, `error` its WPAD
- * error where the read gives one (RTGCWII_NO_ERROR otherwise): samples mean
- * a real controller is there (it wins, before any WPADProbe says so); "no
- * controller" (-1) means it left. A read with no error output can't say
- * so: there, a real controller whose reads bring no samples for `grace`
- * ticks and RTGCWII_EMPTY_READS reads in a row has left too (a game that
- * stops calling WPADProbe would otherwise keep the stand-in away). */
-#define RTGCWII_NO_ERROR 0x7FFFFFFF
-#define RTGCWII_EMPTY_READS 30
-void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now);
 
 /* At a KPAD read or WPADProbe: whether the blob should call the game's
  * PADRead now (and, if so, notes the time it does). Only when the game
@@ -146,5 +74,18 @@ int rtgcwii_should_read(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
 /* PADRead ran at `now`; `own`: the blob's own call (rtgcwii_should_read),
  * else the game's. */
 void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own);
+
+/* Slot ownership's decisions (rtslot.h) by their old names. */
+#define RTGCWII_NO_ERROR RTSLOT_NO_ERROR
+#define RTGCWII_EMPTY_READS RTSLOT_EMPTY_READS
+#define rtgcwii_probed(w, channel, result) rtslot_probed(&(w)->slot, (channel), (result))
+#define rtgcwii_probe_count(w, channel) rtslot_probe_count(&(w)->slot, (channel))
+#define rtgcwii_real_check_due(w, now, ticks_per_ms) rtslot_real_check_due(&(w)->slot, (now), (ticks_per_ms))
+#define rtgcwii_on(w, channel) rtslot_on(&(w)->slot, (channel))
+#define rtgcwii_connect_change(w, leave, join) rtslot_connect_change(&(w)->slot, (leave), (join))
+#define rtgcwii_not_told(w, channel) rtslot_not_told(&(w)->slot, (channel))
+#define rtgcwii_still_told(w, channel) rtslot_still_told(&(w)->slot, (channel))
+#define rtgcwii_next_change(w, skip, keep, channel, reason) rtslot_next_change(&(w)->slot, (skip), (keep), (channel), (reason))
+#define rtgcwii_kpad_read(w, channel, result, error, now) rtslot_kpad_read(&(w)->slot, (channel), (result), (error), (now))
 
 #endif

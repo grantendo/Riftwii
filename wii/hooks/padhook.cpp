@@ -1458,7 +1458,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         out.gcwii_base = out.state_base + gcwii_at;
         auto* state = reinterpret_cast<rtgcwii*>(out.gcwii_base);
         std::memset(state, 0, sizeof(rtgcwii));
-        state->grace = kGcwiiGraceMs * (kBusClock / 4000u);
+        state->slot.grace = kGcwiiGraceMs * (kBusClock / 4000u);
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;
