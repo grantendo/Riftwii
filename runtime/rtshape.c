@@ -252,6 +252,10 @@ void rtshape_rest(struct rtshape_out* out) {
     out->stick[0] = out->stick[1] = 0;
     out->pointer[0] = out->pointer[1] = 0;
     out->pointer_shown = 0;
+#ifdef RT_PAD_FORM_POINTING
+    out->horizon[0] = RTHOME_AXIS_FULL;  /* level */
+    out->horizon[1] = 0;
+#endif
 }
 
 /* The shake: all three axes swing together, every RTSHAPE_SHAKE_STEPS-th
@@ -335,8 +339,6 @@ void rtshape_sideways(const struct rtshape* sh, uint32_t port, const struct rtsr
 void rtshape_pointing(const struct rtshape* sh, uint32_t port, const struct rtsrc_sample* p, struct rtshape_out* out) {
     int32_t x, z, r2, r;
     rtshape_rest(out);
-    out->horizon[0] = RTHOME_AXIS_FULL;
-    out->horizon[1] = 0;
     if (port >= RTSHAPE_PORTS) return;
     if ((sh->camera >> port) & 1u) {
         out->pointer[0] = sh->pointer[port][0];
