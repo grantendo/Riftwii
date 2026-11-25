@@ -1286,8 +1286,13 @@ bool pack_wraps_wii_reads(const std::vector<MemoryPatch>& patches, const PackWri
 // (plain patches only), so they're searched here on their own, writes that
 // touch or overlap joined into one span (a PADRead split across two
 // writes is still one: CodeRabbit CLI, fork #16). `found`: what was found
-// (its `read` 0 when unsure).
-bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackWrites& plan, PadSymbols& found) {
+// (its `read` 0 when unsure); `spans`: the joined writes, each widened to
+// whole words with the game's own bytes around it (the search reads
+// instructions at word steps from a range's start), kept for the SIProbe
+// search through that PADRead.
+using SearchSpans = std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>;
+bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackWrites& plan, PadSymbols& found,
+                            SearchSpans& spans) {
     std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> writes;
     for (std::size_t n = 0; n < plan.writes.size(); ++n) {
         if (!patches[plan.writes[n].patch].search) continue;
@@ -1298,12 +1303,16 @@ bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackW
     // Each write's bytes are as they end up (write_as_left), so where two
     // overlap they agree.
     std::stable_sort(writes.begin(), writes.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> spans;
+    spans.clear();
     for (auto& w : writes) {
         if (!spans.empty()) {
             auto& last = spans.back();
             const std::uint64_t end = std::uint64_t(last.first) + last.second.size();
-            if (w.first <= end) {
+            // Touching, overlapping, or within the same word (the game's
+            // bytes between: both are widened to whole words below).
+            if (w.first <= ((end + 3u) & ~std::uint64_t(3))) {
+                for (std::uint64_t at = end; at < w.first; ++at)
+                    last.second.push_back(static_cast<std::uint8_t>(*reinterpret_cast<const volatile std::uint8_t*>(static_cast<std::uint32_t>(at))));
                 const std::uint64_t w_end = std::uint64_t(w.first) + w.second.size();
                 if (w_end > end) last.second.resize(static_cast<std::size_t>(w_end - last.first));
                 std::copy(w.second.begin(), w.second.end(), last.second.begin() + (w.first - last.first));
@@ -1311,6 +1320,20 @@ bool search_writes_pad_read(const std::vector<MemoryPatch>& patches, const PackW
             }
         }
         spans.push_back(std::move(w));
+    }
+    // Whole words: the game's bytes before an unaligned start and after an
+    // unaligned end (CodeRabbit CLI, fork #16: a one-byte write just before a
+    // PADRead would otherwise shift every instruction after it).
+    for (auto& span : spans) {
+        const std::uint32_t lead = span.first & 3u;
+        std::vector<std::uint8_t> whole;
+        for (std::uint32_t b = 0; b < lead; ++b)
+            whole.push_back(static_cast<std::uint8_t>(*reinterpret_cast<const volatile std::uint8_t*>(span.first - lead + b)));
+        whole.insert(whole.end(), span.second.begin(), span.second.end());
+        const std::uint32_t end = span.first + static_cast<std::uint32_t>(span.second.size());
+        for (std::uint32_t at = end; (at & 3u) != 0; ++at) whole.push_back(static_cast<std::uint8_t>(*reinterpret_cast<const volatile std::uint8_t*>(at)));
+        span.first -= lead;
+        span.second = std::move(whole);
     }
     std::vector<CodeRange> ranges;
     for (const auto& span : spans) ranges.push_back({span.first, span.second.data(), span.second.size()});
@@ -1400,8 +1423,13 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     const PackWrites plan = standin ? plan_pack_writes(patches, image) : PackWrites{};
     // Its PADRead in a plain patch (found above) or written by a search patch.
     PadSymbols searched;
+    SearchSpans search_spans;
     const bool pack_reads_pad =
-        standin && (from_patch || (!plan.incomplete && search_writes_pad_read(patches, plan, searched)));
+        standin && (from_patch || (!plan.incomplete && search_writes_pad_read(patches, plan, searched, search_spans)));
+    // The code SIProbe is looked for in when the hooked PADRead is one a
+    // search patch adds: the game's text and those writes (CodeRabbit CLI,
+    // fork #16).
+    std::vector<CodeRange> search_view;
     // A game with no PADRead of its own whose pack's search patch adds one:
     // that one is hooked for the adapter, as a plain patch's would be (its
     // place is checked again once the patches are in, pad_read_in_place:
@@ -1411,6 +1439,8 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         pad.read_sites = searched.read_sites;
         out.read = pad.read;
         out.read_in_patch = true;
+        search_view = text;
+        for (const auto& span : search_spans) search_view.push_back({span.first, span.second.data(), span.second.size()});
     }
     const bool program_pad = standin && !pack_reads_pad && program_from_pack && pad.read != 0;
     // (Below: a pack with more memory writes than the checks follow counts
@@ -1496,7 +1526,9 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
     }
     // SIProbe is told by PADRead's own calls, so with a pack's PADRead it
     // is searched in the game's code as the patches will leave it.
-    out.si_probe = from_patch ? find_gc_si_probe_with_patches(text, patched, out.read) : find_gc_si_probe(text, out.read);
+    out.si_probe = !search_view.empty() ? find_gc_si_probe(search_view, out.read)
+                   : from_patch            ? find_gc_si_probe_with_patches(text, patched, out.read)
+                                           : find_gc_si_probe(text, out.read);
     // Where SIProbe is missing the adapter still plays: only a game that
     // asks it before reading a port misses the adapter's ports (#510).
     if (out.si_probe != 0)
