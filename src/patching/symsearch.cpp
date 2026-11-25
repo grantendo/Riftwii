@@ -691,18 +691,22 @@ std::uint32_t find_wii_remote_idle_reset(const std::vector<CodeRange>& text, std
 
 namespace {
 
-// KPAD's camera setter at word `i` of `r` (riftwii/symsearch.hpp), storing
-// `value`: its block's base, stride and the switch's offset, or false.
-bool kpad_dpd_setter(const CodeRange& r, std::size_t i, std::uint32_t value, KpadDpd& out) {
-    if (i + 7 > r.size / 4) return false;
-    const auto w = [&](std::size_t k) { return be32(r.bytes + (i + k) * 4); };
+// KPAD's camera setter at `address` (riftwii/symsearch.hpp), storing
+// `value`: its block's base, stride and the switch's offset, or false. Its
+// words are read by address, so a setter the packs' patches split across
+// touching entries of the code's view is still read whole; a word in no
+// entry is no setter (CodeRabbit, fork #23).
+bool kpad_dpd_setter(const std::vector<CodeRange>& text, std::uint32_t address, std::uint32_t value, KpadDpd& out) {
+    for (std::uint32_t k = 0; k < 7; ++k)
+        if (!inside(text, address + 4 * k)) return false;
+    const auto w = [&](std::uint32_t k) { return word_at(text, address + 4 * k); };
     if ((w(0) & 0xFFFF0000u) != 0x1C030000u || (w(1) & 0xFFFF0000u) != 0x3C600000u || w(2) != (0x38800000u | value) ||
         (w(3) & 0xFFFF0000u) != 0x38630000u || w(4) != 0x7C630214u || (w(5) & 0xFFFF0000u) != 0x98830000u ||
         w(6) != kBlr)
         return false;
     const std::int32_t stride = static_cast<std::int16_t>(w(0) & 0xFFFFu);
     if (stride <= 0) return false;
-    out.enable = r.address + static_cast<std::uint32_t>(i * 4);
+    out.enable = address;
     out.base = ((w(1) & 0xFFFFu) << 16) + static_cast<std::uint32_t>(static_cast<std::int16_t>(w(3) & 0xFFFFu));
     out.stride = static_cast<std::uint32_t>(stride);
     // Signed, as stb takes it (every KPAD dumped has it positive).
@@ -717,15 +721,16 @@ KpadDpd find_kpad_enable_dpd(const std::vector<CodeRange>& text) {
     for (const CodeRange& r : text) {
         const std::size_t words = r.size / 4;
         for (std::size_t i = 0; i < words; ++i) {
+            const std::uint32_t at = r.address + static_cast<std::uint32_t>(i * 4);
             KpadDpd on;
-            if (!kpad_dpd_setter(r, i, 1u, on)) continue;
+            if (!kpad_dpd_setter(text, at, 1u, on)) continue;
             // KPADDisableDPD just before it, on the same switch (padding
-            // between them allowed: two to eight words back).
+            // between them allowed: seven to nine words back).
             bool twin = false;
-            for (std::size_t back = 7; back <= 9 && back <= i && !twin; ++back) {
+            for (std::uint32_t back = 7; back <= 9 && !twin; ++back) {
                 KpadDpd off;
-                twin = kpad_dpd_setter(r, i - back, 0u, off) && off.base == on.base && off.stride == on.stride &&
-                       off.offset == on.offset;
+                twin = at >= 4 * back && kpad_dpd_setter(text, at - 4 * back, 0u, off) && off.base == on.base &&
+                       off.stride == on.stride && off.offset == on.offset;
             }
             if (!twin) continue;
             if (found.enable != 0) return KpadDpd{};  // two: not guessed
