@@ -942,6 +942,10 @@ int32_t pad_on_kpad(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
         rtgcwii_kpad_read(w, (uint32_t)chan, result, err, now());
         interrupts_restore(msr);
         pad_gcwii_read_pads(c);
+        /* Samples the game's own read brought are a real controller's: they
+         * go back as they are, even if the refresh just saw it leave (the
+         * next read finds the new owner; CodeRabbit on #609). */
+        if (result > 0) return result;
     }
     msr = interrupts_off();
     t = now();
@@ -1417,7 +1421,10 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
         /* Before the HOME Menu's stand-in looks at the combo: a port with a
          * permanent stand-in has its HOME on its own channel. */
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
-        rtgcwii_read_by(w, t, (int)w->reading);
+        /* The hook's own PADRead fills its scratch status; a game PADRead
+         * (one nested in a callback the hook makes, too) fills the game's
+         * (CodeRabbit on #609). */
+        rtgcwii_read_by(w, t, status == c->pad_scratch);
         rtgcwii_pads(w, status, t);
     }
 #endif

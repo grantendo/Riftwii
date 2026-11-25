@@ -330,6 +330,12 @@ void TestEmptyReadsWithoutError() {
         rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, 20000 + i);
     }
     EXPECT_EQ(rtgcwii_on(&w, 1), 0);
+    // A burst of empty reads, a pause past the grace period, one more: the
+    // pause doesn't count, so the controller stays (CodeRabbit on #609).
+    rtgcwii_kpad_read(&w, 1, 1, RTGCWII_NO_ERROR, 24000);
+    for (std::uint32_t i = 0; i + 1 < RTGCWII_EMPTY_READS; ++i) rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, 24000 + i);
+    rtgcwii_kpad_read(&w, 1, 0, RTGCWII_NO_ERROR, 24000 + 2 * kGrace);
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
     // A channel with no real controller is untouched by empty reads.
     rtgcwii_kpad_read(&w, 3, 0, RTGCWII_NO_ERROR, 30000);
     EXPECT_EQ(w.empty_since[3], 0u);

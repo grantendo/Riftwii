@@ -2745,6 +2745,30 @@ msgstr "Crear una casilla de inicio con estos mods..."
 msgid "Rename this tile..."
 msgstr "Cambiar el nombre de esta casilla..."
 
+msgid "GameTDB entry"
+msgstr "Entrada de GameTDB"
+
+msgid "Current entry"
+msgstr "Entrada actual"
+
+msgid "Type an ID"
+msgstr "Escribir un código"
+
+msgid "Use the tile's name to look for a match."
+msgstr "Busca una entrada con el nombre de la casilla."
+
+msgid "Use the tile's name to look for a match. Now: {1}"
+msgstr "Busca una entrada con el nombre de la casilla. Ahora: {1}"
+
+msgid "Choose an entry for this tile's cover and About page."
+msgstr "Elige una entrada para la portada y la información de esta casilla."
+
+msgid "Enter six letters or numbers."
+msgstr "Escribe seis letras o números."
+
+msgid "This ID is not in the GameTDB data on the SD card."
+msgstr "Este código no está en los datos de GameTDB de la tarjeta SD."
+
 msgid "Remove this tile from Home"
 msgstr "Quitar esta casilla del inicio"
 
@@ -4152,14 +4176,14 @@ msgstr "Buscar y Diseño en la barra de Inicio"
 msgid "Wider game pages at 16:9"
 msgstr "Páginas de juego más anchas en 16:9"
 
-msgid "Install WAD files is under Games"
-msgstr "Instalar archivos WAD está en Juegos"
+msgid "USA games play on a Japanese Wii"
+msgstr "Los juegos de EE. UU. funcionan en una Wii japonesa"
 
-msgid "Names sort without case or accents"
-msgstr "Los nombres se ordenan sin mayúsculas ni acentos"
+msgid "The pointer works after a Remote wakes up"
+msgstr "El puntero funciona al despertar el mando"
 
-msgid "WAD games go back to RiftWii on a Wii U"
-msgstr "Los juegos WAD vuelven a RiftWii en Wii U"
+msgid "Pick a mod tile's GameTDB entry"
+msgstr "Elige la entrada de GameTDB de una casilla de mods"
 
 msgid "Manage game"
 msgstr "Gestionar juego"
@@ -5042,3 +5066,6 @@ msgstr "Otros títulos"
 
 msgid "Emulated + Wii"
 msgstr "Emulada + Wii"
+
+msgid "In a game with no GameCube controller code, only the adapter's controllers play."
+msgstr "En un juego sin código para mandos de GameCube, solo juegan los mandos del adaptador."
