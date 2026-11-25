@@ -1192,16 +1192,31 @@ uint32_t pad_on_read(struct rt_pad_context* c, uint8_t* status, uint32_t motor) 
 #endif
         const uint32_t told_byte = (c->kpad_connect_info >> 16) & 0xFFu;
         const uint32_t told = told_byte == 0 ? RTHOME_NO_CHANNEL : told_byte - 1u;
+#ifdef RT_PAD_STANDIN
+        /* While the permanent stand-in's "connected" or "gone" is being
+         * told (a PADRead nested in the game's connect callback), the HOME
+         * Menu's change waits for a later read, so its word reaches the game
+         * after that one, never before it (CodeRabbit, fork #22). */
+        if (!(c->gcwii && rtslot_tell_busy(&((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot))) {
+#endif
         const uint32_t next = rthome_connect_change(told, now_channel, &leave, &join);
         c->kpad_connect_info = (c->kpad_connect_info & 0xFFFFu) |
                                ((next == RTHOME_NO_CHANNEL ? 0u : next + 1u) << 16);
 #ifdef RT_PAD_STANDIN
+        /* A real Wii Remote took the channel the HOME Menu's stand-in held:
+         * its record is cleared, but the game isn't told "gone" for a
+         * controller that is there (WPAD tells it when that one leaves;
+         * CodeRabbit, fork #22). */
+        if (leave != RTHOME_NO_CHANNEL && c->gcwii &&
+            !rtslot_home_may_leave(&((const struct rtgcwii*)(uintptr_t)c->gcwii)->slot, leave))
+            leave = RTHOME_NO_CHANNEL;
         /* The telling count taken now, with the change, so a PADRead nested
          * in an SI callback as interrupts come back can't tell the
          * permanent stand-in's news before the HOME Menu's (CodeRabbit on
          * #609); given back once both are told, below. */
         if ((leave != RTHOME_NO_CHANNEL || join != RTHOME_NO_CHANNEL) && c->gcwii)
             rtslot_tell_take(&((struct rtgcwii*)(uintptr_t)c->gcwii)->slot);
+        }
 #endif
     }
 #endif

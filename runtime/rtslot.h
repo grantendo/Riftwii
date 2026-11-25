@@ -125,6 +125,10 @@ void rtslot_connect_change(struct rtslot* s, uint32_t* leave, uint32_t* join);
  * (a PADRead nested in the game's callback leaves its own telling to the
  * one running). A count, not a flag: two threads telling at once each take
  * off only their own share. */
+/* Whether the HOME Menu's stand-in, ending, may tell the game "gone" for
+ * `slot`: not while a real Wii Remote holds it (WPAD tells the game when
+ * that one leaves). */
+int rtslot_home_may_leave(const struct rtslot* s, uint32_t slot);
 int rtslot_tell_busy(const struct rtslot* s);
 void rtslot_tell_take(struct rtslot* s);
 void rtslot_tell_give(struct rtslot* s);

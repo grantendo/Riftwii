@@ -226,6 +226,16 @@ void TestCorrectedAfterLeave() {
     EXPECT_EQ(tell_all(t).leaves, 0);
 }
 
+// Fork #22 (CodeRabbit): a real Wii Remote took the slot the HOME Menu's
+// stand-in held; the game isn't told "gone" for a controller that's there.
+void TestHomeLeaveNotForReal() {
+    rtslot s = fresh();
+    EXPECT_TRUE(rtslot_home_may_leave(&s, 0));
+    rtslot_probed(&s, 0, 0);
+    EXPECT_TRUE(!rtslot_home_may_leave(&s, 0));
+    EXPECT_TRUE(rtslot_home_may_leave(&s, kNone));
+}
+
 int main() {
     TestOwnerOrder();
     TestRealBeatsHome();
@@ -239,6 +249,7 @@ int main() {
     TestHomeAnnounced();
     TestTellingCount();
     TestCorrectedAfterLeave();
+    TestHomeLeaveNotForReal();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;
