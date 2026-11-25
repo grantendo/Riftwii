@@ -127,7 +127,9 @@ void rtslot_connect_change(struct rtslot* s, uint32_t* leave, uint32_t* join);
  * off only their own share. */
 /* Whether the HOME Menu's stand-in, ending, may tell the game "gone" for
  * `slot`: not while a real Wii Remote holds it (WPAD tells the game when
- * that one leaves). */
+ * that one leaves), nor once the permanent stand-in has told the game it's
+ * connected (a GameCube controller there while the HOME Menu was up: its
+ * own "gone" comes when that one leaves; CodeRabbit, fork #22). */
 int rtslot_home_may_leave(const struct rtslot* s, uint32_t slot);
 int rtslot_tell_busy(const struct rtslot* s);
 void rtslot_tell_take(struct rtslot* s);
@@ -138,7 +140,9 @@ void rtslot_tell_give(struct rtslot* s);
 /* The slot the game should hear the HOME Menu's stand-in on (`home`, or
  * RTSLOT_NO_SLOT): not one the permanent stand-in holds or has told the
  * game of (its controller may have just been unplugged), which the game has
- * already; the permanent stand-in's telling covers its end. */
+ * already; the permanent stand-in's telling covers its end. Nor one a real
+ * Wii Remote holds, whose library tells the game of it (CodeRabbit, fork
+ * #22). */
 uint32_t rtslot_home_announced(const struct rtslot* s, uint32_t home);
 
 #endif

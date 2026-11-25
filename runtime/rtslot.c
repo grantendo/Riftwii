@@ -92,7 +92,10 @@ void rtslot_kpad_read(struct rtslot* s, uint32_t channel, int32_t result, int32_
          * read isn't a controller gone; CodeRabbit on #609). */
         if (s->empty_since[channel] != 0 && rtslot_elapsed(now, s->empty_last[channel]) > s->grace)
             s->empty_since[channel] = 0;
-        s->empty_last[channel] = now | 1u;
+        /* The tick itself (valid while a run is counted, empty_since not
+         * 0), so a gap of exactly `grace` keeps the run and one tick more
+         * doesn't (CodeRabbit, fork #22). */
+        s->empty_last[channel] = now;
         if (s->empty_since[channel] == 0) {
             s->empty_since[channel] = now | 1u;
             s->empty_reads[channel] = 1;
@@ -155,12 +158,12 @@ void rtslot_rechecked(struct rtslot* s, uint32_t slot, int32_t result, uint32_t 
 
 uint32_t rtslot_home_announced(const struct rtslot* s, uint32_t home) {
     if (home >= RTSLOT_SLOTS) return RTSLOT_NO_SLOT;
-    if (((rtslot_standin_slots(s) | s->told) >> home) & 1u) return RTSLOT_NO_SLOT;
+    if (((rtslot_standin_slots(s) | s->told | s->real) >> home) & 1u) return RTSLOT_NO_SLOT;
     return home;
 }
 
 int rtslot_home_may_leave(const struct rtslot* s, uint32_t slot) {
-    return slot >= RTSLOT_SLOTS || !((s->real >> slot) & 1u);
+    return slot >= RTSLOT_SLOTS || !(((s->real | s->told) >> slot) & 1u);
 }
 
 int rtslot_tell_busy(const struct rtslot* s) { return s->telling != 0; }
