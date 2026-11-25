@@ -69,9 +69,8 @@ void TestOwnerOrder() {
 void TestRealBeatsHome() {
     rtslot s = fresh();
     rtslot_probed(&s, 1, 0);
-    EXPECT_EQ(rtslot_home_unless_real(&s, 1), kNone);
-    EXPECT_EQ(rtslot_home_unless_real(&s, 2), 2u);
-    EXPECT_EQ(rtslot_home_unless_real(&s, kNone), kNone);
+    EXPECT_EQ(rtslot_owner(&s, 1, 1), RTSLOT_REAL);  // the HOME stand-in's slot, a real one there
+    EXPECT_EQ(rtslot_owner(&s, 2, 2), RTSLOT_HOME);
 }
 
 // #610 (CodeRabbit): when the HOME Menu ends on a slot a real Wii Remote

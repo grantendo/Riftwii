@@ -194,11 +194,6 @@ enum rtslot_owner rtslot_owner(const struct rtslot* s, uint32_t slot, uint32_t h
     return RTSLOT_NOBODY;
 }
 
-uint32_t rtslot_home_unless_real(const struct rtslot* s, uint32_t home) {
-    if (home < RTSLOT_SLOTS && ((s->real >> home) & 1u)) return RTSLOT_NO_SLOT;
-    return home;
-}
-
 uint32_t rtslot_standin_slots(const struct rtslot* s) { return s->present & ~s->real; }
 
 int rtslot_next_tell(struct rtslot* s, uint32_t home, int remote_shapes, uint32_t skip, uint32_t* slot,
