@@ -32,16 +32,19 @@ std::uint32_t bl_target(std::uint32_t address, std::uint32_t insn) {
     return address + static_cast<std::uint32_t>(displacement);
 }
 
+// An entry of the view with no bytes behind it holds no code to read:
+// neither helper looks into one (CodeRabbit CLI, fork #23).
 bool inside(const std::vector<CodeRange>& text, std::uint32_t address) {
     for (const CodeRange& r : text) {
-        if (address >= r.address && address < r.address + r.size) return true;
+        if (r.bytes != nullptr && address >= r.address && address < r.address + r.size) return true;
     }
     return false;
 }
 
 std::uint32_t word_at(const std::vector<CodeRange>& text, std::uint32_t address) {
     for (const CodeRange& r : text) {
-        if (address >= r.address && address + 4 <= r.address + r.size) return be32(r.bytes + (address - r.address));
+        if (r.bytes != nullptr && address >= r.address && address + 4 <= r.address + r.size)
+            return be32(r.bytes + (address - r.address));
     }
     return 0;
 }
