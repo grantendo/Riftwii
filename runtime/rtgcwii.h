@@ -110,12 +110,12 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now);
  * busy) before the blob's own answer: a real controller there wins over
  * the stand-in. When it goes again, the stand-in is announced afresh (the
  * game's library told the game that channel's controller left). */
-void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result);
+#define rtgcwii_probed(w, channel, result) rtslot_probed(&(w)->slot, (channel), (result))
 
 /* How many probe results `channel` has had (rtgcwii_probed counts them):
  * taken before a probe whose answer is applied later, so a newer result in
  * between isn't undone by the older one. */
-uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel);
+#define rtgcwii_probe_count(w, channel) rtslot_probe_count(&(w)->slot, (channel))
 
 /* Whether the channels a real controller holds are due a check of their
  * own (the game's WPADProbe, answered through rtgcwii_probed): some games
@@ -123,29 +123,29 @@ uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel);
  * hooked reads and probes never tell the stand-in the Wii Remote turned
  * off, and the GameCube controller would stay locked out. Every 250 ms
  * while a channel is real; `now` is noted when it is due. */
-int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
+#define rtgcwii_real_check_due(w, now, ticks_per_ms) rtslot_real_check_due(&(w)->slot, (now), (ticks_per_ms))
 
 /* Whether the stand-in answers on `channel` now. */
-int rtgcwii_on(const struct rtgcwii* w, uint32_t channel);
+#define rtgcwii_on(w, channel) rtslot_on(&(w)->slot, (channel))
 
 /* The channels the game knows as this stand-in's: held now, told of and
  * not yet told gone, and the HOME Menu's stand-in's own when it took one
  * of these. */
-uint32_t rtgcwii_shaped(const struct rtgcwii* w);
+#define rtgcwii_shaped(w) rtslot_shaped(&(w)->slot)
 
 /* The HOME Menu's stand-in takes `channel` (RTGCWII_CHANNELS or more:
  * none): the shape it takes it in (this stand-in's, or a Classic
  * Controller's) is kept until it next takes one, whatever is plugged in or
  * unplugged meanwhile (Cake's review of #610). */
-void rtgcwii_home_took(struct rtgcwii* w, uint32_t channel);
+#define rtgcwii_home_took(w, channel) rtslot_home_took(&(w)->slot, (channel))
 
 /* Whether the HOME Menu's stand-in on `channel` has this stand-in's shape. */
-int rtgcwii_home_keeps_shape(const struct rtgcwii* w, uint32_t channel);
+#define rtgcwii_home_keeps_shape(w, channel) rtslot_home_keeps_shape(&(w)->slot, (channel))
 
 /* The game's connect callback: the channels to report gone (*leave) and
  * connected (*join), one bit each, since it was last told. A channel a real
  * controller took is neither: the game's own library tells it about that. */
-void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join);
+#define rtgcwii_connect_change(w, leave, join) rtslot_connect_change(&(w)->slot, (leave), (join))
 
 /* The Wii Remote + Nunchuk form's buttons (KPADStatus' hold word) for a
  * PADStatus, in #587's default Nunchuk layout: A and B as A and B, Y as 2,
@@ -226,11 +226,11 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel);
 
 /* The connect callback could not be told `channel` joined (the game hasn't
  * set one yet): it is told again at the next PADRead. */
-void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel);
+#define rtgcwii_not_told(w, channel) rtslot_not_told(&(w)->slot, (channel))
 
 /* The same for "gone": it stays to be told (the channel counts as told
  * connected until then). */
-void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel);
+#define rtgcwii_still_told(w, channel) rtslot_still_told(&(w)->slot, (channel))
 
 /* The next change the game's connect callback should hear, one at a time
  * from what is true now (so a PADRead nested in another, from an SI
@@ -239,7 +239,7 @@ void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel);
  * Channels in `skip` (one bit each) are passed over this time; channels in
  * `keep` are never reported gone (the HOME Menu's stand-in has them now,
  * and its own end tells the game). */
-int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason);
+#define rtgcwii_next_change(w, skip, keep, channel, reason) rtslot_next_change(&(w)->slot, (skip), (keep), (channel), (reason))
 
 /* A KPAD read on `channel` returned `result` samples, `error` its WPAD
  * error where the read gives one (RTGCWII_NO_ERROR otherwise): samples mean
@@ -250,7 +250,7 @@ int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_
  * stops calling WPADProbe would otherwise keep the stand-in away). */
 #define RTGCWII_NO_ERROR RTSLOT_NO_ERROR
 #define RTGCWII_EMPTY_READS RTSLOT_EMPTY_READS
-void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now);
+#define rtgcwii_kpad_read(w, channel, result, error, now) rtslot_kpad_read(&(w)->slot, (channel), (result), (error), (now))
 
 /* At a KPAD read or WPADProbe: whether the blob should call the game's
  * PADRead now (and, if so, notes the time it does). Only when the game
@@ -268,11 +268,11 @@ void rtgcwii_read_by(struct rtgcwii* w, uint32_t now, int own);
 
 /* The game read the stand-in on `channel` (a KPAD read or WPADRead gave it):
  * it has heard of it, and isn't told again. */
-void rtgcwii_heard(struct rtgcwii* w, uint32_t channel);
+#define rtgcwii_heard(w, channel) rtslot_heard(&(w)->slot, (channel))
 
 /* The game read a Wii controller through a hook (its KPAD read, WPADProbe
  * or WPADRead) at `now`. */
-void rtgcwii_wii_read(struct rtgcwii* w, uint32_t now);
+#define rtgcwii_wii_read(w, now) rtslot_wii_read(&(w)->slot, (now))
 
 /* Whether a sleep should read the pads in a game whose connect callback is
  * the later WPAD's: only while the game itself is quiet, so one that reads
@@ -282,14 +282,14 @@ void rtgcwii_wii_read(struct rtgcwii* w, uint32_t now);
  * start-up when its sleeps read the pads) never does. Quiet: no Wii
  * controller read in 3 s since its last, or none at all 5 s after the
  * first sleep that asked. */
-int rtgcwii_quiet_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms);
+#define rtgcwii_quiet_due(w, now, ticks_per_ms) rtslot_quiet_due(&(w)->slot, (now), (ticks_per_ms))
 
 /* At each PADRead: a channel the game was told of and hasn't read since,
  * retell_ticks after the telling, is due to be told again (`retell`), so the
  * connect callback hears "connected" again (rtgcwii_next_change), at most
  * RTGCWII_RETELLS times while its controller stays. It still counts as
  * told: one that leaves first is told it's gone. */
-void rtgcwii_retell(struct rtgcwii* w, uint32_t now);
+#define rtgcwii_retell(w, now) rtslot_retell(&(w)->slot, (now))
 
 /* The raw report's layout (rtdeliver.h), by its old names. */
 #define RTGCWII_WPAD_CORE_BYTES RTDELIVER_WPAD_CORE_BYTES

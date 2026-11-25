@@ -56,26 +56,6 @@ void rtgcwii_pads(struct rtgcwii* w, const uint8_t* status, uint32_t now) {
     }
 }
 
-uint32_t rtgcwii_probe_count(const struct rtgcwii* w, uint32_t channel) { return rtslot_probe_count(&w->slot, channel); }
-
-void rtgcwii_probed(struct rtgcwii* w, uint32_t channel, int32_t result) { rtslot_probed(&w->slot, channel, result); }
-
-int rtgcwii_on(const struct rtgcwii* w, uint32_t channel) { return rtslot_on(&w->slot, channel); }
-
-uint32_t rtgcwii_shaped(const struct rtgcwii* w) { return rtslot_shaped(&w->slot); }
-
-void rtgcwii_home_took(struct rtgcwii* w, uint32_t channel) { rtslot_home_took(&w->slot, channel); }
-
-int rtgcwii_home_keeps_shape(const struct rtgcwii* w, uint32_t channel) { return rtslot_home_keeps_shape(&w->slot, channel); }
-
-void rtgcwii_connect_change(struct rtgcwii* w, uint32_t* leave, uint32_t* join) { rtslot_connect_change(&w->slot, leave, join); }
-
-void rtgcwii_wii_read(struct rtgcwii* w, uint32_t now) { rtslot_wii_read(&w->slot, now); }
-
-int rtgcwii_quiet_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) { return rtslot_quiet_due(&w->slot, now, ticks_per_ms); }
-
-int rtgcwii_real_check_due(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) { return rtslot_real_check_due(&w->slot, now, ticks_per_ms); }
-
 int rtgcwii_should_read(struct rtgcwii* w, uint32_t now, uint32_t ticks_per_ms) {
     if (w->reading) return 0;
     if (w->game_read != 0) {
@@ -109,8 +89,9 @@ void rtgcwii_classic(struct rtgcwii* w, uint32_t channel, uint32_t* hold, uint32
 }
 
 /* The shape (sideways or with a Nunchuk) whatever the build's: the host
- * tests take each. */
-static void rtgcwii_shape(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out, uint32_t takes,
+ * tests take each. Inlined into each caller with `sideways` fixed, so a pad
+ * build links only its own form's shape (the other is dropped). */
+static inline __attribute__((always_inline)) void rtgcwii_shape(struct rtgcwii* w, uint32_t channel, uint32_t now, struct rtshape_out* out, uint32_t takes,
                           int sideways) {
     struct rtsrc_sample p;
     rtshape_rest(out);
@@ -149,18 +130,6 @@ void rtgcwii_camera(struct rtgcwii* w, uint32_t channel, uint32_t mode) { rtshap
 uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
     return rtgcwii_on(w, channel) ? w->hold[channel] : 0u;
 }
-
-int rtgcwii_next_change(struct rtgcwii* w, uint32_t skip, uint32_t keep, uint32_t* channel, int32_t* reason) { return rtslot_next_change(&w->slot, skip, keep, channel, reason); }
-
-void rtgcwii_kpad_read(struct rtgcwii* w, uint32_t channel, int32_t result, int32_t error, uint32_t now) { rtslot_kpad_read(&w->slot, channel, result, error, now); }
-
-void rtgcwii_still_told(struct rtgcwii* w, uint32_t channel) { rtslot_still_told(&w->slot, channel); }
-
-void rtgcwii_not_told(struct rtgcwii* w, uint32_t channel) { rtslot_not_told(&w->slot, channel); }
-
-void rtgcwii_heard(struct rtgcwii* w, uint32_t channel) { rtslot_heard(&w->slot, channel); }
-
-void rtgcwii_retell(struct rtgcwii* w, uint32_t now) { rtslot_retell(&w->slot, now); }
 
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
 uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera) {
