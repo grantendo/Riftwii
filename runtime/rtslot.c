@@ -280,5 +280,9 @@ void rtslot_tell_give(struct rtslot* s) { s->telling -= 1; }
 
 void rtslot_corrected(struct rtslot* s, uint32_t slot) {
     if (slot >= RTSLOT_SLOTS) return;
-    if (!((s->real >> slot) & 1u) && !((s->present >> slot) & 1u)) s->told |= 1u << slot;
+    /* The game's last word for the slot is now "connected": with the real
+     * controller gone, that's told, so "gone" follows if nothing stands in
+     * there by the next pass, and nothing does if a GameCube controller is
+     * there (CodeRabbit CLI). */
+    if (!((s->real >> slot) & 1u)) s->told |= 1u << slot;
 }

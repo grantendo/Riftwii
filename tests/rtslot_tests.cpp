@@ -372,6 +372,15 @@ void TestCorrectedAfterLeave() {
     rtslot_probed(&t, 1, 0);
     rtslot_corrected(&t, 1);
     EXPECT_EQ(tell_all(t).leaves, 0);
+    // A GameCube controller behind the slot when the correction went out,
+    // unplugged before the next pass: "gone" follows (CodeRabbit CLI).
+    rtslot u = fresh();
+    plug(u, 1);
+    rtslot_probed(&u, 1, 0);
+    rtslot_probed(&u, 1, -1);
+    rtslot_corrected(&u, 1);
+    unplug(u, 1);
+    EXPECT_EQ(tell_all(u).leaves, 1);
 }
 
 int main() {
