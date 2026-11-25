@@ -67,6 +67,11 @@ void TestSaveHelperKeeps() {
     const auto bytes = code({kStwu, kMrR5R4, kAddiR11R1, kBlPlus8, kStw, kStwR14R11, kBlr});
     RegTrack t = run(bytes, RegTrack::kArguments, 4);
     EXPECT_TRUE((t.copies(4) >> 5) & 1u);
+    // A call out of the code read, its target found nowhere: an ordinary
+    // call (CodeRabbit CLI, rf4).
+    const auto external = code({kStwu, kMrR5R4, kAddiR11R1, kBl, kStw});
+    RegTrack x = run(external, RegTrack::kArguments, 4);
+    EXPECT_EQ((x.copies(4) >> 5) & 1u, 0u);
     // The same `addi` before an ordinary call (CodeRabbit CLI): r5 is gone.
     const auto ordinary = code({kStwu, kMrR5R4, kAddiR11R1, kBlPlus8, kStw, kLiR3, kBlr});
     RegTrack u = run(ordinary, RegTrack::kArguments, 4);
