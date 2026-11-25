@@ -246,6 +246,22 @@ void TestWpadReadNoController() {
     EXPECT_EQ(rtslot_wpad_read(&s, 7, 0, 0), 0);  // no such slot
 }
 
+// #610 (CodeRabbit): the recheck of a real Wii Remote runs the game's
+// WPADProbe with interrupts on; a hooked probe answering meanwhile is
+// newer, and the recheck's older "no controller" mustn't undo it.
+void TestRecheckOlderAnswerLoses() {
+    rtslot s = fresh();
+    plug(s, 2);
+    rtslot_probed(&s, 2, 0);
+    std::uint32_t begun = rtslot_recheck_begin(&s, 2);
+    rtslot_probed(&s, 2, 0);              // the game's own probe, meanwhile
+    rtslot_rechecked(&s, 2, -1, begun);   // the recheck's older answer
+    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_REAL);
+    begun = rtslot_recheck_begin(&s, 2);
+    rtslot_rechecked(&s, 2, -1, begun);   // nothing newer: it counts
+    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_STANDIN);
+}
+
 }  // namespace
 
 int main() {
@@ -262,6 +278,7 @@ int main() {
     TestQuietLatch();
     TestBlankReportIsNotReal();
     TestWpadReadNoController();
+    TestRecheckOlderAnswerLoses();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

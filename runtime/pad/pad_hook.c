@@ -785,17 +785,17 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
         for (i = 0; i < RTGCWII_CHANNELS; ++i) {
             uint32_t type = 0;
             int32_t result;
-            uint32_t before;
-            if (!((w->slot.real >> i) & 1u)) continue;
-            /* Interrupts are on through the replay: a hooked probe in that
-             * time may note something newer, which this older answer then
-             * mustn't undo (CodeRabbit on #610). */
+            uint32_t begun;
             msr = interrupts_off();
-            before = rtgcwii_probe_count(w, i);
+            if (rtslot_owner(&w->slot, i, RTSLOT_NO_SLOT) != RTSLOT_REAL) {
+                interrupts_restore(msr);
+                continue;
+            }
+            begun = rtslot_recheck_begin(&w->slot, i);
             interrupts_restore(msr);
             result = pad_replay_probe((int32_t)i, &type);
             msr = interrupts_off();
-            if (rtgcwii_probe_count(w, i) == before) rtgcwii_probed(w, i, result);
+            rtslot_rechecked(&w->slot, i, result, begun);
             interrupts_restore(msr);
         }
     }
@@ -1166,7 +1166,7 @@ int32_t pad_on_probe(struct rt_pad_context* c, int32_t chan, uint32_t* type, int
     if (c->gcwii && chan >= 0) {
         struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
         msr = interrupts_off();
-        rtgcwii_probed(w, (uint32_t)chan, result);
+        rtslot_probed(&w->slot, (uint32_t)chan, result);
         interrupts_restore(msr);
         pad_gcwii_wii_read(c);
         pad_gcwii_read_pads(c);

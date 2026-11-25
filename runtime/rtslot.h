@@ -93,6 +93,13 @@ int rtslot_next_tell(struct rtslot* s, uint32_t home, int remote_shapes, uint32_
  * Wii Remote holds the slot by that answer (its report stays). */
 int rtslot_wpad_read(struct rtslot* s, uint32_t slot, int32_t error, int blank);
 
+/* A recheck of a real Wii Remote with the game's own WPADProbe, which runs
+ * with interrupts on: begin notes where the slot's answers stand, and the
+ * recheck's answer counts only if no newer one came meanwhile (CodeRabbit
+ * on #610). */
+uint32_t rtslot_recheck_begin(const struct rtslot* s, uint32_t slot);
+void rtslot_rechecked(struct rtslot* s, uint32_t slot, int32_t result, uint32_t begun);
+
 enum rtslot_after { RTSLOT_AFTER_NOTHING, RTSLOT_AFTER_EXTENSION, RTSLOT_AFTER_CONNECTED };
 enum rtslot_after rtslot_told(struct rtslot* s, uint32_t slot, int32_t reason, int delivered);
 

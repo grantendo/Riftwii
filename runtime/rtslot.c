@@ -244,3 +244,9 @@ int rtslot_wpad_read(struct rtslot* s, uint32_t slot, int32_t error, int blank) 
     }
     return 0;
 }
+
+uint32_t rtslot_recheck_begin(const struct rtslot* s, uint32_t slot) { return rtslot_probe_count(s, slot); }
+
+void rtslot_rechecked(struct rtslot* s, uint32_t slot, int32_t result, uint32_t begun) {
+    if (rtslot_probe_count(s, slot) == begun) rtslot_probed(s, slot, result);
+}
