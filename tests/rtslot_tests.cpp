@@ -309,6 +309,14 @@ void TestEmptyGapExact() {
     EXPECT_EQ(s.empty_reads[1], 2u);
     rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 2000 + 2 * kGrace + 1);
     EXPECT_EQ(s.empty_reads[1], 1u);
+    // From an odd tick.
+    rtslot o = fresh();
+    rtslot_kpad_read(&o, 1, 2, RTSLOT_NO_ERROR, 1000);
+    rtslot_kpad_read(&o, 1, 0, RTSLOT_NO_ERROR, 2001);
+    rtslot_kpad_read(&o, 1, 0, RTSLOT_NO_ERROR, 2001 + kGrace);
+    EXPECT_EQ(o.empty_reads[1], 2u);
+    rtslot_kpad_read(&o, 1, 0, RTSLOT_NO_ERROR, 2001 + 2 * kGrace + 1);
+    EXPECT_EQ(o.empty_reads[1], 1u);
 }
 
 int main() {

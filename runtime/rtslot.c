@@ -101,11 +101,13 @@ void rtslot_kpad_read(struct rtslot* s, uint32_t channel, int32_t result, int32_
         /* Reads that keep coming: a pause longer than `grace` between two
          * empty ones starts the count over (a burst, a pause and one more
          * read isn't a controller gone; CodeRabbit on #609). */
-        if (s->empty_since[channel] != 0 && rtslot_elapsed(now, s->empty_last[channel]) > s->grace)
+        if (s->empty_since[channel] != 0 && now - s->empty_last[channel] > s->grace)
             s->empty_since[channel] = 0;
         /* The tick itself (valid while a run is counted, empty_since not
-         * 0), so a gap of exactly `grace` keeps the run and one tick more
-         * doesn't (CodeRabbit, fork #22). */
+         * 0), and the gap from it as it is (not rtslot_elapsed, which drops
+         * a tagged tick's low bit), so a gap of exactly `grace` keeps the
+         * run and one tick more doesn't, from odd ticks too (CodeRabbit,
+         * fork #22). */
         s->empty_last[channel] = now;
         if (s->empty_since[channel] == 0) {
             s->empty_since[channel] = now | 1u;
