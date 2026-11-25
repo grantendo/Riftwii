@@ -94,6 +94,25 @@ void TestEpilogueRestoreKeeps() {
     EXPECT_TRUE((t.copies(4) >> 31) & 1u);
 }
 
+// CodeRabbit CLI (restructure rs3): a framed function that ends with a
+// plain `b` after its frame is undone ends there; a later leaf's `blr`
+// doesn't borrow that restore and stretch the function over the leaf.
+void TestFunctionEndAtBranch() {
+    const auto bytes = code({kStwu, 0x38210020u /* addi r1,r1,32 */, 0x48000008u /* b +8 */, 0x60000000u,
+                             0x3860FFFEu /* li r3,-2 */, 0x4E800020u});
+    EXPECT_EQ(riftwii::codescan::function_end(bytes.data(), 0, bytes.size() / 4), 3u);
+}
+
+// A call clobbers the volatile register holding a table's block.
+void TestClobbers() {
+    const auto bytes = code({kStwu, kMrR5R4, kBl, kStw, kAddiR11R1, kBl, kStw});
+    RegTrack t(bytes.data(), 0, bytes.size() / 4, RegTrack::kArguments);
+    EXPECT_TRUE(t.clobbers(2, 5));    // an ordinary call: r5 gone
+    EXPECT_TRUE(!t.clobbers(2, 31));  // a kept register
+    EXPECT_TRUE(!t.clobbers(5, 5));   // a save helper's call
+    EXPECT_TRUE(t.clobbers(1, 5));    // mr r5,r4 writes it
+}
+
 }  // namespace
 
 int main() {
@@ -102,6 +121,8 @@ int main() {
     TestErrorPathCall();
     TestAddresses();
     TestEpilogueRestoreKeeps();
+    TestFunctionEndAtBranch();
+    TestClobbers();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

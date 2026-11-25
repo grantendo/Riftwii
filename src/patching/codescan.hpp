@@ -104,6 +104,9 @@ public:
     std::uint32_t copies(unsigned reg) const { return copies_[reg & 31u]; }
     // The address `reg` holds, built with `lis` and `addi`; 0: not known.
     std::uint32_t address(unsigned reg) const { return address_[reg & 31u]; }
+    // Whether the word at `k` changes `reg`: writes it, or is a call that
+    // may (r0, r3-r12; not a save helper's, nor one ending an error path).
+    bool clobbers(std::size_t k, unsigned reg) const;
     // The word at `k` done.
     void step(std::size_t k);
 

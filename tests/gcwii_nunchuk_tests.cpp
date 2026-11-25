@@ -364,6 +364,13 @@ void TestUnified() {
         const std::int16_t nz = static_cast<std::int16_t>((e[46] << 8) | e[47]);
         EXPECT_TRUE(nz != 0);
     }
+    // Samples from before the shake began: both at rest, the Nunchuk too.
+    EXPECT_EQ(rtgcwii_unified(&w, 0, out, kBytes, kCount, 1100, 40, 0), kCount);
+    {
+        const std::uint8_t* old = out + (kCount - 1) * kBytes;  // 600 ticks back
+        EXPECT_EQ(static_cast<std::int16_t>((old[42] << 8) | old[43]), 0);
+        EXPECT_EQ(static_cast<std::int16_t>((old[46] << 8) | old[47]), static_cast<int>(RTGCWII_ACC_G));
+    }
     // WPADRead still gets exactly the format the game asked for.
     std::uint8_t report[RTGCWII_WPAD_FS_BYTES + 1] = {};
     report[RTGCWII_WPAD_CORE_BYTES] = 0xEE;

@@ -47,12 +47,13 @@ void rtsrc_decode(const uint8_t* status, struct rtsrc_sample* out) {
 
 void rtsrc_latest(const struct rtsrc* s, uint32_t port, struct rtsrc_sample* out) {
     uint32_t k;
-    if (port < RTSRC_PORTS) {
+    if (port < RTSRC_PORTS && ((s->present >> port) & 1u)) {
         rtsrc_decode(s->pad[port], out);
         return;
     }
-    /* No such port: nothing pressed, everything centred (no table: the
-     * blob has no data section of its own to keep one in). */
+    /* No such port, or nothing in it (unplugged past the grace period):
+     * nothing pressed, everything centred (no table: the blob has no data
+     * section of its own to keep one in; CodeRabbit CLI). */
     out->buttons = 0;
     for (k = 0; k < 6; ++k) out->axes[k] = 0;
     out->trigger[0] = out->trigger[1] = 0;

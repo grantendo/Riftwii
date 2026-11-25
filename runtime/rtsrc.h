@@ -65,7 +65,8 @@ enum rtsrc_event rtsrc_port(struct rtsrc* s, uint32_t port, const uint8_t* statu
 /* A PADStatus as a sample. */
 void rtsrc_decode(const uint8_t* status, struct rtsrc_sample* out);
 
-/* `port`'s latest sample (all zero for a port with nothing). */
+/* `port`'s latest sample: its last report while a controller is there (a
+ * dropped report within grace included); all zero for a port with nothing. */
 void rtsrc_latest(const struct rtsrc* s, uint32_t port, struct rtsrc_sample* out);
 
 #endif

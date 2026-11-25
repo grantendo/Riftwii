@@ -90,11 +90,21 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg.size() > 1 && arg[0] == '@') {
+            // A list that can't be read is an error, not an empty scan: a
+            // baseline compared with nothing would look like a match.
             std::ifstream list(arg.substr(1));
+            if (!list) {
+                std::cerr << "finderscan: cannot read the list " << arg.substr(1) << std::endl;
+                return 1;
+            }
             std::string line;
             while (std::getline(list, line)) {
                 if (!line.empty() && line.back() == '\r') line.pop_back();
                 if (!line.empty() && line[0] != '#') scan(line);
+            }
+            if (list.bad()) {
+                std::cerr << "finderscan: reading the list " << arg.substr(1) << " failed" << std::endl;
+                return 1;
             }
         } else {
             scan(arg);

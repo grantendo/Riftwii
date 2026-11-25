@@ -310,6 +310,49 @@ void TestTellingCount() {
     EXPECT_TRUE(!rtslot_tell_busy(&s));
 }
 
+// CodeRabbit CLI (restructure rs1): a retell the game's callback can't take
+// yet keeps the first, delivered "connected": the slot stays told and the
+// retell stays due, and a controller unplugged meanwhile is still told gone.
+void TestFailedRetellKeepsTold() {
+    rtslot s = fresh();
+    s.retell_ticks = 100;
+    plug(s, 0);
+    tell_all(s);
+    rtslot_retell(&s, 1000);
+    rtslot_retell(&s, 1200);
+    EXPECT_TRUE((s.retell & 1u) != 0);
+    std::uint32_t slot = 9;
+    std::int32_t reason = 9;
+    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
+    EXPECT_EQ(reason, 0);
+    EXPECT_EQ(rtslot_told(&s, slot, reason, 0), RTSLOT_AFTER_NOTHING);  // no callback just now
+    EXPECT_TRUE((s.told & 1u) != 0);
+    EXPECT_TRUE((s.retell & 1u) != 0);
+    unplug(s, 0);
+    EXPECT_EQ(tell_all(s).leaves, 1);
+    // A first "connected" that couldn't be delivered stays unannounced.
+    rtslot t = fresh();
+    plug(t, 1);
+    EXPECT_TRUE(rtslot_next_tell(&t, kNone, 1, 0, &slot, &reason));
+    rtslot_told(&t, slot, reason, 0);
+    EXPECT_EQ(t.told & 2u, 0u);
+}
+
+// CodeRabbit CLI (restructure rs1): a "connected" whose slot was
+// unannounced while the callback ran (a real Wii Remote found, then gone)
+// isn't followed by its attachment.
+void TestNoExtensionAfterUnannounce() {
+    rtslot s = fresh();
+    plug(s, 2);
+    std::uint32_t slot = 9;
+    std::int32_t reason = 9;
+    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
+    rtslot_probed(&s, 2, 0);   // in the callback: a real one
+    rtslot_probed(&s, 2, -1);  // and gone again
+    EXPECT_EQ(rtslot_told(&s, slot, reason, 1), RTSLOT_AFTER_NOTHING);
+    EXPECT_EQ(tell_all(s).joins, 1);  // announced afresh, with its attachment
+}
+
 }  // namespace
 
 int main() {
@@ -330,6 +373,8 @@ int main() {
     TestHomeAnnounced();
     TestHomeLeaveNotForReal();
     TestTellingCount();
+    TestFailedRetellKeepsTold();
+    TestNoExtensionAfterUnannounce();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
         return 1;

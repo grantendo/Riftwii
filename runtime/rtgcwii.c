@@ -188,8 +188,9 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
             const int shaking = rtshape_shake_at(&w->shape, channel, now, i * sample_ticks, acc);
             if (shaking != 0) rtdeliver_put_acc(e + 2, acc);
             /* The Nunchuk's too, where the sample has its part (it shakes
-             * with the Wii Remote, rtshape_nunchuk), from the shake's start. */
-            if (shaking == 2 && n == RTGCWII_WPAD_FS_BYTES) rtdeliver_put_acc(e + 42, acc);
+             * with the Wii Remote, rtshape_nunchuk): swinging from the
+             * shake's start, at rest before it (CodeRabbit CLI). */
+            if (shaking != 0 && n == RTGCWII_WPAD_FS_BYTES) rtdeliver_put_acc(e + 42, acc);
         }
     }
     return count;

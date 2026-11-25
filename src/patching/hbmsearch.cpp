@@ -333,8 +333,9 @@ WpadConnect2006 find_wpad_connect_2006(const std::vector<CodeRange>& text) {
                 stores = stores || opcode(insn) == 36;  // stw
             }
             // The block's register written with anything else (`lwz
-            // r4,8(r1)`): what goes through it after isn't the block.
-            if (block >= 0 && writes_register(insn, static_cast<std::uint32_t>(block)) &&
+            // r4,8(r1)`), or clobbered by a call (CodeRabbit CLI): what
+            // goes through it after isn't the block.
+            if (block >= 0 && regs.clobbers(k, static_cast<unsigned>(block)) &&
                 !epilogue_restore(r.bytes, k, end)) {
                 block = -1;
                 loads = stores = false;
@@ -399,7 +400,7 @@ std::vector<std::pair<std::uint32_t, std::int32_t>> wpad_setters(const std::vect
             // the stack, another value): a load and a store through it after
             // this aren't the table's block (CodeRabbit CLI, #15). A load into
             // it from the block itself ends it too.
-            if (block >= 0 && writes_register(insn, static_cast<std::uint32_t>(block))) {
+            if (block >= 0 && regs.clobbers(k, static_cast<unsigned>(block))) {
                 // An epilogue's restore (epilogue_restore: off r1, then the
                 // frame undone and a return or tail call) doesn't end it: an
                 // early error return branched around leaves the block as it

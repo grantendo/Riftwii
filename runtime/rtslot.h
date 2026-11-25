@@ -36,6 +36,10 @@ struct rtslot {
     uint32_t wii_read, quiet_from;
     uint32_t quiet_reached;
     uint32_t probe_counts[RTSLOT_SLOTS];  /* rtslot_probe_count */
+    /* Slots whose "connected" being told now is a retell: the first one was
+     * delivered, so a retell the game's callback can't take yet leaves the
+     * slot told (and the retell due), not unannounced (CodeRabbit CLI). */
+    uint32_t retelling;
 };
 
 uint32_t rtslot_probe_count(const struct rtslot* s, uint32_t slot);

@@ -57,6 +57,8 @@ void TestPlugReportUnplug() {
     // Nothing for the whole grace period: unplugged.
     EXPECT_EQ(rtsrc_port(&s, 0, none().b, kGrace, 30 + kGrace), RTSRC_GONE);
     EXPECT_EQ(s.present, 0u);
+    rtsrc_latest(&s, 0, &out);  // unplugged: nothing held, not its last report
+    EXPECT_EQ(out.buttons, 0u);
     EXPECT_EQ(rtsrc_port(&s, 0, none().b, kGrace, 1000), RTSRC_NOTHING);
     // Back: arrives afresh.
     EXPECT_EQ(rtsrc_port(&s, 0, report(0).b, kGrace, 1100), RTSRC_ARRIVED);

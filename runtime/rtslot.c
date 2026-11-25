@@ -95,6 +95,11 @@ int rtslot_next_change(struct rtslot* s, uint32_t skip, uint32_t keep, uint32_t*
         *channel = i;
         *reason = (join & bit) ? 0 : -1;
         if (join & bit) {
+            if ((s->told & bit) && (s->retell & bit)) {
+                s->retelling |= bit;
+            } else {
+                s->retelling &= ~bit;
+            }
             s->told |= bit;
             s->retell &= ~bit;
             /* A new "connected": only a read after it says the game heard
@@ -207,17 +212,28 @@ int rtslot_next_tell(struct rtslot* s, uint32_t home, int remote_shapes, uint32_
 }
 
 enum rtslot_after rtslot_told(struct rtslot* s, uint32_t slot, int32_t reason, int delivered) {
+    const uint32_t bit = slot < RTSLOT_SLOTS ? 1u << slot : 0u;
+    int retold;
     if (slot >= RTSLOT_SLOTS) return RTSLOT_AFTER_NOTHING;
+    retold = reason == 0 && (s->retelling & bit) != 0;
+    s->retelling &= ~bit;
     if (!delivered) {
-        /* Still to tell, at the next pass. */
-        if (reason == 0) {
+        /* Still to tell, at the next pass. A retell keeps the first,
+         * delivered "connected" (a "gone" is still owed if the controller
+         * leaves) and stays due. */
+        if (retold) {
+            s->retell |= bit;
+        } else if (reason == 0) {
             rtslot_not_told(s, slot);
         } else {
             rtslot_still_told(s, slot);
         }
         return RTSLOT_AFTER_NOTHING;
     }
-    if (reason == 0) return rtslot_on(s, slot) ? RTSLOT_AFTER_EXTENSION : RTSLOT_AFTER_NOTHING;
+    /* The attachment only for an announcement that still stands: a probe
+     * during the callback may have found a real Wii Remote, and a later
+     * one its leaving, which unannounces the slot (CodeRabbit CLI). */
+    if (reason == 0) return rtslot_on(s, slot) && (s->told & bit) ? RTSLOT_AFTER_EXTENSION : RTSLOT_AFTER_NOTHING;
     /* A real controller that came while "gone" was told: its own "connected"
      * may have come first, so the game hears last that one is there. */
     if ((s->real >> slot) & 1u) return RTSLOT_AFTER_CONNECTED;

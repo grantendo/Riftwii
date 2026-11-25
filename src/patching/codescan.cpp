@@ -78,8 +78,11 @@ std::size_t function_end(const std::uint8_t* bytes, std::size_t start, std::size
         if (ret && first == 0) first = k + 1;
         for (std::size_t back = 1; back <= 4 && back <= k - start; ++back) {
             const std::uint32_t insn = be32(bytes + 4 * (k - back));
-            // Another function's return or tail call: its restore isn't this one's.
+            // Another function's return or tail call: its restore isn't this
+            // one's; nor across a plain `b`, which leaves this path (a
+            // restore before it belongs to where it went; CodeRabbit CLI).
             if (insn == kBlr || tail_call(k - back)) break;
+            if (opcode(insn) == 18 && (insn & 1u) == 0) break;
             const bool restore = (opcode(insn) == 14 && reg_d(insn) == 1 && reg_a(insn) == 1) ||  // addi r1,r1,N
                                  (opcode(insn) == 32 && reg_d(insn) == 1);                         // lwz r1,...
             if (restore) {
@@ -209,6 +212,14 @@ void RegTrack::follow(unsigned reg) {
     reg &= 31u;
     followed_ |= 1u << reg;
     copies_[reg] = 1u << reg;
+}
+
+bool RegTrack::clobbers(std::size_t k, unsigned reg) const {
+    const std::uint32_t insn = be32(bytes_ + 4 * k);
+    reg &= 31u;
+    if (writes_register(insn, reg)) return true;
+    return ((kVolatileRegisters >> reg) & 1u) && calls(insn, k > 0 ? be32(bytes_ + 4 * (k - 1)) : 0) &&
+           !call_then_returns(bytes_, k, end_);
 }
 
 void RegTrack::step(std::size_t k) {
