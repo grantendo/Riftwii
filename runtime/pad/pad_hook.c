@@ -730,14 +730,15 @@ static void pad_gcwii_camera_now(struct rt_pad_context* c, uint32_t chan) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     if (w->kpad_dpd != 0 && chan < RTGCWII_CHANNELS) {
         const uint8_t* wants = (const uint8_t*)(uintptr_t)(w->kpad_dpd + chan * w->kpad_dpd_stride + w->kpad_dpd_offset);
-        if (pad_in_ram(wants)) rtgcwii_camera(w, chan, *(const volatile uint8_t*)wants);
+        if (pad_in_ram(wants)) {
+            rtgcwii_camera(w, chan, *(const volatile uint8_t*)wants);
+            return;
+        }
     }
 #ifdef RT_PAD_FORM_POINTING
-    else {
-        /* KPAD's camera switch not found: a pointing game wants its
-         * pointer, so the camera counts as on. */
-        rtgcwii_camera(w, chan, 1u);
-    }
+    /* KPAD's camera switch not found, or this channel's isn't in RAM: a
+     * pointing game wants its pointer, so the camera counts as on. */
+    rtgcwii_camera(w, chan, 1u);
 #endif
 }
 

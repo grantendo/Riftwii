@@ -1723,6 +1723,17 @@ static void TestKpadDpdSwitch() {
     EXPECT_EQ(k.stride, 1672u);
     EXPECT_EQ(k.offset, 0x642u);
     EXPECT_TRUE(k.enable != 0);
+    // The reading function split across touching entries of the code's view
+    // (a pack's patch over one of its words): still read whole (CodeRabbit,
+    // fork #23).
+    for (std::size_t back : {12u, 20u, 32u}) {
+        const std::size_t cut = code.size() - back;
+        text = {{a.base, code.data(), cut}, {a.base + static_cast<std::uint32_t>(cut), code.data() + cut, code.size() - cut}};
+        const riftwii::KpadDpd split = riftwii::find_kpad_dpd_switch(text);
+        EXPECT_EQ(split.base, 0x80750A00u);
+        EXPECT_EQ(split.offset, 0x642u);
+        EXPECT_EQ(split.enable, k.enable);
+    }
     // A second read of another byte before another call: two switches, not guessed.
     reader(a, call, 0x881E0645u);  // lbz r0,0x645(r30)
     code = a.bytes();
