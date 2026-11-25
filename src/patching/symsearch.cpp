@@ -760,13 +760,18 @@ std::uint32_t find_wpad_is_dpd_enabled(const std::vector<CodeRange>& text) {
         const std::size_t words = r.size / 4;
         for (std::size_t start = 0; start < words; ++start) {
             if ((be32(r.bytes + 4 * start) & 0xFFFF0000u) != 0x94210000u) continue;  // stwu r1
+            const std::uint32_t at = r.address + static_cast<std::uint32_t>(4 * start);
             std::uint32_t high[32] = {}, address[32] = {};
             bool indexed[32] = {};
             int block = -1, camera = -1;
             bool returns = false;
             bool r3_camera = false;  // r3 holds the camera word now
-            for (std::size_t k = start + 1; k < words && k <= start + kMaxWords; ++k) {
-                const std::uint32_t insn = be32(r.bytes + 4 * k);
+            // Its words by address, so one a pack's patch splits across
+            // touching entries of the view is read whole; a gap ends it
+            // (CodeRabbit, fork #23).
+            for (std::uint32_t k = 1; k <= kMaxWords; ++k) {
+                if (!inside(text, at + 4 * k)) break;
+                const std::uint32_t insn = word_at(text, at + 4 * k);
                 const std::uint32_t op = insn >> 26, d = (insn >> 21) & 31u, a = (insn >> 16) & 31u;
                 if (insn == 0x4E800020u) {  // blr: it returns the camera word only if r3 still holds it
                     returns = r3_camera;
@@ -796,7 +801,7 @@ std::uint32_t find_wpad_is_dpd_enabled(const std::vector<CodeRange>& text) {
                 }
             }
             if (!returns) continue;
-            found = r.address + static_cast<std::uint32_t>(4 * start);
+            found = at;
             ++matches;
         }
     }
@@ -884,7 +889,8 @@ KpadDpd find_kpad_dpd_switch(const std::vector<CodeRange>& text) {
                     static_cast<std::uint32_t>(imm) < kMaxOffset) {
                     // Two different bytes read before the one call: which is
                     // the switch can't be told.
-                    if (here.enable != 0 && (here.base != read_base || here.offset != static_cast<std::uint32_t>(imm)))
+                    if (here.enable != 0 && (here.base != read_base || here.stride != read_stride ||
+                                             here.offset != static_cast<std::uint32_t>(imm)))
                         two_reads = true;
                     here.enable = function;
                     here.base = read_base;

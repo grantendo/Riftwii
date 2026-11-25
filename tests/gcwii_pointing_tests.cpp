@@ -229,6 +229,18 @@ void TestTilt() {
     EXPECT_TRUE(tilt2 <= RTGCWII_TILT_SIN * RTGCWII_TILT_SIN && tilt2 > (RTGCWII_TILT_SIN - 2) * (RTGCWII_TILT_SIN - 2));
     const int len2 = tilt2 + f.acc[1] * f.acc[1];
     EXPECT_TRUE(len2 <= kOneG2 && len2 > (RTHOME_AXIS_FULL - 2) * (RTHOME_AXIS_FULL - 2));
+    // Every C-stick position: the tilt never past a full push (the root
+    // rounded up; fork #23).
+    for (int cx = -80; cx <= 80; ++cx) {
+        for (int cy = -80; cy <= 80; cy += 2) {
+            s[4] = s8(cx);
+            s[5] = s8(cy);
+            rtgcwii_pads(&w, p.s, t);
+            t += 16;
+            rtgcwii_pointing(&w, 0, &f);
+            EXPECT_TRUE(f.acc[0] * f.acc[0] + f.acc[2] * f.acc[2] <= RTGCWII_TILT_SIN * RTGCWII_TILT_SIN);
+        }
+    }
     // Half right: about half as far.
     s[4] = s8(36);
     s[5] = 0;

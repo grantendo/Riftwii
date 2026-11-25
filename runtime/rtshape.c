@@ -92,9 +92,10 @@ static void rtshape_count_shake(struct rtshape* sh, uint32_t i, uint32_t shaking
     const uint32_t bit = 1u << i;
     uint32_t flips;
     if (!shaking) {
+        /* A step no read has taken yet stays (shake_jump): the next read
+         * still gets its jump in speed (CodeRabbit, fork #23). */
         sh->shake[i] = 0;
         sh->shake_from[i] = 0;
-        sh->shake_jump &= ~bit;
         return;
     }
     if (sh->shake_flip == 0) {
@@ -316,6 +317,10 @@ void rtshape_nunchuk(const struct rtshape* sh, uint32_t port, const struct rtsrc
          * and Nunchuk shaken together). */
         rtshape_shake(shake, jump, out->acc, &out->acc_value, &out->acc_speed);
         rtshape_shake(shake, jump, out->fs_acc, &out->fs_acc_value, &out->fs_acc_speed);
+    } else if ((sh->shake_jump >> port) & 1u) {
+        /* The last step, let go before a read took it: both hands' jump. */
+        out->acc_speed = RTSHAPE_SHAKE_VALUE;
+        out->fs_acc_speed = RTSHAPE_SHAKE_VALUE;
     }
 }
 
@@ -334,6 +339,7 @@ void rtshape_sideways(const struct rtshape* sh, uint32_t port, const struct rtsr
         out->acc[2] = s;
         out->acc[1] = -rtshape_isqrt(RTHOME_AXIS_FULL * RTHOME_AXIS_FULL - s * s);
     }
+    if (sh->shake[port] == 0 && ((sh->shake_jump >> port) & 1u)) out->acc_speed = RTSHAPE_SHAKE_VALUE;
     if (sh->shake[port] != 0) {
         rtshape_shake(sh->shake[port], (int)((sh->shake_jump >> port) & 1u), out->acc, &out->acc_value,
                       &out->acc_speed);
@@ -357,7 +363,10 @@ void rtshape_pointing(const struct rtshape* sh, uint32_t port, const struct rtsr
     z = p->axes[3] * RTSHAPE_TILT_SIN / RTHOME_AXIS_FULL;
     r2 = x * x + z * z;
     if (r2 > RTSHAPE_TILT_SIN * RTSHAPE_TILT_SIN) {
+        /* Rounded up, so the result stays within the limit (a floor root
+         * can leave it a little over; CodeRabbit, fork #23). */
         r = rtshape_isqrt(r2);
+        if (r * r < r2) ++r;
         x = x * RTSHAPE_TILT_SIN / r;
         z = z * RTSHAPE_TILT_SIN / r;
         r2 = x * x + z * z;
@@ -372,6 +381,8 @@ void rtshape_pointing(const struct rtshape* sh, uint32_t port, const struct rtsr
     out->horizon[1] = x * RTHOME_AXIS_FULL / r;
     if (sh->shake[port] != 0)
         rtshape_shake(sh->shake[port], (int)((sh->shake_jump >> port) & 1u), out->acc, &out->acc_value, &out->acc_speed);
+    else if ((sh->shake_jump >> port) & 1u)
+        out->acc_speed = RTSHAPE_SHAKE_VALUE;
 }
 #endif
 

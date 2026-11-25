@@ -210,6 +210,23 @@ void TestShakeKeepsTime() {
         }
         EXPECT_TRUE(jumps >= 9 && jumps <= 10);  // 400 ms / 40 ms
     }
+    // A step, then X let go before any read: the next read still gets the
+    // jump in speed, at rest; the read after doesn't (fork #23).
+    {
+        rtgcwii w = fresh();
+        Pads p;
+        p.plug(0, kGcX);
+        rtshape_out f;
+        std::uint32_t t = 1000;
+        for (std::uint32_t i = 0; i < RTGCWII_SHAKE_FLIP; ++i) rtgcwii_pads(&w, p.s, t += 16);
+        p.plug(0);
+        rtgcwii_pads(&w, p.s, t += 16);
+        rtgcwii_nunchuk(&w, 0, t, &f);
+        EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_VALUE);
+        EXPECT_EQ(f.acc[1], -RTHOME_AXIS_FULL);
+        rtgcwii_nunchuk(&w, 0, t + 16, &f);
+        EXPECT_EQ(f.acc_speed, 0);
+    }
 }
 
 // X held shakes the Wii Remote: the axes swing past 3 g and flip every

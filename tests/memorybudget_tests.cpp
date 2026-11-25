@@ -50,7 +50,10 @@ static void test_classic_without_adapter() {
     const struct {
         const char* form;
         std::uint32_t bytes;
-    } forms[] = {{"classic", kBudgetClassicFull}, {"nunchuk", kBudgetNunchukFull}, {"sideways", kBudgetSidewaysFull}};
+    } forms[] = {{"classic", kBudgetClassicFull},
+                 {"nunchuk", kBudgetNunchukFull},
+                 {"sideways", kBudgetSidewaysFull},
+                 {"pointing", kBudgetPointingFull}};
     for (const auto& f : forms) {
         state.model.game.gc_controllers = f.form;
         const ExtrasBudget standin = EstimateExtras(state);
