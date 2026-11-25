@@ -88,10 +88,20 @@ uint32_t rtdeliver_wpad(const struct rtshape_out* f, uint32_t format, int camera
         if (f->pointer_shown) {
             /* The dots move against the pointer: pointing right or down puts
              * the sensor bar left of or above the camera's centre. */
+            int32_t hx = RTHOME_AXIS_FULL, hy = 0;
             mid_x = 512 - f->pointer[0] * RTDELIVER_DOT_RANGE_X / RTHOME_POINTER_FULL;
             mid_y = 384 - f->pointer[1] * RTDELIVER_DOT_RANGE_Y / RTHOME_POINTER_FULL;
-            rtdeliver_put_dot(out + 8, mid_x + RTDELIVER_DOT_APART / 2 + 1, mid_y, RTDELIVER_DOT_SIZE, 0);
-            rtdeliver_put_dot(out + 16, mid_x - RTDELIVER_DOT_APART / 2, mid_y, RTDELIVER_DOT_SIZE, 1);
+#ifdef RT_PAD_FORM_POINTING
+            /* The pointing form's roll turns the pair around its midpoint,
+             * as KPAD's horizon (the camera sees it mirrored on both axes,
+             * as the midpoint; CodeRabbit, fork #23). */
+            hx = f->horizon[0];
+            hy = f->horizon[1];
+#endif
+            rtdeliver_put_dot(out + 8, mid_x + (RTDELIVER_DOT_APART / 2 + 1) * hx / RTHOME_AXIS_FULL,
+                              mid_y + (RTDELIVER_DOT_APART / 2 + 1) * hy / RTHOME_AXIS_FULL, RTDELIVER_DOT_SIZE, 0);
+            rtdeliver_put_dot(out + 16, mid_x - (RTDELIVER_DOT_APART / 2) * hx / RTHOME_AXIS_FULL,
+                              mid_y - (RTDELIVER_DOT_APART / 2) * hy / RTHOME_AXIS_FULL, RTDELIVER_DOT_SIZE, 1);
         } else {
             rtdeliver_put_dot(out + 8, 0, 767, 0, 0);
             rtdeliver_put_dot(out + 16, 0, 767, 0, 1);

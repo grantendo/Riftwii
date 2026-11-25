@@ -891,8 +891,12 @@ static void pad_gcwii_status(struct rt_pad_context* c, uint32_t chan, uint8_t* s
 #endif
     pad_put32(status + PAD_KPAD_DIST, rtgcwii_float_bits(PAD_DIST_AT_REST));
     pad_put32(status + PAD_KPAD_VERTICAL_Y, PAD_FLOAT_ONE);
+    /* The camera's format only while the stand-in is on there, as the
+     * unified report has it (a HOME claim kept after its GameCube controller
+     * left; CodeRabbit, fork #23). */
     pad_put_device(c, status, PAD_DEV_STANDIN, f.pointer_shown ? PAD_DPD_SEEN : 0u,
-                   (w->shape.camera >> chan) & 1u ? PAD_FORMAT_STANDIN_DPD : PAD_FORMAT_STANDIN);
+                   rtslot_on(&w->slot, chan) && ((w->shape.camera >> chan) & 1u) ? PAD_FORMAT_STANDIN_DPD
+                                                                                  : PAD_FORMAT_STANDIN);
 #ifdef RT_PAD_FORM_NUNCHUK
     pad_put32(status + PAD_KPAD_FS_STICK, rthome_float_bits(f.stick[0]));
     pad_put32(status + PAD_KPAD_FS_STICK + 4, rthome_float_bits(f.stick[1]));
@@ -1313,11 +1317,16 @@ static void pad_put_dot(uint8_t* o, int32_t x, int32_t y, uint32_t size, uint32_
  * centred on (512, 384) when it points at the screen's centre, moving
  * against it by up to 384 x 288 at the edge, 137 apart, size 3 (Dolphin's
  * emulated Wii Remote at rest); the other two seen nowhere (size 0). */
-static void pad_put_dots(uint8_t* obj, const int32_t* pointer) {
+/* `horizon`: the line between the dots (RTHOME_AXIS_FULL long), as the
+ * KPAD read reports it; 0 for level. The camera sees the screen mirrored on
+ * both axes, so the turn is mirrored with the midpoint (CodeRabbit, fork
+ * #23: a game that takes the roll from the dots). */
+static void pad_put_dots(uint8_t* obj, const int32_t* pointer, const int32_t* horizon) {
     const int32_t mid_x = 512 - pointer[0] * 384 / RTHOME_POINTER_FULL;
     const int32_t mid_y = 384 - pointer[1] * 288 / RTHOME_POINTER_FULL;
-    pad_put_dot(obj, mid_x + 137 / 2 + 1, mid_y, 3u, 0);
-    pad_put_dot(obj + 8, mid_x - 137 / 2, mid_y, 3u, 1);
+    const int32_t hx = horizon ? horizon[0] : RTHOME_AXIS_FULL, hy = horizon ? horizon[1] : 0;
+    pad_put_dot(obj, mid_x + (137 / 2 + 1) * hx / RTHOME_AXIS_FULL, mid_y + (137 / 2 + 1) * hy / RTHOME_AXIS_FULL, 3u, 0);
+    pad_put_dot(obj + 8, mid_x - (137 / 2) * hx / RTHOME_AXIS_FULL, mid_y - (137 / 2) * hy / RTHOME_AXIS_FULL, 3u, 1);
     pad_put_dot(obj + 16, 0, 767, 0u, 2);
     pad_put_dot(obj + 24, 0, 767, 0u, 3);
 }
@@ -1325,8 +1334,8 @@ static void pad_put_dots(uint8_t* obj, const int32_t* pointer) {
 /* `pointer`: where the KPAD read on this channel points, for the dots (the
  * permanent stand-in's own with the camera on; while the HOME Menu is open
  * on it, the HOME Menu's pointer); 0 for no dots, in the format without the
- * camera's. */
-static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold, const int32_t* pointer) {
+ * camera's. `horizon`: their line (pad_put_dots), 0 for level. */
+static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold, const int32_t* pointer, const int32_t* horizon) {
     uint32_t i;
     for (i = 0; i < RTHOME_WPAD_STATUS_BYTES; ++i) entry[i] = 0;
     entry[0] = (uint8_t)(hold >> 8);
@@ -1334,7 +1343,7 @@ static void pad_gcwii_wpad_status(uint8_t* entry, uint32_t hold, const int32_t* 
     /* The same data format the KPAD read reports on this channel (with the
      * camera on, its camera format), and with it the dots it promises, the
      * pointer as the KPAD read has it (Cake's review of #610). */
-    if (pointer) pad_put_dots(entry + 8, pointer);
+    if (pointer) pad_put_dots(entry + 8, pointer, horizon);
     entry[40] = PAD_DEV_STANDIN;
     /* With dots, the camera's format they come in (the HOME Menu open on a
      * channel whose camera the game left off too: its pointer is seen). */
@@ -1389,7 +1398,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
                 uint32_t k;
                 /* The device and format the static writer gives, over the
                  * sample's buttons, accelerometer and dots. */
-                pad_gcwii_wpad_status(raw, hold, own);
+                pad_gcwii_wpad_status(raw, hold, own, 0);
                 entry[40] = raw[40];
                 for (k = RTHOME_WPAD_STATUS_BYTES - 2u; k < c->kpad_unified_bytes; ++k) entry[k] = 0;
                 entry[c->kpad_unified_bytes - 2u] = raw[RTHOME_WPAD_STATUS_BYTES - 2u];
@@ -1422,7 +1431,7 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
             : (rtslot_on(&w->slot, (uint32_t)chan) && ((w->shape.camera >> (uint32_t)chan) & 1u)) ? w->shape.pointer[chan]
                                                                                                    : 0;
         for (i = 0; i < count; ++i) {
-            pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at);
+            pad_gcwii_wpad_status(status + (uint32_t)i * c->kpad_unified_bytes, remote_hold, at, 0);
             pad_unified_format(c, status + (uint32_t)i * c->kpad_unified_bytes);
         }
         interrupts_restore(msr);
