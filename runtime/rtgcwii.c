@@ -132,21 +132,28 @@ uint32_t rtgcwii_hold(const struct rtgcwii* w, uint32_t channel) {
 }
 
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
-uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera) {
+/* The raw report on `channel` in data format `report_format` (its length),
+ * the camera as the game set it (KPAD's switch, `kpad_camera`, or the format
+ * the game asked for). */
+static uint32_t rtgcwii_report(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera,
+                               uint32_t report_format) {
     struct rtshape_out f;
-    uint32_t format;
     if (channel >= RTGCWII_CHANNELS || !rtgcwii_on(w, channel)) return 0;
-    format = w->format[channel];
-    rtgcwii_camera(w, channel, kpad_camera || rtdeliver_format_has_camera(format));
+    rtgcwii_camera(w, channel, kpad_camera || rtdeliver_format_has_camera(w->format[channel]));
     /* A look: the report has only the buttons held, so what the game's KPAD
      * reads were last given (and what is new at its next one) and the
      * shake's step stay for that read, as for the HOME Menu's stand-in. */
     rtgcwii_wii_remote(w, channel, now, &f, 0);
 #ifdef RT_PAD_FORM_NUNCHUK
-    return rtdeliver_wpad(&f, format, (int)((w->shape.camera >> channel) & 1u), 1, out);
+    return rtdeliver_wpad(&f, report_format, (int)((w->shape.camera >> channel) & 1u), 1, out);
 #else
-    return rtdeliver_wpad(&f, format, (int)((w->shape.camera >> channel) & 1u), 0, out);
+    return rtdeliver_wpad(&f, report_format, (int)((w->shape.camera >> channel) & 1u), 0, out);
 #endif
+}
+
+uint32_t rtgcwii_wpad_status(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t now, int kpad_camera) {
+    /* WPADRead copies the format the game asked for: exactly that long. */
+    return rtgcwii_report(w, channel, out, now, kpad_camera, channel < RTGCWII_CHANNELS ? w->format[channel] : 0u);
 }
 
 uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint32_t entry_bytes, uint32_t count,
@@ -154,7 +161,20 @@ uint32_t rtgcwii_unified(struct rtgcwii* w, uint32_t channel, uint8_t* out, uint
     uint8_t first[RTGCWII_WPAD_FS_BYTES];
     uint32_t i, k, n;
     if (channel >= RTGCWII_CHANNELS || entry_bytes < RTGCWII_WPAD_FS_BYTES + 2u || count == 0) return 0;
-    n = rtgcwii_wpad_status(w, channel, first, now, kpad_camera);
+    {
+        /* KPAD's raw samples: a real Wii Remote + Nunchuk's always carry the
+         * Nunchuk's part (KPAD sets a Nunchuk data format itself once one is
+         * plugged in), and the entries say so, so the Nunchuk form gives it
+         * whatever format the stand-in saw the game ask for. Donkey Kong
+         * Country Returns never asks, and read the Nunchuk's part as zeros
+         * (a hard pull, never a shake): its Nunchuk play never started. */
+        uint32_t report_format = w->format[channel];
+#ifdef RT_PAD_FORM_NUNCHUK
+        if (report_format < RTDELIVER_FMT_FS_FIRST || report_format > RTDELIVER_FMT_FS_ACC_DPD)
+            report_format = RTDELIVER_FMT_FS_ACC_DPD;
+#endif
+        n = rtgcwii_report(w, channel, first, now, kpad_camera, report_format);
+    }
     if (n == 0) return 0;
     for (i = 0; i < count; ++i) {
         uint8_t* e = out + i * entry_bytes;

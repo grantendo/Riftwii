@@ -352,6 +352,23 @@ void TestUnified() {
     EXPECT_TRUE(plus > 0 && minus > 0);  // the swing, across 80 ticks of samples
     // Not the stand-in's channel: nothing written.
     EXPECT_EQ(rtgcwii_unified(&w, 1, out, kBytes, kCount, 1100, 5, 0), 0u);
+    // A game that never asked for a data format (Donkey Kong Country
+    // Returns): the Nunchuk's part is there all the same, shaking with the
+    // Wii Remote, never zeros.
+    w.format[0] = 0;
+    EXPECT_EQ(rtgcwii_unified(&w, 0, out, kBytes, kCount, 1100, 5, 0), kCount);
+    for (std::uint32_t i = 0; i < kCount; ++i) {
+        const std::uint8_t* e = out + i * kBytes;
+        const std::int16_t x = static_cast<std::int16_t>((e[2] << 8) | e[3]);
+        EXPECT_EQ(static_cast<std::int16_t>((e[42] << 8) | e[43]), x);
+        const std::int16_t nz = static_cast<std::int16_t>((e[46] << 8) | e[47]);
+        EXPECT_TRUE(nz != 0);
+    }
+    // WPADRead still gets exactly the format the game asked for.
+    std::uint8_t report[RTGCWII_WPAD_FS_BYTES + 1] = {};
+    report[RTGCWII_WPAD_CORE_BYTES] = 0xEE;
+    EXPECT_EQ(rtgcwii_wpad_status(&w, 0, report, 1100, 0), RTGCWII_WPAD_CORE_BYTES);
+    EXPECT_EQ(report[RTGCWII_WPAD_CORE_BYTES], 0xEE);
 }
 
 }  // namespace
