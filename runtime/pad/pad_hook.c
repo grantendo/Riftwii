@@ -768,7 +768,10 @@ static uint32_t pad_gcwii_own(const struct rt_pad_context* c) {
  * screens read no channel 0, so any channel and WPADProbe count), and at
  * the game's sleeps (pad_on_sleep). Interrupts as the caller had them: on
  * at a KPAD read or WPADProbe, off at the sleep VIWaitForRetrace makes
- * (PADRead turns them off itself anyway). */
+ * (PADRead turns them off itself anyway). The real Wii Remotes' recheck
+ * runs the game's WPADProbe, which wants them on (rtslot.h): it runs only
+ * when they were on, and a due one waits for the next such call
+ * (CodeRabbit, fork #22). */
 static void pad_gcwii_read_pads(struct rt_pad_context* c) {
     struct rtgcwii* w = (struct rtgcwii*)(uintptr_t)c->gcwii;
     uint32_t msr, i;
@@ -779,7 +782,7 @@ static void pad_gcwii_read_pads(struct rt_pad_context* c) {
      * stops reading a channel its library reported gone, whose hooked
      * reads and probes then never come (rtgcwii_real_check_due). */
     msr = interrupts_off();
-    read = rtgcwii_real_check_due(w, now(), c->ticks_per_ms);
+    read = (msr & 0x8000u) != 0 && rtgcwii_real_check_due(w, now(), c->ticks_per_ms);
     interrupts_restore(msr);
     if (read) {
         for (i = 0; i < RTGCWII_CHANNELS; ++i) {
@@ -1665,10 +1668,14 @@ static void pad_gcwii_tell(struct rt_pad_context* c) {
             pad_tell_extension(c, chan);
             msr = interrupts_off();
         } else if (after == RTSLOT_AFTER_CONNECTED) {
+            int corrected;
             interrupts_restore(msr);
-            (void)pad_tell_connect(c, chan, 0);
+            corrected = pad_tell_connect(c, chan, 0);
             msr = interrupts_off();
-            rtslot_corrected(&w->slot, chan);
+            /* Not delivered (the game took its callback away): the game's
+             * last word is still "gone", so a GameCube controller there
+             * later is announced (CodeRabbit, fork #22). */
+            if (corrected) rtslot_corrected(&w->slot, chan);
         }
     }
     rtslot_tell_give(&w->slot);

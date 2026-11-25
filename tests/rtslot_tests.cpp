@@ -288,6 +288,12 @@ void TestHomeAnnounced() {
     // Took a slot the Wii Remote stand-in already held: same shape, the game has it.
     rtslot_home_took(&s, 2);
     EXPECT_EQ(rtslot_home_announced(&s, 2, 1), kNone);
+    // A real Wii Remote there: its library tells the game (fork #22).
+    rtslot r = fresh();
+    rtslot_probed(&r, 2, 0);
+    EXPECT_EQ(rtslot_home_announced(&r, 2, 0), kNone);
+    EXPECT_EQ(rtslot_home_announced(&r, 2, 1), kNone);
+    EXPECT_EQ(rtslot_home_announced(&r, 3, 0), 3u);
 }
 
 // #610 (CodeRabbit): a real Wii Remote took the slot the HOME Menu's
@@ -298,6 +304,14 @@ void TestHomeLeaveNotForReal() {
     rtslot_probed(&s, 0, 0);
     EXPECT_TRUE(!rtslot_home_may_leave(&s, 0));
     EXPECT_TRUE(rtslot_home_may_leave(&s, kNone));
+    // A GameCube controller on the HOME Menu's slot, already told
+    // connected by the permanent stand-in: no "gone" from the HOME Menu's
+    // end (fork #22's second review).
+    rtslot t = fresh();
+    plug(t, 2);
+    EXPECT_TRUE(rtslot_home_may_leave(&t, 2));
+    EXPECT_EQ(tell_all(t).joins, 1);
+    EXPECT_TRUE(!rtslot_home_may_leave(&t, 2));
 }
 
 // #609 (Cake's review): while one telling runs, a nested PADRead leaves
@@ -383,7 +397,20 @@ void TestCorrectedAfterLeave() {
     EXPECT_EQ(tell_all(u).leaves, 1);
 }
 
+// Fork #22: a gap of exactly the grace between two empty reads keeps the
+// run counting; one tick more starts it over (from an even tick too).
+void TestEmptyGapExact() {
+    rtslot s = fresh();
+    rtslot_kpad_read(&s, 1, 2, RTSLOT_NO_ERROR, 1000);
+    rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 2000);
+    rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 2000 + kGrace);
+    EXPECT_EQ(s.empty_reads[1], 2u);
+    rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 2000 + 2 * kGrace + 1);
+    EXPECT_EQ(s.empty_reads[1], 1u);
+}
+
 int main() {
+    TestEmptyGapExact();
     TestOwnerOrder();
     TestRealBeatsHome();
     TestHomeEndsOnRealSlot();
