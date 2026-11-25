@@ -7,26 +7,16 @@ by the release workflow after the GitHub release is up. Discord's own
 markdown: at most 2000 characters once filled in (the workflow counts).
 
 -->
-{{TESTER_ROLE}} RiftWii {{VERSION}} is out. {{RELEASE_URL}}
+{{TESTER_ROLE}} RiftWii {{VERSION}} is out. It replaces 2611-239, which we took down because it gave a black screen or a DSI exception on every real Wii. Sorry about that! {{RELEASE_URL}}
 
-New, from a tester's idea:
+**If you updated to 239 and RiftWii won't start:** copy boot.dol from the zip to sd:/apps/riftwii/ (replace the old one). After that it updates itself as usual.
 
-* **Mod tiles can use their GameTDB entry** (like Newer Super Mario Bros. Wii, SMNP03). Pick it from a list, or type its ID, when you make a mod's Home tile (or later in its Options > GameTDB entry). The tile gets the mod's own name, cover and About page.
+* **RiftWii starts on a real Wii again.** The crash came from where things ended up in memory, and it never shows in Dolphin. The build now guards against it, and every release gets started on a real Wii before it goes out.
+* **Big game libraries use less memory.** Updates and game details download straight to the SD card, so RiftWii no longer runs out of memory and restarts with hundreds of games.
+* **Settings has new buttons**, in the Wii Menu's style.
 
-And two fixes from your reports:
+To test: start RiftWii from the Homebrew Channel and from the RiftWii channel. Does the menu come up?
 
-* **USA games on a Japanese Wii** don't crash anymore (Super Mario Galaxy 2's green screen). A game from another region now gets a language it has when it's set to follow the Wii's language (not WiiWare or Virtual Console yet).
-* **The Wii Remote pointer** works again after the Remote times out and wakes up.
+Sending logs (you don't need to take out your SD card): in RiftWii go to Settings > Help > Send a problem report, scan the QR code or copy the link, and post it here.
 
-Everything from 2611-233 (the Rift Store and more) is in it too.
-
-Tried in Dolphin only so far. To test, please:
-
-1. Make a Home tile for a mod with a GameTDB entry (Newer, Retro Rewind...) and pick the entry: right name, cover and About page?
-2. A game from another region (for example USA on a Japanese Wii): does it start, in English?
-3. Let the Wii Remote time out in the menu, then press A: does the pointer go where you aim?
-
-Sending logs (you don't need to take out your SD card): in RiftWii go to Settings > Help > Send a problem report, scan the QR code or copy the link, and post it here with what you tested.
-
-![What's new](docs/screenshots/2611-236-whats-new.png)
-![GameTDB entry](docs/screenshots/2611-236-gametdb-entry.png)
+![Settings](docs/screenshots/2611-239-settings.png)

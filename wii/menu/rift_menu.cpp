@@ -5295,12 +5295,12 @@ static void OfferNintendontSavesOnce(const std::function<void(bool)>& homeShown)
 // holds six lines), for the release script to keep up to date. Shown
 // once when they change; Settings > Help > What's new shows them again.
 static const char* const kWhatsNew[] = {
+	"Big libraries use less memory",
 	"Pick a mod tile's GameTDB entry",
 	"USA games play on a Japanese Wii",
 	"The pointer works after a Remote wakes up",
 	"The Rift Store: get homebrew apps",
 	"Search and Layout on Home's bar",
-	"Wider game pages at 16:9",
 };
 
 static std::string WhatsNewText()
@@ -20799,7 +20799,11 @@ static int SettingsHub(int& focus, bool fromSection)
 		t.h = kH;
 		t.label = sections[i].id == SettingsSection::Count ? std::string(tr("Exit")) : SectionName(sections[i].id);
 		t.icon = sections[i].icon;
-		t.opensPage = true;
+		// Nine large tiles with a name each, as the Wii Menu's: the icon
+		// larger on top and the name centred under it. Every one opens a
+		// page, so no ">" (it looked like a list's, not a menu's).
+		t.stacked = true;
+		t.labelPoints = 20;
 		tilesSpec.push_back(t);
 	}
 
