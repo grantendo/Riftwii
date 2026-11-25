@@ -780,6 +780,24 @@ void TestWpadConnectLater() {
         EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 2212u);
     }
     {
+        // A branch around the copy (`mr r11,r12`) that CTR takes: on that
+        // path CTR is r11's old value, so not the slot's call (CodeRabbit
+        // CLI).
+        Section t{0x80218000, {}};
+        put_later_setter(t, 2208);
+        put_later_setter(t, 2212);
+        t.put(stwu_r1(0x40));
+        t.put(li(11, 0));
+        t.put(lwz(12, 29, 2212));
+        t.put(li(4, -1));
+        t.put(kBeqPlus8Skip);
+        t.put(mr(11, 12));
+        t.put(0x7D6903A6u);  // mtctr r11
+        t.put(kBctrl);
+        t.put(kBlr);
+        EXPECT_EQ(riftwii::find_wpad_connect_later({t.range()}).offset, 0u);
+    }
+    {
         // Two branches, each around one `li r4,-1`: with both taken, r4 is
         // 0 at the call, so not a "no controller" call (CodeRabbit CLI).
         Section t{0x80218000, {}};

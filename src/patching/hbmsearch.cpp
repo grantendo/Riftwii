@@ -515,47 +515,56 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
             const auto setter = std::find_if(setters.begin(), setters.end(),
                                              [&](const auto& s) { return s.second == simm(insn); });
             if (setter == setters.end()) continue;
-            // r12, the loaded slot, and its copies (`mr`), over the words up
-            // to its call.
-            const std::size_t window_end = std::min(words, i + 1 + kCallWindow);
-            RegTrack regs(text, r, i + 1, window_end, RegTrack::kArguments);
-            regs.follow(12);
             // What each word on the way does to r4 (the callback's argument:
-            // `li r4,-1` is "no controller", any other write isn't) and to
-            // CTR (an `mtctr` from the slot or a copy, or anything else),
-            // and where a conditional branch goes; then every path from the
-            // load to the call is followed, and the call is the slot's "no
-            // controller" only if each path has both (CodeRabbit on #616,
-            // CodeRabbit CLI: a branch around either write).
+            // `li r4,-1` is "no controller", any other write isn't), to the
+            // registers holding the slot (r12, loaded here, and its `mr`
+            // copies) and to CTR (`mtctr`), and where a conditional branch
+            // goes; then every path from the load to the call is followed,
+            // and the call is the slot's "no controller" only if on each path
+            // r4 is -1 and CTR came from a register holding the slot then
+            // (CodeRabbit on #616, CodeRabbit CLI: a branch around any of
+            // those writes).
             struct Word {
-                std::int8_t r4 = 0, ctr = 0;  // 0: untouched, 1: -1 / the slot's, 2: anything else
+                std::int8_t r4 = 0;           // 0: untouched, 1: -1, 2: anything else
+                std::int8_t ctr = -1;         // mtctr's source register, -1: none
+                bool ctr_other = false;       // CTR changed another way (bdnz)
+                std::uint32_t writes = 0;     // the registers it writes
+                std::int8_t copy_from = -1;   // `mr rA,rS`: rS (rA holds what rS held)
                 std::int64_t to = -1;         // a conditional branch's target word, -1: none
             };
             std::vector<Word> way;
             for (std::size_t k = i + 1; k < words && k <= i + kCallWindow; ++k) {
                 const std::uint32_t next = be32(r.bytes + 4 * k);
                 if (next == kBctrl) {
+                    struct Path {
+                        std::size_t at;
+                        bool gone, ctr;
+                        std::uint32_t slot;  // the registers holding the slot
+                    };
                     bool every = true;
-                    std::vector<std::pair<std::size_t, std::pair<bool, bool>>> paths{{0, {false, false}}};
+                    std::vector<Path> paths{{0, false, false, 1u << 12}};
                     while (!paths.empty() && every) {
-                        std::size_t p = paths.back().first;
-                        bool gone = paths.back().second.first, ctr = paths.back().second.second;
+                        Path q = paths.back();
                         paths.pop_back();
-                        for (; p < way.size(); ++p) {
-                            const Word& w = way[p];
-                            if (w.r4 != 0) gone = w.r4 == 1;
-                            if (w.ctr != 0) ctr = w.ctr == 1;
+                        for (; q.at < way.size(); ++q.at) {
+                            const Word& w = way[q.at];
+                            if (w.r4 != 0) q.gone = w.r4 == 1;
+                            if (w.ctr >= 0) q.ctr = ((q.slot >> w.ctr) & 1u) != 0;
+                            if (w.ctr_other) q.ctr = false;
+                            const bool copies_slot = w.copy_from >= 0 && ((q.slot >> w.copy_from) & 1u);
+                            q.slot &= ~w.writes;
+                            if (copies_slot) q.slot |= w.writes;
                             if (w.to < 0) continue;
                             const std::int64_t to = w.to - static_cast<std::int64_t>(i + 1);
                             // Back, or onto the words before: not followed.
-                            if (to <= static_cast<std::int64_t>(p)) every = false;
+                            if (to <= static_cast<std::int64_t>(q.at)) every = false;
                             // To the call or before it; past it, that path
                             // doesn't call (the `beq` past it when the slot
                             // is empty).
                             else if (to <= static_cast<std::int64_t>(way.size()))
-                                paths.push_back({static_cast<std::size_t>(to), {gone, ctr}});
+                                paths.push_back({static_cast<std::size_t>(to), q.gone, q.ctr, q.slot});
                         }
-                        every = every && gone && ctr;
+                        every = every && q.gone && q.ctr;
                     }
                     // The call goes through CTR: only a call whose CTR came
                     // from the loaded slot is the slot's (CodeRabbit CLI, #15).
@@ -563,22 +572,27 @@ WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
                         told_gone.push_back(setter->second);
                     break;
                 }
-                Word w;
-                // mtctr rS: from the slot (r12 or a copy of it) or from
-                // anything else.
-                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) w.ctr = ((regs.copies(12) >> reg_d(next)) & 1u) != 0 ? 1 : 2;
-                regs.step(k);
                 // A jump or return, or r12 loaded again: not this slot's call
                 // (the `beq` past it when the slot is empty is fine).
                 if (opcode(next) == 18 || next == kBlr ||
                     ((opcode(next) == 32 || opcode(next) == 14) && reg_d(next) == 12))
                     break;
-                if (writes_register(next, 4)) w.r4 = is_li(next, -1) ? 1 : 2;
-                if (opcode(next) == 16 && (next & 3u) == 0) {  // bc, relative, no link
-                    std::int32_t offset = static_cast<std::int32_t>(next & 0xFFFCu);
-                    if (offset & 0x8000) offset -= 0x10000;
-                    w.to = static_cast<std::int64_t>(k) + offset / 4;
-                    if ((((next >> 21) & 31u) & 4u) == 0) w.ctr = 2;  // bdnz and kin count CTR down
+                Word w;
+                if ((next & 0xFC1FFFFFu) == 0x7C0903A6u) w.ctr = static_cast<std::int8_t>(reg_d(next));  // mtctr rS
+                for (std::uint32_t g = 0; g < 32; ++g)
+                    if (writes_register(next, g)) w.writes |= 1u << g;
+                // `mr rA,rS` (`or rA,rS,rS`).
+                if (opcode(next) == 31 && ((next >> 1) & 0x3FFu) == 444 && (next & 1u) == 0 &&
+                    ((next >> 21) & 31u) == ((next >> 11) & 31u))
+                    w.copy_from = static_cast<std::int8_t>((next >> 21) & 31u);
+                if ((w.writes >> 4) & 1u) w.r4 = is_li(next, -1) ? 1 : 2;
+                if (opcode(next) == 16) {  // bc
+                    if ((((next >> 21) & 31u) & 4u) == 0) w.ctr_other = true;  // bdnz and kin count CTR down
+                    if ((next & 3u) == 0) {  // relative, no link
+                        std::int32_t offset = static_cast<std::int32_t>(next & 0xFFFCu);
+                        if (offset & 0x8000) offset -= 0x10000;
+                        w.to = static_cast<std::int64_t>(k) + offset / 4;
+                    }
                 }
                 way.push_back(w);
             }
