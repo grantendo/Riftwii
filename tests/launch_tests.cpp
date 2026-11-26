@@ -396,8 +396,7 @@ static void test_saves() {
     model.game.aspect = "16:9";
     model.game.rumble = "off";
     model.game.speaker = "off";
-    EXPECT_EQ(model.game.gc_controllers, std::string("auto"));
-    EXPECT_TRUE(model.save().find("gccontrollers") == std::string::npos);  // Automatic, the default, isn't written
+    EXPECT_TRUE(model.save().find("gccontrollers") == std::string::npos);  // off, the default, isn't written
     model.game.gc_controllers = "classic";
     model.game.region_strings = "on";
     EXPECT_TRUE(model.save().find("gcdiscreads") == std::string::npos);
@@ -415,7 +414,7 @@ static void test_saves() {
     EXPECT_EQ(prefs.game.gc_disc_reads, std::string("drive"));
     EXPECT_EQ(prefs.game.gc_card, std::string("shared"));
     // The Wii Remote + Nunchuk form saves and comes back the same; an
-    // unknown form reads as Automatic.
+    // unknown form reads as off.
     model.game.gc_controllers = "nunchuk";
     prefs.restore(model.save());
     EXPECT_EQ(prefs.game.gc_controllers, std::string("nunchuk"));
@@ -427,13 +426,8 @@ static void test_saves() {
     EXPECT_EQ(prefs.game.gc_controllers, std::string("pointing"));
     // The player's own pointing choice is the one the launch takes.
     EXPECT_EQ(model.effective_gc_controllers(), std::string("pointing"));
-    // Off is a choice of its own now: written and read back.
-    model.game.gc_controllers = "off";
-    prefs.restore(model.save());
-    EXPECT_EQ(prefs.game.gc_controllers, std::string("off"));
-    EXPECT_EQ(model.effective_gc_controllers(), std::string("off"));
     prefs.restore("*riftwii*\tgccontrollers\tbogus\n");
-    EXPECT_EQ(prefs.game.gc_controllers, std::string("auto"));
+    EXPECT_EQ(prefs.game.gc_controllers, std::string("off"));
     prefs.restore("*riftwii*\tgccard\tbogus\n");
     EXPECT_EQ(prefs.game.gc_card, std::string("global"));
     // The real card in slot B, and an explicit "own", survive a save;
@@ -1012,10 +1006,8 @@ static void test_pack_gc_controllers() {
     model.game.gc_controllers = "classic";
     EXPECT_EQ(model.effective_gc_controllers(), std::string("classic"));  // the game's setting wins
     model.game.gc_controllers = "off";
-    EXPECT_EQ(model.effective_gc_controllers(), std::string("off"));  // Off is off, a pack's request or not
-    model.game.gc_controllers = "auto";
     EXPECT_TRUE(model.set_enabled(1, false));
-    EXPECT_EQ(model.effective_gc_controllers(), std::string("off"));  // Automatic with no pack asking
+    EXPECT_EQ(model.effective_gc_controllers(), std::string("off"));
 }
 
 int main() {

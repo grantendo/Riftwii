@@ -409,8 +409,6 @@ std::string LaunchModel::effective_gc_controllers() const {
     if (game.gc_controllers == "classic" || game.gc_controllers == "nunchuk" || game.gc_controllers == "sideways" ||
         game.gc_controllers == "pointing")
         return game.gc_controllers;
-    // Off is the player's "leave them as they are", a pack's request or not.
-    if (game.gc_controllers != "auto") return "off";
     const std::string from_pack = pack_gc_controllers();
     return from_pack.empty() ? "off" : from_pack;
 }
@@ -532,9 +530,8 @@ std::string LaunchModel::save() const {
     if (game.aspect != "global") text += "*riftwii*\taspect\t" + clean(game.aspect) + "\n";
     if (game.rumble == "off") text += "*riftwii*\trumble\toff\n";
     if (game.speaker == "off") text += "*riftwii*\tspeaker\toff\n";
-    // Automatic is the default and isn't written; Off is a choice of its own.
-    if (game.gc_controllers == "off" || game.gc_controllers == "classic" || game.gc_controllers == "nunchuk" ||
-        game.gc_controllers == "sideways" || game.gc_controllers == "pointing")
+    if (game.gc_controllers == "classic" || game.gc_controllers == "nunchuk" || game.gc_controllers == "sideways" ||
+        game.gc_controllers == "pointing")
         text += "*riftwii*\tgccontrollers\t" + game.gc_controllers + "\n";
     if (game.region_strings == "on") text += "*riftwii*\tregionstrings\ton\n";
     if (game.nand_source == "real" || game.nand_source == "emu")
@@ -642,9 +639,8 @@ void LaunchModel::restore(const std::string& text) {
             } else if (key == "speaker") {
                 game.speaker = value == "off" ? "off" : "on";
             } else if (key == "gccontrollers") {
-                const bool known = value == "off" || value == "classic" || value == "nunchuk" ||
-                                   value == "sideways" || value == "pointing";
-                game.gc_controllers = known ? value : "auto";
+                game.gc_controllers =
+                    value == "classic" || value == "nunchuk" || value == "sideways" || value == "pointing" ? value : "off";
             } else if (key == "regionstrings") {
                 game.region_strings = value == "on" ? "on" : "off";
             } else if (key == "nandsource") {

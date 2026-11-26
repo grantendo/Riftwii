@@ -9436,11 +9436,10 @@ static const char* const kBorderModes[] = {"global", "keep", "remove", "remove_a
 static const char* const kVideoModes[] = {"global", "game", "system", "ntsc", "pal60", "pal50", "480p", "240p"};
 static const char* const kAspects[] = {"global", "game", "4:3", "16:9"};
 // GameCube controllers in a Wii game (GameSettings::gc_controllers, #587),
-// "Controllers act as": Automatic (the form an enabled pack asks for, else
-// as they are), as they are, as Classic Controllers, as Wii Remotes with a
-// Nunchuk, as Wii Remotes held sideways, or as Wii Remotes pointed at the
-// screen.
-static const char* const kGcControllers[] = {"auto", "off", "classic", "nunchuk", "sideways", "pointing"};
+// "Controllers act as": Default ("off": as they are, or the form an enabled
+// pack asks for), as Classic Controllers, as Wii Remotes with a Nunchuk, as
+// Wii Remotes held sideways, or as Wii Remotes pointed at the screen.
+static const char* const kGcControllers[] = {"off", "classic", "nunchuk", "sideways", "pointing"};
 // A stand-in form's name on the row and in its help.
 static std::string GcFormName(const std::string& form)
 {
@@ -9449,7 +9448,7 @@ static std::string GcFormName(const std::string& form)
 	       : form == "pointing" ? tr("Pointing Wii Remote")
 	                            : tr("Classic Controller");
 }
-// Its short name, for Automatic's value on the row ("Automatic (Nunchuk)"):
+// Its short name, for Default's value on the row ("Default (Nunchuk)"):
 // the full one was cut off beside the arrows (Dolphin, 26 Nov).
 static std::string GcFormShortName(const std::string& form)
 {
@@ -9816,18 +9815,18 @@ static void BuildGameRows(const FrontendState& state, std::vector<FlowRow>& rows
 	FlowRow gcControllers;
 	gcControllers.kind = FlowRow::Kind::Option;
 	gcControllers.label = tr("Controllers act as");
-	// Automatic shows the form an enabled pack asks for, so the row says
-	// what the launch will do (state.model.effective_gc_controllers).
-	const std::string gcFromPack = game.gc_controllers == "auto" ? state.model.pack_gc_controllers() : std::string();
+	// Default shows the form an enabled pack asks for, so the row says
+	// what the launch will do (state.model.effective_gc_controllers), as
+	// the other rows' "Default (...)" say what they follow.
 	const bool gcForm = game.gc_controllers == "classic" || game.gc_controllers == "nunchuk" ||
 	                    game.gc_controllers == "sideways" || game.gc_controllers == "pointing";
+	const std::string gcFromPack = gcForm ? std::string() : state.model.pack_gc_controllers();
 	gcControllers.on = gcForm || !gcFromPack.empty();
 	// The row's label says what the choice is for: the choice alone (a long
 	// "As ..." was cut off beside the arrows).
-	gcControllers.value = gcForm                           ? GcFormName(game.gc_controllers)
-	                      : !gcFromPack.empty()            ? tr("Automatic ({1})", {GcFormShortName(gcFromPack)})
-	                      : game.gc_controllers == "auto" ? std::string(tr("Automatic"))
-	                                                       : std::string(tr("Off"));
+	gcControllers.value = gcForm                ? GcFormName(game.gc_controllers)
+	                      : !gcFromPack.empty() ? tr("Default ({1})", {GcFormShortName(gcFromPack)})
+	                                            : tr("Default ({1})", {tr("Game's own")});
 	add(gcControllers, {RowRef::What::GcControllers});
 	FlowRow regionStrings;
 	regionStrings.kind = FlowRow::Kind::Toggle;
@@ -16035,14 +16034,12 @@ static void MenuGameSettings(FrontendState& state, bool& coverAsked)
 					                    : tr("Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.")) +
 					    " " + tr("A code build doesn't use it.") + " " +
 					    tr("In a game with no GameCube controller code, only the adapter's controllers play."));
-				else if (gameSettings.gc_controllers == "off")
-					say(tr("Off: GameCube controllers work only in games made for them, even when an enabled pack asks for a Wii controller. The other choices have them play as one."));
 				else if (const std::string from_pack = state.model.pack_gc_controllers(); !from_pack.empty())
-					// Automatic, with a pack that asks for a form (riftwii-gc-controllers).
-					say(tr("Automatic: an enabled pack asks for {1}, so the GameCube controllers play that way. Pick another choice to change it.",
+					// Default, with a pack that asks for a form (riftwii-gc-controllers).
+					say(tr("Default: an enabled pack asks for {1}, so the GameCube controllers play that way. Pick another choice to change it.",
 					       {GcFormName(from_pack)}));
 				else
-					say(tr("Automatic: GameCube controllers work only in games made for them, unless an enabled pack asks for a Wii controller. The other choices have them play as one. For now this is for GameCube controllers only."));
+					say(tr("Default: GameCube controllers work only in games made for them, unless an enabled pack asks for a Wii controller. The other choices have them play as one. For now this is for GameCube controllers only."));
 			else if (ref.what == RowRef::What::RegionStrings)
 				say(tr("For a game from another region (an import): the game sees its own region's country names where it looks for the console's."));
 			else if (ref.what == RowRef::What::Language)

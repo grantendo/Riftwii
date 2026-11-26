@@ -1545,9 +1545,6 @@ msgstr "Désactivé : coupe le haut-parleur intégré des Télécommandes Wii po
 msgid "Controllers act as"
 msgstr "Les manettes jouent comme"
 
-msgid "Automatic ({1})"
-msgstr "Automatique ({1})"
-
 msgid "Classic"
 msgstr "Classique"
 
@@ -1563,17 +1560,14 @@ msgstr "Pointage"
 msgid "Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one."
 msgstr "Chaque manette GameCube joue comme une manette Classic (le port 1 comme la Télécommande Wii 1, et ainsi de suite), dans les jeux qui l'acceptent."
 
-msgid "Automatic: an enabled pack asks for {1}, so the GameCube controllers play that way. Pick another choice to change it."
-msgstr "Automatique : un pack activé demande {1}, donc les manettes GameCube jouent ainsi. Choisissez une autre option pour changer cela."
+msgid "Default: an enabled pack asks for {1}, so the GameCube controllers play that way. Pick another choice to change it."
+msgstr "Par défaut : un pack activé demande {1}, donc les manettes GameCube jouent ainsi. Choisissez une autre option pour changer cela."
 
 msgid "A code build doesn't use it."
 msgstr "Une build de code ne l'utilise pas."
 
-msgid "Off: GameCube controllers work only in games made for them, even when an enabled pack asks for a Wii controller. The other choices have them play as one."
-msgstr "Désactivé : les manettes GameCube ne fonctionnent que dans les jeux faits pour elles, même quand un pack activé demande une manette Wii. Les autres choix les font jouer comme une manette Wii."
-
-msgid "Automatic: GameCube controllers work only in games made for them, unless an enabled pack asks for a Wii controller. The other choices have them play as one. For now this is for GameCube controllers only."
-msgstr "Automatique : les manettes GameCube ne fonctionnent que dans les jeux faits pour elles, sauf si un pack activé demande une manette Wii. Les autres choix les font jouer comme une manette Wii. Pour l'instant, ceci ne concerne que les manettes GameCube."
+msgid "Default: GameCube controllers work only in games made for them, unless an enabled pack asks for a Wii controller. The other choices have them play as one. For now this is for GameCube controllers only."
+msgstr "Par défaut : les manettes GameCube ne fonctionnent que dans les jeux faits pour elles, sauf si un pack activé demande une manette Wii. Les autres choix les font jouer comme une manette Wii. Pour l'instant, ceci ne concerne que les manettes GameCube."
 
 msgid "Wii Remote + Nunchuk"
 msgstr "Télécommande Wii + Nunchuk"
