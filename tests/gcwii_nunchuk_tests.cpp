@@ -169,9 +169,10 @@ void TestPointer() {
 }
 
 // With shake_flip (the loader's 33 ms), the shake keeps time, not samples:
-// read every 4 ms or every 16 ms, it flips every shake_flip ticks, and only
-// the sample a flip lands on has the jump in speed (Donkey Kong Country
-// Returns' shake to start took nothing faster than a 15 Hz shake).
+// read every 4 ms or every 16 ms, the swing turns about every two
+// shake_flips (a whole swing RTGCWII_SHAKE_PERIOD counts, four a flip),
+// and every read while it's held has the steady speed (Wario Land: Shake
+// It!'s earthquake punch wants motion every frame).
 void TestShakeKeepsTime() {
     for (std::uint32_t step : {4u, 16u}) {
         rtgcwii w = fresh();
@@ -179,36 +180,38 @@ void TestShakeKeepsTime() {
         Pads p;
         p.plug(0, kGcX);
         rtshape_out f;
-        int flips = 0, jumps = 0;
+        int turns = 0, reads = 0, moving = 0;
         std::int32_t last = 0;
         for (std::uint32_t t = 1000; t < 1000 + 330; t += step) {
             rtgcwii_pads(&w, p.s, t);
             rtgcwii_nunchuk(&w, 0, t, &f);
-            if (t > 1000 && f.acc[0] != last) ++flips;
-            if (f.acc_speed != 0) ++jumps;
+            if (t > 1000 && ((last < 0) != (f.acc[0] < 0))) ++turns;
+            if (t > 1000 && f.acc[0] != last) ++moving;
+            ++reads;
+            EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_SPEED);
             last = f.acc[0];
         }
-        EXPECT_TRUE(flips >= 9 && flips <= 10);  // 330 ms / 33 ms, whatever the step
-        EXPECT_EQ(jumps, flips);
+        EXPECT_TRUE(turns >= 4 && turns <= 6);  // 330 ms over a half-swing of about 66 ms, whatever the step
+        if (step == 16) EXPECT_TRUE(moving * 3 >= (reads - 1) * 2);  // a read a frame: it moves on most
     }
-    // Samples every 10 ms, reads every 20 ms (off the samples): each step's
-    // jump waits for the next read, never lost to a later sample
-    // (CodeRabbit CLI, #610).
+    // Samples every 10 ms, reads every 20 ms (off the samples): every read
+    // while it's held has the speed (CodeRabbit CLI, #610).
     {
         rtgcwii w = fresh();
         w.shape.shake_flip = 40;
         Pads p;
         p.plug(0, kGcX);
         rtshape_out f;
-        int jumps = 0;
+        int reads = 0, with_speed = 0;
         for (std::uint32_t t = 1000; t < 1000 + 400; t += 10) {
             rtgcwii_pads(&w, p.s, t);
             if ((t / 10) % 2 == 1) {
                 rtgcwii_nunchuk(&w, 0, t + 5, &f);
-                if (f.acc_speed != 0) ++jumps;
+                ++reads;
+                if (f.acc_speed == RTGCWII_SHAKE_SPEED) ++with_speed;
             }
         }
-        EXPECT_TRUE(jumps >= 9 && jumps <= 10);  // 400 ms / 40 ms
+        EXPECT_EQ(with_speed, reads);
     }
     // A step, then X let go before any read: the next read still gets the
     // jump in speed, at rest; the read after doesn't (fork #23).
@@ -222,46 +225,44 @@ void TestShakeKeepsTime() {
         p.plug(0);
         rtgcwii_pads(&w, p.s, t += 16);
         rtgcwii_nunchuk(&w, 0, t, &f);
-        EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_VALUE);
+        EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_SPEED);
         EXPECT_EQ(f.acc[1], -RTHOME_AXIS_FULL);
         rtgcwii_nunchuk(&w, 0, t + 16, &f);
         EXPECT_EQ(f.acc_speed, 0);
     }
 }
 
-// X held shakes the Wii Remote: the axes swing past 3 g and flip every
-// RTGCWII_SHAKE_FLIP samples, a flip a jump in speed; let go, it's still.
+// X held shakes the Wii Remote: the axes swing as a trapezoid between
+// +-RTGCWII_SHAKE_G, moving every sample on the ramps and holding each peak
+// for a few (Batman: The Brave and the Bold's 3.2 g is always seen), the
+// speed steady; let go, it's still.
 void TestShake() {
     rtgcwii w = fresh();
     Pads p;
     p.plug(0, kGcX);
     rtshape_out f;
-    int flips = 0;
+    int moving = 0, at_top = 0, at_bottom = 0, run = 0, longest = 0;
     std::int32_t last = 0;
-    for (std::uint32_t i = 0; i < 4 * RTGCWII_SHAKE_FLIP; ++i) {
+    for (std::uint32_t i = 0; i < 2 * RTGCWII_SHAKE_PERIOD; ++i) {
         rtgcwii_pads(&w, p.s, 1 + i * 16);
         rtgcwii_nunchuk(&w, 0, 1 + i * 16, &f);
-        if ((i + 1) / RTGCWII_SHAKE_FLIP == RTGCWII_SHAKE_STEPS - 1u) {
-            // The fifth step (sample 16): back at rest.
-            EXPECT_EQ(f.acc_value, RTHOME_AXIS_FULL);
-            EXPECT_EQ(f.acc[0], 0);
-            EXPECT_EQ(f.acc[1], -RTHOME_AXIS_FULL);
-            EXPECT_EQ(f.acc[2], 0);
-        } else {
-            EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
-            EXPECT_TRUE(f.acc[0] == RTGCWII_SHAKE_G || f.acc[0] == -RTGCWII_SHAKE_G);
-            EXPECT_EQ(f.acc[1], f.acc[0]);
-            EXPECT_EQ(f.acc[2], -f.acc[0]);
-        }
-        if (i > 0 && f.acc[0] != last) {
-            ++flips;
-            EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_VALUE);
-        }
+        EXPECT_TRUE(f.acc[0] >= -RTGCWII_SHAKE_G && f.acc[0] <= RTGCWII_SHAKE_G);
+        EXPECT_EQ(f.acc[1], f.acc[0]);
+        EXPECT_EQ(f.acc[2], -f.acc[0]);
+        EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_SPEED);
+        if (f.acc[0] == RTGCWII_SHAKE_G || f.acc[0] == -RTGCWII_SHAKE_G) EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
+        if (f.acc[0] == RTGCWII_SHAKE_G) ++at_top;
+        if (f.acc[0] == -RTGCWII_SHAKE_G) ++at_bottom;
+        run = (i > 0 && f.acc[0] == last && (f.acc[0] == RTGCWII_SHAKE_G || f.acc[0] == -RTGCWII_SHAKE_G)) ? run + 1 : 1;
+        if (run > longest) longest = run;
+        if (i > 0 && f.acc[0] != last) ++moving;
         last = f.acc[0];
         EXPECT_EQ(f.fs_acc_value, f.acc_value);  // the Nunchuk shakes with it
         EXPECT_EQ(f.fs_acc[0], f.acc[0]);
     }
-    EXPECT_EQ(flips, 4);  // at samples 4, 8, 12 and 16
+    EXPECT_TRUE(at_top >= 4 && at_bottom >= 4);  // both peaks, every swing
+    EXPECT_EQ(longest, static_cast<int>(RTGCWII_SHAKE_TOP));  // each peak held a few samples, no longer
+    EXPECT_TRUE(moving >= static_cast<int>(2 * RTGCWII_SHAKE_PERIOD) * 2 / 3);  // moving on most samples
     EXPECT_EQ(f.hold, 0u);  // X itself presses nothing
     p.plug(0);
     rtgcwii_pads(&w, p.s, 1000);
