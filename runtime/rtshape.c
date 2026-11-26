@@ -265,10 +265,13 @@ void rtshape_rest(struct rtshape_out* out) {
 static void rtshape_shake(uint32_t shake, int32_t acc[3], int32_t* value, int32_t* speed) {
     const uint32_t half = RTSHAPE_SHAKE_PERIOD / 2u;
     const uint32_t t = shake % RTSHAPE_SHAKE_PERIOD;
-    const int32_t tri = (int32_t)(t < half ? t : RTSHAPE_SHAKE_PERIOD - t); /* 0 .. half */
-    int32_t v = (2 * tri - (int32_t)half) * RTSHAPE_SHAKE_G / RTSHAPE_SHAKE_RAMP;
-    if (v > RTSHAPE_SHAKE_G) v = RTSHAPE_SHAKE_G;
-    if (v < -RTSHAPE_SHAKE_G) v = -RTSHAPE_SHAKE_G;
+    const uint32_t h = t % half; /* where in this half: its top, then its ramp */
+    /* Rising half: the bottom held, then -5, -3, -1, 1, 3, 5 sixths;
+     * falling half the same, mirrored. */
+    int32_t level = h < RTSHAPE_SHAKE_TOP ? -RTSHAPE_SHAKE_RAMP : 2 * (int32_t)(h - RTSHAPE_SHAKE_TOP) - (RTSHAPE_SHAKE_RAMP - 1);
+    int32_t v;
+    if (t >= half) level = -level;
+    v = level * RTSHAPE_SHAKE_G / RTSHAPE_SHAKE_RAMP;
     acc[0] = v;
     acc[1] = v;
     acc[2] = -v;
