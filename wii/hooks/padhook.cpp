@@ -1205,7 +1205,15 @@ bool pack_spans(const std::vector<MemoryPatch>& patches, const PackWrites& plan,
         joined.push_back(r);
     }
     std::uint64_t total = 0;
-    for (const auto& r : joined) total += r.second - r.first;
+    for (const auto& r : joined) {
+        // Only game RAM is read below (MEM1, or MEM2 to its end, as
+        // byte_at's guards): a write reaching past it is one the checks
+        // can't follow (CodeRabbit, fork #25).
+        const bool mem1 = r.first >= 0x80000000u && r.second <= 0x81800000u;
+        const bool mem2 = r.first >= 0x90000000u && r.second <= 0x94000000u;
+        if (!mem1 && !mem2) return false;
+        total += r.second - r.first;
+    }
     if (total > kMaxSpanBytes) return false;
     // Which patch last wrote each byte (kNone: none, the game's).
     constexpr std::size_t kNone = ~std::size_t(0);
@@ -1234,8 +1242,12 @@ bool pack_spans(const std::vector<MemoryPatch>& patches, const PackWrites& plan,
     // The game's own bytes in the rest of the words a write touches.
     for (std::size_t k = 0; k < spans.size(); ++k) {
         for (std::size_t x = 0; x < spans[k].second.size(); ++x) {
-            if (last[k][x] == kNone)
-                spans[k].second[x] = *reinterpret_cast<const volatile std::uint8_t*>(spans[k].first + static_cast<std::uint32_t>(x));
+            if (last[k][x] != kNone) continue;
+            const std::uint32_t address = spans[k].first + static_cast<std::uint32_t>(x);
+            // libogc's exception stubs are cleared before the patches go
+            // in (boot.cpp), as byte_at reads them.
+            spans[k].second[x] =
+                address - 0x80001000u < 0x300u ? 0 : *reinterpret_cast<const volatile std::uint8_t*>(address);
         }
     }
     // A word a later file patch may still write over (its bytes aren't
