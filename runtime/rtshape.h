@@ -20,9 +20,12 @@
 #define RTSHAPE_PORTS RTSRC_PORTS
 
 /* The shake: all three axes swing between +RTSHAPE_SHAKE_G and
- * -RTSHAPE_SHAKE_G as a trapezoid, moving every count: a ramp through zero
- * (so it comes back below 3 g, as Donkey Kong Country Returns' "shake to
- * start" wants) and a flat top of RTSHAPE_SHAKE_TOP counts at each end (so
+ * -RTSHAPE_SHAKE_G as a trapezoid, moving every count: a ramp in odd sixths
+ * of the peak (+-5, +-3, +-1), crossing zero between counts (so it comes
+ * back below 3 g, as Donkey Kong Country Returns' "shake to start" wants,
+ * but is never exactly at rest mid-shake: an all-zero raw sample reads as a
+ * Nunchuk with no calibration), and a flat top of RTSHAPE_SHAKE_TOP counts
+ * at each end (so
  * a frame's read always sees the peak: 3.4 g is past the 3.2 g Batman: The
  * Brave and the Bold checks for its heavy attacks, 2.0 g for the Nunchuk).
  * Moving every count, not held still between flips, is what Wario Land:
@@ -36,8 +39,8 @@
 #define RTSHAPE_SHAKE_G 870
 #define RTSHAPE_SHAKE_VALUE 1508  /* |(3.4, 3.4, 3.4)| g */
 #define RTSHAPE_SHAKE_FLIP 4u     /* counts a shake_flip */
-#define RTSHAPE_SHAKE_PERIOD 16u  /* counts a whole swing */
-#define RTSHAPE_SHAKE_RAMP 6      /* the ramp's steps from 0 to a peak */
+#define RTSHAPE_SHAKE_PERIOD 18u  /* counts a whole swing: two tops and two ramps */
+#define RTSHAPE_SHAKE_RAMP 6      /* the peak in ramp sixths */
 #define RTSHAPE_SHAKE_TOP 3u      /* counts held at each peak */
 #define RTSHAPE_SHAKE_SPEED 502   /* |(1.13, 1.13, 1.13)| g: one ramp step */
 /* Full C-stick moves the pointer this much a sample (the screen is two
