@@ -1497,7 +1497,7 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
     return 0;
 }
 
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 /* WPADRead(chan, status), for a game that reads WPAD itself (Punch-Out!!'s
  * pad manager): on the stand-in's channel the report it copied (none: no
  * Wii Remote there) becomes the stand-in's (rtgcwii_wpad_status), with the

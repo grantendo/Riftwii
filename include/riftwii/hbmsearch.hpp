@@ -51,7 +51,9 @@ std::uint32_t find_wpad_probe(const std::vector<CodeRange>& text);
 // Controller's buttons from it, not from the KPAD read (9 Nov), so the
 // stand-in fills it too where it is found; most games leave it out (none
 // of the other 14 programs on hand has it). The one function that limits
-// its count to 16 (`cmplwi r5,16`, `li rX,16`), indexes the channel's KPAD
+// its count to 16 (`cmplwi r5,16` and `li rX,16`, or later libraries'
+// count-relative `addi r0,r3,16; cmplw r5,r0`, as Donkey Kong Country
+// Returns has it), indexes the channel's KPAD
 // block (`mulli rD,r3,K`, K at least 256) and copies E-byte statuses
 // (`mulli rD,rA,E` and `li r5,E` for the copy, E from 40 to 96).
 struct KpadUnified {

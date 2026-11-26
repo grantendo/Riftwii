@@ -205,6 +205,14 @@ void TestHeardAndRetell() {
     EXPECT_TRUE((s.retell & 1u) != 0);
     EXPECT_TRUE((s.told & 1u) != 0);  // still counts as told meanwhile
     EXPECT_EQ(tell_all(s).joins, 1);
+    // Due again, but the game reads the channel before the retell goes out:
+    // it has heard it, so no "connected" again (fork #24).
+    rtslot_retell(&s, 1400);
+    rtslot_retell(&s, 1600);
+    EXPECT_TRUE((s.retell & 1u) != 0);
+    rtslot_heard(&s, 0);
+    EXPECT_EQ(tell_all(s).joins, 0);
+    EXPECT_EQ(s.retell & 1u, 0u);
 }
 
 // ws5 (CodeRabbit CLI): once quiet, quiet until the next Wii controller

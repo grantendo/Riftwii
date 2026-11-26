@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
         std::cerr << "usage: finderscan <main.dol>... | finderscan @<list>" << std::endl;
         return 2;
     }
-    int failures = 0;
+    int failures = 0, scanned = 0;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg.size() > 1 && arg[0] == '@') {
@@ -108,17 +108,26 @@ int main(int argc, char** argv) {
             std::string line;
             while (std::getline(list, line)) {
                 if (!line.empty() && line.back() == '\r') line.pop_back();
-                if (!line.empty() && line[0] != '#' && !scan(line)) ++failures;
+                if (line.empty() || line[0] == '#') continue;
+                ++scanned;
+                if (!scan(line)) ++failures;
             }
             if (list.bad()) {
                 std::cerr << "finderscan: reading the list " << arg.substr(1) << " failed" << std::endl;
                 return 1;
             }
-        } else if (!scan(arg)) {
-            ++failures;
+        } else {
+            ++scanned;
+            if (!scan(arg)) ++failures;
         }
     }
     // Every program read, or the run failed: a baseline compared against a
     // run that skipped some would look like a match (CodeRabbit CLI).
+    // Nothing scanned (an empty or comment-only list) is a failure: two
+    // empty runs must not compare equal (CodeRabbit, fork #24).
+    if (scanned == 0) {
+        std::cerr << "finderscan: no programs scanned" << std::endl;
+        return 1;
+    }
     return failures == 0 ? 0 : 1;
 }

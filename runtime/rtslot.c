@@ -86,7 +86,11 @@ int rtslot_next_change(struct rtslot* s, uint32_t skip, uint32_t keep, uint32_t*
     const uint32_t now_on = s->present & ~s->real;
     /* A channel due to be told again is told "connected" once more; one
      * that left before that is told it's gone (it still counts as told). */
-    join = now_on & (~s->told | s->retell) & ~skip;
+    /* A retell the game has heard since it came due (a read in between)
+     * is dropped, not told (CodeRabbit, fork #24); a first "connected"
+     * never waits on `heard`. */
+    join = now_on & (~s->told | (s->retell & ~s->heard)) & ~skip;
+    s->retell &= ~s->heard;
     leave = s->told & ~now_on & ~s->real & ~skip & ~keep;
     s->retell &= now_on;
     for (i = 0; i < RTSLOT_SLOTS; ++i) {

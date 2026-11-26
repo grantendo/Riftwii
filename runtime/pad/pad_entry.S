@@ -27,9 +27,10 @@ _pad_blob_start:
 #ifdef RT_PAD_STANDIN
     /* The stand-in builds' own header after it (rt_pad_standin_header). */
     .long pad_hook_info - _pad_blob_start, pad_replay_info - _pad_blob_start, pad_continue_info - _pad_blob_start
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
-    /* The stand-in below KPAD (the Wii Remote forms): WPADRead's and
-     * WPADSetDataFormat's. The Classic Controller form has none (zeros). */
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
+    /* The stand-in below KPAD (the Wii Remote forms, the pointing one too:
+     * CodeRabbit, fork #24): WPADRead's and WPADSetDataFormat's. The
+     * Classic Controller form has none (zeros). */
     .long pad_hook_wread - _pad_blob_start, pad_replay_wread - _pad_blob_start, pad_continue_wread - _pad_blob_start
     .long pad_hook_format - _pad_blob_start, pad_replay_format - _pad_blob_start, pad_continue_format - _pad_blob_start
 #else
@@ -410,7 +411,7 @@ pad_hook_info:
     addi 1, 1, 0x20
     blr
 
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
 /* void WPADRead(chan, status), for a game that reads WPAD itself: the
  * original first, then pad_on_wpad_read(ctx, chan, status) puts the
  * stand-in's report there. Frame: 8 chan, 12 status. */
@@ -494,7 +495,7 @@ pad_continue_\name:
     PAD_REPLAY unified
 #ifdef RT_PAD_STANDIN
     PAD_REPLAY info
-#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS)
+#if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
     PAD_REPLAY wread
     PAD_REPLAY format
 #endif
