@@ -1238,24 +1238,35 @@ bool pack_spans(const std::vector<MemoryPatch>& patches, const PackWrites& plan,
                 spans[k].second[x] = *reinterpret_cast<const volatile std::uint8_t*>(spans[k].first + static_cast<std::uint32_t>(x));
         }
     }
-    // A span a later file patch may still write over (its bytes aren't read
-    // yet here, up to the largest a file may be) where no write after it
-    // decides the byte is left out: the launch may leave other bytes there,
-    // and a file's own bytes aren't looked at either (CodeRabbit CLI, fork
-    // #25).
-    for (std::size_t k = spans.size(); k-- > 0;) {
-        const std::uint64_t lo = joined[k].first, hi = joined[k].second;
-        bool open = false;
-        for (const PackWrites::File& f : plan.files) {
-            const std::uint64_t from = std::max<std::uint64_t>(lo, f.at);
-            const std::uint64_t to = std::min<std::uint64_t>(hi, std::uint64_t(f.at) + kMaxMemoryValueBytes);
-            for (std::uint64_t x = from; x < to && !open; ++x) {
-                const std::size_t by = last[k][x - lo];
-                open = by == kNone || by < f.patch;
+    // A word a later file patch may still write over (its bytes aren't
+    // read yet here, up to the largest a file may be) where no write after
+    // it decides every byte is cut out, and the span split there: the
+    // launch may leave other bytes there, and a file's own bytes aren't
+    // looked at either; the words around it stay (CodeRabbit CLI, fork #25).
+    if (!plan.files.empty()) {
+        SearchSpans kept;
+        for (std::size_t k = 0; k < spans.size(); ++k) {
+            const std::uint64_t lo = joined[k].first;
+            std::vector<bool> open(spans[k].second.size(), false);
+            for (const PackWrites::File& f : plan.files) {
+                const std::uint64_t from = std::max<std::uint64_t>(lo, f.at);
+                const std::uint64_t to = std::min<std::uint64_t>(joined[k].second, std::uint64_t(f.at) + kMaxMemoryValueBytes);
+                for (std::uint64_t x = from; x < to; ++x) {
+                    const std::size_t by = last[k][x - lo];
+                    if (by == kNone || by < f.patch) open[(x - lo) & ~std::uint64_t(3)] = true;  // its word
+                }
             }
-            if (open) break;
+            std::size_t run = 0;  // the start of the words kept so far
+            for (std::size_t w = 0; w <= spans[k].second.size(); w += 4) {
+                if (w < spans[k].second.size() && !open[w]) continue;
+                if (w > run)
+                    kept.push_back({spans[k].first + static_cast<std::uint32_t>(run),
+                                    std::vector<std::uint8_t>(spans[k].second.begin() + static_cast<std::ptrdiff_t>(run),
+                                                              spans[k].second.begin() + static_cast<std::ptrdiff_t>(w))});
+                run = w + 4;
+            }
         }
-        if (open) spans.erase(spans.begin() + static_cast<std::ptrdiff_t>(k));
+        spans = std::move(kept);
     }
     return true;
 }
