@@ -99,8 +99,11 @@ static void rtshape_count_shake(struct rtshape* sh, uint32_t i, uint32_t shaking
         return;
     }
     if (sh->shake_flip == 0) {
+        /* Every count is a step a read takes, the first too: a press of one
+         * sample let go before a read still gives that read its speed
+         * (CodeRabbit CLI, #610). */
         ++sh->shake[i];
-        if (sh->shake[i] > 1u) sh->shake_jump |= bit;
+        sh->shake_jump |= bit;
         return;
     }
     if (sh->shake_from[i] == 0) sh->shake_from[i] = now | 1u;
@@ -110,7 +113,7 @@ static void rtshape_count_shake(struct rtshape* sh, uint32_t i, uint32_t shaking
     if (quarter == 0) quarter = 1;
     {
         const uint32_t count = rtshape_elapsed(now, sh->shake_from[i]) / quarter + 1u;
-        if (sh->shake[i] != 0 && count != sh->shake[i]) sh->shake_jump |= bit;
+        if (count != sh->shake[i]) sh->shake_jump |= bit;
         sh->shake[i] = count;
     }
 }
