@@ -1207,10 +1207,12 @@ bool pack_spans(const std::vector<MemoryPatch>& patches, const PackWrites& plan,
     std::uint64_t total = 0;
     for (const auto& r : joined) total += r.second - r.first;
     if (total > kMaxSpanBytes) return false;
-    std::vector<std::vector<bool>> written;
+    // Which patch last wrote each byte (kNone: none, the game's).
+    constexpr std::size_t kNone = ~std::size_t(0);
+    std::vector<std::vector<std::size_t>> last;
     for (const auto& r : joined) {
         spans.push_back({static_cast<std::uint32_t>(r.first), std::vector<std::uint8_t>(r.second - r.first)});
-        written.emplace_back(static_cast<std::size_t>(r.second - r.first), false);
+        last.emplace_back(static_cast<std::size_t>(r.second - r.first), kNone);
     }
     // Every write, in order, over the spans it reaches (a later one wins).
     for (const PackWrite& w : plan.writes) {
@@ -1225,16 +1227,35 @@ bool pack_spans(const std::vector<MemoryPatch>& patches, const PackWrites& plan,
             const std::uint64_t lo = std::max(at, joined[k].first), hi = std::min(end, joined[k].second);
             for (std::uint64_t x = lo; x < hi; ++x) {
                 spans[k].second[x - joined[k].first] = value[x - at];
-                written[k][x - joined[k].first] = true;
+                last[k][x - joined[k].first] = w.patch;
             }
         }
     }
     // The game's own bytes in the rest of the words a write touches.
     for (std::size_t k = 0; k < spans.size(); ++k) {
         for (std::size_t x = 0; x < spans[k].second.size(); ++x) {
-            if (!written[k][x])
+            if (last[k][x] == kNone)
                 spans[k].second[x] = *reinterpret_cast<const volatile std::uint8_t*>(spans[k].first + static_cast<std::uint32_t>(x));
         }
+    }
+    // A span a later file patch may still write over (its bytes aren't read
+    // yet here, up to the largest a file may be) where no write after it
+    // decides the byte is left out: the launch may leave other bytes there,
+    // and a file's own bytes aren't looked at either (CodeRabbit CLI, fork
+    // #25).
+    for (std::size_t k = spans.size(); k-- > 0;) {
+        const std::uint64_t lo = joined[k].first, hi = joined[k].second;
+        bool open = false;
+        for (const PackWrites::File& f : plan.files) {
+            const std::uint64_t from = std::max<std::uint64_t>(lo, f.at);
+            const std::uint64_t to = std::min<std::uint64_t>(hi, std::uint64_t(f.at) + kMaxMemoryValueBytes);
+            for (std::uint64_t x = from; x < to && !open; ++x) {
+                const std::size_t by = last[k][x - lo];
+                open = by == kNone || by < f.patch;
+            }
+            if (open) break;
+        }
+        if (open) spans.erase(spans.begin() + static_cast<std::ptrdiff_t>(k));
     }
     return true;
 }
@@ -1600,8 +1621,12 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
                  "hears of a controller won't start the GameCube controllers' stand-in\n");
     }
     // SIProbe is told by PADRead's own calls, so with a pack's PADRead it
-    // is searched in the game's code as the patches will leave it.
-    out.si_probe = !written.empty()      ? find_gc_si_probe_with_patches(text, written, out.read)
+    // is searched in the game's code as the patches will leave it, and in
+    // the pack's writes outside it too (a wrapper it adds beside its
+    // PADRead: CodeRabbit CLI, fork #25).
+    std::vector<CodeRange> text_and_written = text;
+    text_and_written.insert(text_and_written.end(), written.begin(), written.end());
+    out.si_probe = !written.empty()      ? find_gc_si_probe_with_patches(text_and_written, written, out.read)
                    : from_patch            ? find_gc_si_probe_with_patches(text, patched, out.read)
                                            : find_gc_si_probe(text, out.read);
     // Where SIProbe is missing the adapter still plays: only a game that

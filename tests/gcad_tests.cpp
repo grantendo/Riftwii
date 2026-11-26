@@ -1897,6 +1897,14 @@ static void TestReadsGcPorts() {
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x85066404u});  // lis r6,0xCD00; lwzu r8,0x6404(r6): an update form reads it too
     EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x48000101u, 0x81066404u});  // lis r6,0xCD00; bl: the call may change r6 (fork #25)
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x4E800421u, 0x81066404u});  // lis r6,0xCD00; bctrl: the same
+    EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x48000101u, 0x3CC0CD00u, 0x81066404u});  // a fresh lis after the call: one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
+    code = bytes({0x3CC0CD00u, 0x429F0005u, 0x7CE802A6u, 0x81066404u});  // bcl 20,31,$+4; mflr r7: r6 kept, one
+    EXPECT_TRUE(riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x38C69C00u, 0x81066404u});  // lis r6,0xCD00; addi r6,r6,-0x6400; 0x6404(r6): 0xCD000004
     EXPECT_TRUE(!riftwii::reads_gc_ports(code.data(), code.size()));
     code = bytes({0x3CC0CD00u, 0x38C6000Cu, 0x810663F8u});  // ...; addi r6,r6,12; lwz r8,0x63F8(r6): 0xCD006404

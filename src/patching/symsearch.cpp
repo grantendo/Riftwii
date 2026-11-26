@@ -1772,6 +1772,10 @@ bool reads_gc_ports(const std::uint8_t* bytes, std::size_t size) {
             // (`bl`, `bla`, `bcl`, `blrl`, `bctrl`), whose function may set
             // rX to anything before a use after it (CodeRabbit, fork #25); a
             // fresh `lis` after the call is still looked at on its own.
+            // (Not `bcl 20,31,$+4`, which only takes the address of the
+            // next word into the link register, position-independent code's
+            // way: CodeRabbit CLI, fork #25.)
+            if (insn == 0x429F0005u) continue;
             if (op == 18) break;
             if ((op == 16 || op == 19) && (insn & 1u) != 0) break;
             const std::uint32_t low = insn & 0xFFFFu;
