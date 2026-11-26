@@ -1551,6 +1551,9 @@ msgstr "Automatique ({1})"
 msgid "Classic"
 msgstr "Classique"
 
+msgid "A pack brings its own controls: 'Controllers act as' is off."
+msgstr "Un pack a ses contrôles : 'Les manettes jouent comme' ignoré."
+
 msgid "Sideways"
 msgstr "À l'horizontale"
 

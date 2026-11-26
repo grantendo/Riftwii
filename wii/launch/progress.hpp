@@ -23,10 +23,11 @@ void ProgressWithin(unsigned long long done, unsigned long long total, int from,
 
 // One line for the player just above the progress line, while the game's
 // box stands in for the log: something the launch decided that the menu
-// couldn't show (a pack taking over the controls). English, like the
-// stage labels (the console font has Latin letters only), cut to the
-// line's width. Nothing while the log is on screen: the log's own line
-// says it there.
-void ProgressNote(const char* note);
+// couldn't show (a pack taking over the controls). `note` is the player's
+// language (tr), drawn when the console font has its letters (Latin ones,
+// accents included: the font is the PC's code page 437); otherwise, as for
+// Japanese or Korean, `english`. Cut to the line's width. Nothing while
+// the log is on screen: the log's own line says it there.
+void ProgressNote(const char* note, const char* english);
 
 }  // namespace riftwii::wii

@@ -1582,7 +1582,9 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
                             : "it reads the GameCube ports, in the program file it brings");
         // The menu can't know this before the game's code is in memory:
         // said on the launch screen too.
-        ProgressNote("A pack brings its own controls: 'Controllers act as' is off.");
+        // (Written out twice: tools/lang_source.py finds tr's literals.)
+        ProgressNote(tr("A pack brings its own controls: 'Controllers act as' is off."),
+                     "A pack brings its own controls: 'Controllers act as' is off.");
         standin = false;
         out.standin = out.standin_nunchuk = out.standin_sideways = out.standin_pointing = false;
     } else if (pack_ports) {

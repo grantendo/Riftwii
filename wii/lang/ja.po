@@ -1551,6 +1551,9 @@ msgstr "自動（{1}）"
 msgid "Classic"
 msgstr "クラシック"
 
+msgid "A pack brings its own controls: 'Controllers act as' is off."
+msgstr "パックが独自の操作を使うため、「コントローラーの役割」はオフです。"
+
 msgid "Sideways"
 msgstr "横持ち"
 
