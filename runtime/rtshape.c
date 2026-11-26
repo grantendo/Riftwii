@@ -90,7 +90,7 @@ uint32_t rtshape_sideways_buttons(const struct rtsrc_sample* p) {
  * (CodeRabbit CLI, #610). */
 static void rtshape_count_shake(struct rtshape* sh, uint32_t i, uint32_t shaking, uint32_t now) {
     const uint32_t bit = 1u << i;
-    uint32_t flips;
+    uint32_t quarter;
     if (!shaking) {
         /* A step no read has taken yet stays (shake_jump): the next read
          * still gets its jump in speed (CodeRabbit, fork #23). */
@@ -100,15 +100,16 @@ static void rtshape_count_shake(struct rtshape* sh, uint32_t i, uint32_t shaking
     }
     if (sh->shake_flip == 0) {
         ++sh->shake[i];
-        if (sh->shake[i] > 1u && (sh->shake[i] % RTSHAPE_SHAKE_FLIP) == 0) sh->shake_jump |= bit;
+        if (sh->shake[i] > 1u) sh->shake_jump |= bit;
         return;
     }
     if (sh->shake_from[i] == 0) sh->shake_from[i] = now | 1u;
-    flips = rtshape_elapsed(now, sh->shake_from[i]) / sh->shake_flip;
-    /* The count keeps the flips in its RTSHAPE_SHAKE_FLIP's (rtshape_shake
-     * takes the side from it), never 0 while held. */
+    /* RTSHAPE_SHAKE_FLIP counts a shake_flip, so the swing moves between
+     * flips too (rtshape.h), never 0 while held. */
+    quarter = sh->shake_flip / RTSHAPE_SHAKE_FLIP;
+    if (quarter == 0) quarter = 1;
     {
-        const uint32_t count = RTSHAPE_SHAKE_FLIP * flips + 1u;
+        const uint32_t count = rtshape_elapsed(now, sh->shake_from[i]) / quarter + 1u;
         if (sh->shake[i] != 0 && count != sh->shake[i]) sh->shake_jump |= bit;
         sh->shake[i] = count;
     }
@@ -259,26 +260,20 @@ void rtshape_rest(struct rtshape_out* out) {
 #endif
 }
 
-/* The shake: all three axes swing together, every RTSHAPE_SHAKE_STEPS-th
- * step at rest, and a step (`jump`, rtshape_count_shake) is a jump in
- * speed. */
-static void rtshape_shake(uint32_t shake, int jump, int32_t acc[3], int32_t* value, int32_t* speed) {
-    const uint32_t step = shake / RTSHAPE_SHAKE_FLIP;
-    *speed = jump ? RTSHAPE_SHAKE_VALUE : 0;
-    if (step % RTSHAPE_SHAKE_STEPS == RTSHAPE_SHAKE_STEPS - 1u) {
-        acc[0] = 0;
-        acc[1] = -RTHOME_AXIS_FULL;
-        acc[2] = 0;
-        *value = RTHOME_AXIS_FULL;
-        return;
-    }
-    {
-        const int32_t swing = (step & 1u) ? RTSHAPE_SHAKE_G : -RTSHAPE_SHAKE_G;
-        acc[0] = swing;
-        acc[1] = swing;
-        acc[2] = -swing;
-        *value = RTSHAPE_SHAKE_VALUE;
-    }
+/* The shake at count `shake` (1 on: rtshape_count_shake): the trapezoid
+ * (rtshape.h), starting on its negative top. */
+static void rtshape_shake(uint32_t shake, int32_t acc[3], int32_t* value, int32_t* speed) {
+    const uint32_t half = RTSHAPE_SHAKE_PERIOD / 2u;
+    const uint32_t t = shake % RTSHAPE_SHAKE_PERIOD;
+    const int32_t tri = (int32_t)(t < half ? t : RTSHAPE_SHAKE_PERIOD - t); /* 0 .. half */
+    int32_t v = (2 * tri - (int32_t)half) * RTSHAPE_SHAKE_G / RTSHAPE_SHAKE_RAMP;
+    if (v > RTSHAPE_SHAKE_G) v = RTSHAPE_SHAKE_G;
+    if (v < -RTSHAPE_SHAKE_G) v = -RTSHAPE_SHAKE_G;
+    acc[0] = v;
+    acc[1] = v;
+    acc[2] = -v;
+    *value = (v < 0 ? -v : v) * RTSHAPE_SHAKE_VALUE / RTSHAPE_SHAKE_G;
+    *speed = RTSHAPE_SHAKE_SPEED;
 }
 
 /* The integer square root of `v` (rounded down). */
@@ -311,9 +306,9 @@ void rtshape_nunchuk(const struct rtshape* sh, uint32_t port, const struct rtsrc
                          (sh->pointer_moved[port] != 0 && rtshape_elapsed(now, sh->pointer_moved[port]) < sh->pointer_show);
     shake = sh->shake[port];
     if (shake != 0) {
-        rtshape_shake(shake, (int)((sh->shake_jump >> port) & 1u), out->acc, &out->acc_value, &out->acc_speed);
+        rtshape_shake(shake, out->acc, &out->acc_value, &out->acc_speed);
     } else if ((sh->shake_jump >> port) & 1u) {
-        out->acc_speed = RTSHAPE_SHAKE_VALUE;  /* the last step, let go before a read took it */
+        out->acc_speed = RTSHAPE_SHAKE_SPEED;  /* the last step, let go before a read took it */
     }
 }
 
@@ -332,10 +327,9 @@ void rtshape_sideways(const struct rtshape* sh, uint32_t port, const struct rtsr
         out->acc[2] = s;
         out->acc[1] = -rtshape_isqrt(RTHOME_AXIS_FULL * RTHOME_AXIS_FULL - s * s);
     }
-    if (sh->shake[port] == 0 && ((sh->shake_jump >> port) & 1u)) out->acc_speed = RTSHAPE_SHAKE_VALUE;
+    if (sh->shake[port] == 0 && ((sh->shake_jump >> port) & 1u)) out->acc_speed = RTSHAPE_SHAKE_SPEED;
     if (sh->shake[port] != 0) {
-        rtshape_shake(sh->shake[port], (int)((sh->shake_jump >> port) & 1u), out->acc, &out->acc_value,
-                      &out->acc_speed);
+        rtshape_shake(sh->shake[port], out->acc, &out->acc_value, &out->acc_speed);
     }
 }
 
@@ -373,9 +367,9 @@ void rtshape_pointing(const struct rtshape* sh, uint32_t port, const struct rtsr
     out->horizon[0] = -out->acc[1] * RTHOME_AXIS_FULL / r;
     out->horizon[1] = x * RTHOME_AXIS_FULL / r;
     if (sh->shake[port] != 0)
-        rtshape_shake(sh->shake[port], (int)((sh->shake_jump >> port) & 1u), out->acc, &out->acc_value, &out->acc_speed);
+        rtshape_shake(sh->shake[port], out->acc, &out->acc_value, &out->acc_speed);
     else if ((sh->shake_jump >> port) & 1u)
-        out->acc_speed = RTSHAPE_SHAKE_VALUE;
+        out->acc_speed = RTSHAPE_SHAKE_SPEED;
 }
 #endif
 

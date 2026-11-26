@@ -325,11 +325,13 @@ void TestShake() {
     rtgcwii_pads(&w, p.s, 49);
     rtgcwii_pointing(&w, 0, &f);
     EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
-    // Shaking wins over tilt.
+    // Shaking wins over tilt (the swing's next count, on its ramp).
     s[4] = 72;
     rtgcwii_pads(&w, p.s, 65);
     rtgcwii_pointing(&w, 0, &f);
-    EXPECT_EQ(f.acc_value, RTGCWII_SHAKE_VALUE);
+    EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_SPEED);
+    EXPECT_EQ(f.acc[1], f.acc[0]);
+    EXPECT_EQ(f.acc[2], -f.acc[0]);
 }
 
 // The words (newly pressed once), and a channel with no stand-in.
