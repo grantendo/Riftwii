@@ -191,6 +191,14 @@ void TestConnectedOnly() {
     pads.plug(1, kGcA, 72);
     rtgcwii_pads(&w, pads.s, 1000 + kGrace + 2);
     EXPECT_EQ(rtgcwii_on(&w, 1), 0);
+    // That Wii Remote found again: its count of empty reads starts over
+    // (fork #25), so a later empty read doesn't end a run the probe broke.
+    w.slot.empty_since[1] = 1001;
+    w.slot.empty_reads[1] = 5;
+    rtgcwii_probed(&w, 1, 0);
+    EXPECT_EQ(w.slot.empty_since[1], 0u);
+    EXPECT_EQ(w.slot.empty_reads[1], 0u);
+    EXPECT_EQ(rtgcwii_on(&w, 1), 0);
 }
 
 // The HOME Menu's stand-in on a port that already has a permanent one
