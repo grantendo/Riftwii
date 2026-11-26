@@ -1569,25 +1569,37 @@ T = {
         "オフ: このゲームではWiiリモコンのスピーカーから音が出ません。",
         "Desligado: sem som dos alto-falantes dos Wii Remotes neste jogo.",
         "Disattivato: nessun suono dagli altoparlanti dei telecomandi Wii in questo gioco."),
-    "GameCube controllers": ("Mandos de GameCube", "ゲームキューブコントローラー", "Controles de GameCube",
-        "Controller GameCube"),
+    "Controllers act as": (
+        "Los mandos actúan como",
+        "コントローラーの役割",
+        "Os controles agem como",
+        "I controller fanno da"),
+    "Automatic ({1})": ("Automático ({1})", "自動（{1}）", "Automático ({1})", "Automatico ({1})"),
+    "Classic": ("Clásico", "クラシック", "Clássico", "Tradizionale"),
+    "Sideways": ("De lado", "横持ち", "De lado", "Di lato"),
+    "Pointing": ("Apuntando", "ポインター", "Apontando", "Puntamento"),
     "Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.": (
         "Cada mando de GameCube juega como un mando clásico (el puerto 1 como el mando de Wii 1, y así sucesivamente), en los juegos que lo admiten.",
         "各ゲームキューブコントローラーがクラシックコントローラーとして動きます（ポート1はWiiリモコン1、以下同様）。対応するゲーム用です。",
         "Cada controle de GameCube joga como um Classic Controller (a porta 1 como o Wii Remote 1 e assim por diante), nos jogos que aceitam um.",
         "Ogni controller GameCube gioca come un controller tradizionale (la porta 1 come il telecomando Wii 1 e così via), nei giochi che lo supportano."),
-    "An enabled pack asks for {1} while this is Off.": (
-        "Un paquete activado pide {1} mientras esto esté desactivado.",
-        "有効なパックは、ここがオフの間は{1}を求めます。",
-        "Um pacote ativado pede {1} enquanto isto estiver desligado.",
-        "Un pacchetto attivo chiede {1} finché questo è disattivato."),
+    "Automatic: an enabled pack asks for {1}, so the GameCube controllers play that way. Pick another choice to change it.": (
+        "Automático: un paquete activado pide {1}, así que los mandos de GameCube juegan así. Elige otra opción para cambiarlo.",
+        "自動: 有効なパックが{1}を求めているので、ゲームキューブコントローラーはそのように動きます。変えるにはほかの選択肢を選んでください。",
+        "Automático: um pacote ativado pede {1}, então os controles de GameCube jogam assim. Escolha outra opção para mudar isso.",
+        "Automatico: un pacchetto attivo chiede {1}, quindi i controller GameCube giocano così. Scegli un'altra opzione per cambiarlo."),
     "A code build doesn't use it.": ("Una compilación de código no lo usa.", "コードビルドでは使われません。", "Uma build de código não o usa.",
         "Una build di codice non lo usa."),
-    "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.": (
-        "Los mandos de GameCube solo funcionan en los juegos hechos para ellos. Las otras opciones los hacen jugar como un mando de Wii.",
-        "ゲームキューブコントローラーは対応するゲームでのみ使えます。ほかの選択肢では、Wiiのコントローラーとして動きます。",
-        "Os controles de GameCube só funcionam nos jogos feitos para eles. As outras opções fazem com que joguem como um controle de Wii.",
-        "I controller GameCube funzionano solo nei giochi pensati per loro. Le altre scelte li fanno giocare come un controller Wii."),
+    "Off: GameCube controllers work only in games made for them, even when an enabled pack asks for a Wii controller. The other choices have them play as one.": (
+        "No: los mandos de GameCube solo funcionan en los juegos hechos para ellos, aunque un paquete activado pida un mando de Wii. Las otras opciones los hacen jugar como uno.",
+        "オフ: 有効なパックがWiiのコントローラーを求めていても、ゲームキューブコントローラーは対応するゲームでのみ使えます。ほかの選択肢では、Wiiのコントローラーとして動きます。",
+        "Não: os controles de GameCube só funcionam nos jogos feitos para eles, mesmo quando um pacote ativado pede um controle de Wii. As outras opções fazem com que joguem como um.",
+        "No: i controller GameCube funzionano solo nei giochi pensati per loro, anche quando un pacchetto attivo chiede un controller Wii. Le altre scelte li fanno giocare come uno di questi."),
+    "Automatic: GameCube controllers work only in games made for them, unless an enabled pack asks for a Wii controller. The other choices have them play as one. For now this is for GameCube controllers only.": (
+        "Automático: los mandos de GameCube solo funcionan en los juegos hechos para ellos, salvo que un paquete activado pida un mando de Wii. Las otras opciones los hacen jugar como uno. Por ahora, esto es solo para mandos de GameCube.",
+        "自動: 有効なパックがWiiのコントローラーを求めない限り、ゲームキューブコントローラーは対応するゲームでのみ使えます。ほかの選択肢では、Wiiのコントローラーとして動きます。今のところ、ゲームキューブコントローラー専用です。",
+        "Automático: os controles de GameCube só funcionam nos jogos feitos para eles, a menos que um pacote ativado peça um controle de Wii. As outras opções fazem com que joguem como um. Por enquanto, isto é só para controles de GameCube.",
+        "Automatico: i controller GameCube funzionano solo nei giochi pensati per loro, a meno che un pacchetto attivo chieda un controller Wii. Le altre scelte li fanno giocare come uno di questi. Per ora vale solo per i controller GameCube."),
     "Wii Remote + Nunchuk": ("Mando de Wii + Nunchuk", "Wiiリモコン＋ヌンチャク", "Wii Remote + Nunchuk",
         "Telecomando Wii + Nunchuk"),
     "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.": (
@@ -3482,12 +3494,22 @@ KO = {
         "끔: 이 게임에서는 Wii 리모컨이 절대 진동하지 않습니다.",
     "Off: no sound from the Wii Remotes' speakers in this game.":
         "끔: 이 게임에서는 Wii 리모컨 스피커에서 소리가 나지 않습니다.",
-    "GameCube controllers":
-        "게임큐브 컨트롤러",
+    "Controllers act as":
+        "컨트롤러 역할",
+    "Automatic ({1})":
+        "자동({1})",
+    "Classic":
+        "클래식",
+    "Sideways":
+        "가로",
+    "Pointing":
+        "포인팅",
     "Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.":
         "각 게임큐브 컨트롤러가 클래식 컨트롤러로 작동합니다(포트 1은 Wii 리모컨 1 등). 지원하는 게임용입니다.",
-    "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.":
-        "게임큐브 컨트롤러는 전용 게임에서만 작동합니다. 다른 선택지에서는 Wii 컨트롤러로 작동합니다.",
+    "Off: GameCube controllers work only in games made for them, even when an enabled pack asks for a Wii controller. The other choices have them play as one.":
+        "끔: 켜진 팩이 Wii 컨트롤러를 요청해도 게임큐브 컨트롤러는 전용 게임에서만 작동합니다. 다른 선택지에서는 Wii 컨트롤러로 작동합니다.",
+    "Automatic: GameCube controllers work only in games made for them, unless an enabled pack asks for a Wii controller. The other choices have them play as one. For now this is for GameCube controllers only.":
+        "자동: 켜진 팩이 Wii 컨트롤러를 요청하지 않으면 게임큐브 컨트롤러는 전용 게임에서만 작동합니다. 다른 선택지에서는 Wii 컨트롤러로 작동합니다. 지금은 게임큐브 컨트롤러 전용입니다.",
     "Wii Remote + Nunchuk":
         "Wii 리모컨 + 눈차크",
     "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.":
@@ -3502,8 +3524,8 @@ KO = {
         "화면을 가리키는 Wii 리모컨",
     "Each GameCube controller plays as a Wii Remote pointed at the screen (port 1 as Wii Remote 1 and so on): the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it.":
         "각 게임큐브 컨트롤러가 화면을 가리키는 Wii 리모컨으로 작동합니다(포트 1은 Wii 리모컨 1 등). 컨트롤 스틱으로 포인터를 움직이고, X는 1, Y는 2, C 스틱으로 기울이고 R로 흔듭니다.",
-    "An enabled pack asks for {1} while this is Off.":
-        "켜진 팩은 이 설정이 꺼져 있는 동안 {1}을(를) 요청합니다.",
+    "Automatic: an enabled pack asks for {1}, so the GameCube controllers play that way. Pick another choice to change it.":
+        "자동: 켜진 팩이 {1}을(를) 요청하므로 게임큐브 컨트롤러가 그렇게 작동합니다. 바꾸려면 다른 선택지를 고르세요.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "타 지역 게임(수입판)의 경우: 해당 게임은 콘솔의 지역 정보를 확인해야 할 위치에서 자사 지역의 국가명을 인식합니다.",
     "Don't show again":
@@ -5376,12 +5398,22 @@ FR = {
         "Désactivé : désactive totalement les vibrations de la Télécommande Wii sur ce jeu.",
     "Off: no sound from the Wii Remotes' speakers in this game.":
         "Désactivé : coupe le haut-parleur intégré des Télécommandes Wii pour ce jeu.",
-    "GameCube controllers":
-        "Manettes GameCube",
+    "Controllers act as":
+        "Les manettes jouent comme",
+    "Automatic ({1})":
+        "Automatique ({1})",
+    "Classic":
+        "Classique",
+    "Sideways":
+        "À l'horizontale",
+    "Pointing":
+        "Pointage",
     "Each GameCube controller plays as a Classic Controller (port 1 as Wii Remote 1 and so on), for games that take one.":
         "Chaque manette GameCube joue comme une manette Classic (le port 1 comme la Télécommande Wii 1, et ainsi de suite), dans les jeux qui l'acceptent.",
-    "GameCube controllers work only in games made for them. The other choices have them play as a Wii controller.":
-        "Les manettes GameCube ne fonctionnent que dans les jeux faits pour elles. Les autres choix les font jouer comme une manette Wii.",
+    "Off: GameCube controllers work only in games made for them, even when an enabled pack asks for a Wii controller. The other choices have them play as one.":
+        "Désactivé : les manettes GameCube ne fonctionnent que dans les jeux faits pour elles, même quand un pack activé demande une manette Wii. Les autres choix les font jouer comme une manette Wii.",
+    "Automatic: GameCube controllers work only in games made for them, unless an enabled pack asks for a Wii controller. The other choices have them play as one. For now this is for GameCube controllers only.":
+        "Automatique : les manettes GameCube ne fonctionnent que dans les jeux faits pour elles, sauf si un pack activé demande une manette Wii. Les autres choix les font jouer comme une manette Wii. Pour l'instant, ceci ne concerne que les manettes GameCube.",
     "Wii Remote + Nunchuk":
         "Télécommande Wii + Nunchuk",
     "Each GameCube controller plays as a Wii Remote with a Nunchuk (port 1 as Wii Remote 1 and so on): X shakes it, the C-stick moves the pointer.":
@@ -5396,8 +5428,8 @@ FR = {
         "Télécommande Wii pointée",
     "Each GameCube controller plays as a Wii Remote pointed at the screen (port 1 as Wii Remote 1 and so on): the control stick moves the pointer, X is 1, Y is 2, the C-stick tilts it, R shakes it.":
         "Chaque manette GameCube joue comme une Télécommande Wii pointée vers l'écran (le port 1 comme la Télécommande Wii 1, et ainsi de suite) : le stick de contrôle déplace le pointeur, X est le 1, Y est le 2, le stick C l'incline, R la secoue.",
-    "An enabled pack asks for {1} while this is Off.":
-        "Un pack activé demande {1} tant que ceci est désactivé.",
+    "Automatic: an enabled pack asks for {1}, so the GameCube controllers play that way. Pick another choice to change it.":
+        "Automatique : un pack activé demande {1}, donc les manettes GameCube jouent ainsi. Choisissez une autre option pour changer cela.",
     "For a game from another region (an import): the game sees its own region's country names where it looks for the console's.":
         "Pour les jeux importés d'une autre région : transmet au jeu les identifiants de pays correspondant à sa zone d'origine.",
     "Don't show again":

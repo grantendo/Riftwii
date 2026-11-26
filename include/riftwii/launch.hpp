@@ -131,12 +131,14 @@ struct GameSettings {
     std::string aspect = "global";      // Settings' (LoaderSettings::aspect), or "game", "4:3", "16:9" (gx_force_aspect)
     std::string rumble = "on";          // "off": gx_rumble_off
     std::string speaker = "on";         // "off": gx_speaker_off
-    // GameCube controllers in a Wii game (#587): "off" (the default) leaves
-    // them as they are; "classic": each one is a Classic Controller on its
+    // GameCube controllers in a Wii game (#587), the menu's "Controllers act
+    // as": "auto" (the default) takes the form an enabled pack asks for
+    // (pack_gc_controllers) and is otherwise as "off"; "off" leaves them as
+    // they are, even when a pack asks; "classic": each one is a Classic Controller on its
     // own Wii Remote channel (runtime/rtgcwii.h); "nunchuk": each one is a
     // Wii Remote with a Nunchuk there; "sideways": a Wii Remote held
     // sideways; "pointing": a Wii Remote held upright, pointed at the screen.
-    std::string gc_controllers = "off";
+    std::string gc_controllers = "auto";
     std::string region_strings = "off"; // "on": the Region strings fix (gx_country_strings)
     std::string nand_source = "auto";
     // A GameCube game's disc reads: "drive" take a GameCube drive's time
@@ -349,8 +351,8 @@ public:
     // asks for (its `riftwii-gc-controllers`, with something of it chosen),
     // empty for none; the first such pack's when several do.
     std::string pack_gc_controllers() const;
-    // The form this launch uses: the game's own setting, or with it Off,
-    // the one a pack asks for ("off" for none).
+    // The form this launch uses: the game's own choice of a form, or with
+    // it Automatic, the one a pack asks for ("off" for none; Off is off).
     std::string effective_gc_controllers() const;
     // Whether an enabled pack patches the game: one with a choice picked,
     // or one with no options (it applies as a whole). Code builds do not

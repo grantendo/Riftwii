@@ -21,4 +21,12 @@ void ProgressStage(const char* stage, int percent);
 // from..to percent.
 void ProgressWithin(unsigned long long done, unsigned long long total, int from, int to);
 
+// One line for the player just above the progress line, while the game's
+// box stands in for the log: something the launch decided that the menu
+// couldn't show (a pack taking over the controls). English, like the
+// stage labels (the console font has Latin letters only), cut to the
+// line's width. Nothing while the log is on screen: the log's own line
+// says it there.
+void ProgressNote(const char* note);
+
 }  // namespace riftwii::wii

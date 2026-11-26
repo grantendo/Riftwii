@@ -142,6 +142,20 @@ void ProgressStage(const char* stage, int percent) {
     if (g_xfb && g_percent <= 60) GuiScriptLaunchShot(g_percent, g_xfb, g_stride * 2, g_screen_height);
 }
 
+void ProgressNote(const char* note) {
+    if (!g_xfb || !ConsoleDeferred()) return;
+    // The row above the label, inside the card's white under the box
+    // (the box ends well above it, wii/menu/rift_menu.cpp ShowLaunchFrame).
+    constexpr int kNoteGap = 4;
+    const int y = g_y - kLabelHeight - kNoteGap;
+    char line[96];
+    const int fits = g_width / 8 < static_cast<int>(sizeof(line)) ? g_width / 8 : static_cast<int>(sizeof(line)) - 1;
+    std::snprintf(line, static_cast<std::size_t>(fits) + 1, "%s", note);
+    Fill(g_x, y, g_width, kLabelHeight, kPaper);
+    Text(g_x, y, line);
+    DCFlushRange(g_xfb + y * g_stride, kLabelHeight * g_stride * 4);
+}
+
 void ProgressWithin(unsigned long long done, unsigned long long total, int from, int to) {
     ShowLogOnButton();
     if (total == 0) return;
