@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Slot ownership (runtime/rtslot.h), the stand-in's one place for "who
 // holds each Wii Remote slot, and what the game has been told". Each test
-// is a past review finding on #587's pull requests, written as the
-// situation and the outcome it needs, so the rules hold whatever the hooks
-// around them become (notes: the restructure's findings catalogue).
+// is a past review finding on #587's pull requests (KakarottoCake/Riftwii
+// #609, #610, #616 and their fork copies), written as the situation and
+// the outcome it needs, so the rules hold whatever the hooks around them
+// become (notes: the restructure's findings catalogue).
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -35,7 +36,7 @@ void unplug(rtslot& s, std::uint32_t slot) { s.present &= ~(1u << slot); }
 // Tells every change due now (each delivered), as the hook's pass does;
 // returns how many "connected" (joins) and "gone" (leaves) were told.
 struct Told {
-    int joins = 0, leaves = 0;
+    int joins = 0, leaves = 0, extensions = 0;
 };
 Told tell_all(rtslot& s, std::uint32_t home = kNone, int remote_shapes = 1) {
     Told t;
@@ -43,7 +44,7 @@ Told tell_all(rtslot& s, std::uint32_t home = kNone, int remote_shapes = 1) {
     std::int32_t reason = 0;
     while (rtslot_next_tell(&s, home, remote_shapes, skip, &slot, &reason)) {
         (reason == 0 ? t.joins : t.leaves) += 1;
-        rtslot_told(&s, slot, reason, 1);
+        if (rtslot_told(&s, slot, reason, 1) == RTSLOT_AFTER_EXTENSION) ++t.extensions;
         skip |= 1u << slot;
     }
     return t;
@@ -72,142 +73,16 @@ void TestRealBeatsHome() {
     EXPECT_EQ(rtslot_owner(&s, 2, 2), RTSLOT_HOME);
 }
 
-// A real Wii Remote that takes a slot the stand-in was told on: the game
-// hears neither "gone" nor "connected" from the stand-in (its own library
-// tells it about the real one).
-void TestRealTakesToldSlot() {
+// #610 (CodeRabbit): when the HOME Menu ends on a slot a real Wii Remote
+// now holds, the game isn't told "gone" for it.
+void TestHomeEndsOnRealSlot() {
     rtslot s = fresh();
     plug(s, 0);
     EXPECT_EQ(tell_all(s).joins, 1);
-    rtslot_probed(&s, 0, 0);
+    rtslot_probed(&s, 0, 0);  // a real Wii Remote took slot 0
     const Told t = tell_all(s);
     EXPECT_EQ(t.leaves, 0);
     EXPECT_EQ(t.joins, 0);
-}
-
-// The HOME Menu's stand-in's slot is never told "gone" while it is up.
-void TestHomeKeepsItsSlot() {
-    rtslot s = fresh();
-    plug(s, 2);
-    EXPECT_EQ(tell_all(s).joins, 1);
-    unplug(s, 2);
-    EXPECT_EQ(tell_all(s, 2).leaves, 0);
-    EXPECT_EQ(tell_all(s, kNone).leaves, 1);
-}
-
-// #10 (fork, CodeRabbit): a "connected" the game couldn't take (no callback
-// yet) isn't marked told; it's told at the next pass. The same for "gone".
-void TestUndeliveredStaysToTell() {
-    rtslot s = fresh();
-    plug(s, 0);
-    std::uint32_t slot = 0;
-    std::int32_t reason = 1;
-    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
-    EXPECT_EQ(reason, 0);
-    EXPECT_EQ(rtslot_told(&s, slot, reason, 0), RTSLOT_AFTER_NOTHING);
-    EXPECT_EQ(tell_all(s).joins, 1);  // tried again
-    unplug(s, 0);
-    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
-    EXPECT_EQ(reason, -1);
-    rtslot_told(&s, slot, reason, 0);
-    EXPECT_EQ(tell_all(s).leaves, 1);
-}
-
-// A "gone" whose slot a real controller took meanwhile is followed by
-// "connected", so the game hears last that a controller is there.
-void TestGoneThenRealConnected() {
-    rtslot s = fresh();
-    plug(s, 3);
-    tell_all(s);
-    unplug(s, 3);
-    std::uint32_t slot = 0;
-    std::int32_t reason = 0;
-    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
-    EXPECT_EQ(reason, -1);
-    rtslot_probed(&s, 3, 0);  // a real Wii Remote arrives while "gone" is told
-    EXPECT_EQ(rtslot_told(&s, slot, reason, 1), RTSLOT_AFTER_CONNECTED);
-}
-
-// An older probe answer applied late doesn't undo a newer one (the caller
-// takes the count first, and applies only if it hasn't moved).
-void TestProbeCountGuard() {
-    rtslot s = fresh();
-    const std::uint32_t before = rtslot_probe_count(&s, 0);
-    rtslot_probed(&s, 0, 0);  // a newer answer: a real Wii Remote
-    EXPECT_TRUE(rtslot_probe_count(&s, 0) != before);
-    rtslot_probed(&s, 0, -2);  // busy: no answer, no count
-    EXPECT_EQ(rtslot_probe_count(&s, 0), before + 1u);
-}
-
-// #609 (CodeRabbit): a pause in the game's KPAD reads isn't a controller
-// gone; a steady stream of empty reads for the grace period is (pr2b:
-// and the count starts over when a controller comes back).
-void TestEmptyReads() {
-    rtslot s = fresh();
-    rtslot_kpad_read(&s, 1, 2, RTSLOT_NO_ERROR, 1000);
-    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
-    for (std::uint32_t i = 0; i + 1 < RTSLOT_EMPTY_READS; ++i) rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 1001 + i);
-    rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 1001 + 3 * kGrace);  // after a long pause
-    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
-    std::uint32_t t = 5000;
-    for (std::uint32_t i = 0; i <= RTSLOT_EMPTY_READS; ++i) {
-        t += kGrace / 10;
-        rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, t);
-    }
-    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_NOBODY);
-    rtslot_kpad_read(&s, 1, 0, -1, t + 1);  // "no controller" with an error output: gone at once
-    rtslot_kpad_read(&s, 1, 1, RTSLOT_NO_ERROR, t + 2);
-    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
-    EXPECT_EQ(s.empty_since[1], 0u);  // a controller there: no empty count carried over
-}
-
-// #610 (CodeRabbit): the recheck of a real Wii Remote runs the game's
-// WPADProbe with interrupts on; a hooked probe or a KPAD read with samples
-// meanwhile is newer, and the recheck's older "no controller" mustn't undo it.
-void TestRecheckOlderAnswerLoses() {
-    rtslot s = fresh();
-    plug(s, 2);
-    rtslot_probed(&s, 2, 0);
-    std::uint32_t begun = rtslot_recheck_begin(&s, 2);
-    rtslot_probed(&s, 2, 0);              // the game's own probe, meanwhile
-    rtslot_rechecked(&s, 2, -1, begun);   // the recheck's older answer
-    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_REAL);
-    begun = rtslot_recheck_begin(&s, 2);
-    rtslot_kpad_read(&s, 2, 3, RTSLOT_NO_ERROR, 500);
-    rtslot_rechecked(&s, 2, -1, begun);
-    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_REAL);
-    begun = rtslot_recheck_begin(&s, 2);
-    rtslot_rechecked(&s, 2, -1, begun);   // nothing newer: it counts
-    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_STANDIN);
-}
-
-// The HOME Menu's stand-in on a slot the permanent stand-in holds (or told
-// the game of, its controller just unplugged): the game has a controller
-// there already, so the HOME one isn't announced.
-void TestHomeAnnounced() {
-    rtslot s = fresh();
-    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), 1u);
-    EXPECT_EQ(rtslot_home_announced(&s, kNone, 1), kNone);
-    plug(s, 1);
-    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), kNone);
-    unplug(s, 1);
-    s.told = 1u << 1;
-    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), kNone);
-    s.told = 0;
-    // Wii Remote forms (#610): a HOME stand-in that took slot 2 free (its
-    // Classic shape) keeps that claim though a GameCube controller plugs in.
-    rtslot_home_took(&s, 2);
-    plug(s, 2);
-    EXPECT_EQ(rtslot_home_announced(&s, 2, 1), 2u);
-    // Took a slot the Wii Remote stand-in already held: same shape, the game has it.
-    rtslot_home_took(&s, 2);
-    EXPECT_EQ(rtslot_home_announced(&s, 2, 1), kNone);
-    // A real Wii Remote there: its library tells the game (fork #22).
-    rtslot r = fresh();
-    rtslot_probed(&r, 2, 0);
-    EXPECT_EQ(rtslot_home_announced(&r, 2, 0), kNone);
-    EXPECT_EQ(rtslot_home_announced(&r, 2, 1), kNone);
-    EXPECT_EQ(rtslot_home_announced(&r, 3, 0), 3u);
 }
 
 // #616 (CodeRabbit): while the HOME Menu's stand-in holds a slot in another
@@ -241,6 +116,194 @@ void TestHomeKeepsShapeAfterUnplug() {
     EXPECT_EQ(tell_all(s, kNone).leaves, 1);
 }
 
+// #10 (fork, CodeRabbit): a "connected" the game couldn't take (no callback
+// yet) isn't marked told; it's told at the next pass. The same for "gone".
+void TestUndeliveredStaysToTell() {
+    rtslot s = fresh();
+    plug(s, 0);
+    std::uint32_t slot = 0;
+    std::int32_t reason = 1;
+    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
+    EXPECT_EQ(reason, 0);
+    EXPECT_EQ(rtslot_told(&s, slot, reason, 0), RTSLOT_AFTER_NOTHING);
+    EXPECT_EQ(tell_all(s).joins, 1);  // tried again
+    unplug(s, 0);
+    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
+    EXPECT_EQ(reason, -1);
+    rtslot_told(&s, slot, reason, 0);
+    EXPECT_EQ(tell_all(s).leaves, 1);
+}
+
+// A delivered "connected" on a slot that is still the stand-in's tells its
+// attachment too; a "gone" whose slot a real controller took meanwhile
+// (wpsx, ws2: CodeRabbit CLI) is followed by "connected", so the game hears
+// last that a controller is there.
+void TestAfterTelling() {
+    rtslot s = fresh();
+    plug(s, 3);
+    EXPECT_EQ(tell_all(s).extensions, 1);
+    unplug(s, 3);
+    std::uint32_t slot = 0;
+    std::int32_t reason = 0;
+    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
+    EXPECT_EQ(reason, -1);
+    rtslot_probed(&s, 3, 0);  // a real Wii Remote arrives while "gone" is told
+    EXPECT_EQ(rtslot_told(&s, slot, reason, 1), RTSLOT_AFTER_CONNECTED);
+}
+
+// #610 (CodeRabbit): an older probe answer applied late doesn't undo a
+// newer one (the caller takes the count first, and applies only if it
+// hasn't moved).
+void TestProbeCountGuard() {
+    rtslot s = fresh();
+    const std::uint32_t before = rtslot_probe_count(&s, 0);
+    rtslot_probed(&s, 0, 0);  // a newer answer: a real Wii Remote
+    EXPECT_TRUE(rtslot_probe_count(&s, 0) != before);
+    rtslot_probed(&s, 0, -2);  // busy: no answer, no count
+    EXPECT_EQ(rtslot_probe_count(&s, 0), before + 1u);
+}
+
+// #609 (CodeRabbit): a pause in the game's KPAD reads isn't a controller
+// gone; a steady stream of empty reads for the grace period is (pr2b:
+// and the count starts over when a controller comes back).
+void TestEmptyReads() {
+    rtslot s = fresh();
+    rtslot_kpad_read(&s, 1, 2, RTSLOT_NO_ERROR, 1000);
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
+    for (std::uint32_t i = 0; i + 1 < RTSLOT_EMPTY_READS; ++i) rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 1001 + i);
+    rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, 1001 + 3 * kGrace);  // after a long pause
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
+    std::uint32_t t = 5000;
+    for (std::uint32_t i = 0; i <= RTSLOT_EMPTY_READS; ++i) {
+        t += kGrace / 10;
+        rtslot_kpad_read(&s, 1, 0, RTSLOT_NO_ERROR, t);
+    }
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_NOBODY);
+    rtslot_kpad_read(&s, 1, 0, -1, t + 1);  // "no controller" with an error output: gone at once
+    rtslot_kpad_read(&s, 1, 1, RTSLOT_NO_ERROR, t + 2);
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
+    EXPECT_EQ(s.empty_since[1], 0u);  // a controller there: no empty count carried over
+}
+
+// ws15 (CodeRabbit CLI): a new "connected" clears `heard`, so only a read
+// after it says the game heard it; ws2: a channel due a retell keeps its
+// told state.
+void TestHeardAndRetell() {
+    rtslot s = fresh();
+    s.retell_ticks = 100;
+    plug(s, 0);
+    tell_all(s);
+    rtslot_heard(&s, 0);
+    EXPECT_TRUE((s.heard & 1u) != 0);
+    unplug(s, 0);
+    tell_all(s);
+    plug(s, 0);
+    tell_all(s);
+    EXPECT_EQ(s.heard & 1u, 0u);  // a new "connected": not heard yet
+    rtslot_retell(&s, 1000);
+    rtslot_retell(&s, 1200);  // unheard for retell_ticks: due again
+    EXPECT_TRUE((s.retell & 1u) != 0);
+    EXPECT_TRUE((s.told & 1u) != 0);  // still counts as told meanwhile
+    EXPECT_EQ(tell_all(s).joins, 1);
+    // Due again, but the game reads the channel before the retell goes out:
+    // it has heard it, so no "connected" again (fork #24).
+    rtslot_retell(&s, 1400);
+    rtslot_retell(&s, 1600);
+    EXPECT_TRUE((s.retell & 1u) != 0);
+    rtslot_heard(&s, 0);
+    EXPECT_EQ(tell_all(s).joins, 0);
+    EXPECT_EQ(s.retell & 1u, 0u);
+}
+
+// ws5 (CodeRabbit CLI): once quiet, quiet until the next Wii controller
+// read, even when the time base comes round to just after the old read.
+void TestQuietLatch() {
+    rtslot s = fresh();
+    rtslot_wii_read(&s, 1000);
+    EXPECT_EQ(rtslot_quiet_due(&s, 1000 + 2999, 1), 0);
+    EXPECT_EQ(rtslot_quiet_due(&s, 1000 + 3000, 1), 1);
+    EXPECT_EQ(rtslot_quiet_due(&s, 1010, 1), 1);  // a wrapped clock
+    rtslot_wii_read(&s, 9000);
+    EXPECT_EQ(rtslot_quiet_due(&s, 9100, 1), 0);
+}
+
+// Mario Strikers Charged's WPAD copies an untouched, all-zero report with
+// error 0 on a slot no Wii Remote ever had: not a real one, the stand-in
+// keeps the slot. A blank report where a real one is known stays real.
+void TestBlankReportIsNotReal() {
+    rtslot s = fresh();
+    plug(s, 0);
+    EXPECT_EQ(rtslot_wpad_read(&s, 0, 0, 1), 0);
+    EXPECT_EQ(rtslot_owner(&s, 0, kNone), RTSLOT_STANDIN);
+    EXPECT_EQ(rtslot_wpad_read(&s, 0, 0, 0), 1);
+    EXPECT_EQ(rtslot_owner(&s, 0, kNone), RTSLOT_REAL);
+    EXPECT_EQ(rtslot_wpad_read(&s, 0, 0, 1), 1);
+    EXPECT_EQ(rtslot_owner(&s, 0, kNone), RTSLOT_REAL);
+}
+
+// Punch-Out!! reads only WPAD: "no controller" there is how it learns a
+// real Wii Remote left, and the stand-in comes back (and is told again).
+void TestWpadReadNoController() {
+    rtslot s = fresh();
+    plug(s, 1);
+    EXPECT_EQ(rtslot_wpad_read(&s, 1, 0, 0), 1);
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_REAL);
+    EXPECT_EQ(rtslot_wpad_read(&s, 1, -1, 1), 0);
+    EXPECT_EQ(rtslot_owner(&s, 1, kNone), RTSLOT_STANDIN);
+    EXPECT_EQ(rtslot_wpad_read(&s, 7, 0, 0), 0);  // no such slot
+}
+
+// #610 (CodeRabbit): the recheck of a real Wii Remote runs the game's
+// WPADProbe with interrupts on; a hooked probe answering meanwhile is
+// newer, and the recheck's older "no controller" mustn't undo it.
+void TestRecheckOlderAnswerLoses() {
+    rtslot s = fresh();
+    plug(s, 2);
+    rtslot_probed(&s, 2, 0);
+    std::uint32_t begun = rtslot_recheck_begin(&s, 2);
+    rtslot_probed(&s, 2, 0);              // the game's own probe, meanwhile
+    rtslot_rechecked(&s, 2, -1, begun);   // the recheck's older answer
+    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_REAL);
+    // A KPAD read with samples meanwhile is newer too (CodeRabbit CLI, rall).
+    begun = rtslot_recheck_begin(&s, 2);
+    rtslot_kpad_read(&s, 2, 3, RTSLOT_NO_ERROR, 500);
+    rtslot_rechecked(&s, 2, -1, begun);
+    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_REAL);
+    begun = rtslot_recheck_begin(&s, 2);
+    rtslot_rechecked(&s, 2, -1, begun);   // nothing newer: it counts
+    EXPECT_EQ(rtslot_owner(&s, 2, kNone), RTSLOT_STANDIN);
+}
+
+// The HOME Menu's stand-in on a slot the permanent stand-in holds (or
+// told the game of, its controller just unplugged): the game has a
+// controller there already, so the HOME one isn't announced. In the Wii
+// Remote forms, a HOME stand-in that took a free slot in its Classic shape
+// keeps that claim though a GameCube controller plugs in (#610).
+void TestHomeAnnounced() {
+    rtslot s = fresh();
+    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), 1u);
+    EXPECT_EQ(rtslot_home_announced(&s, kNone, 1), kNone);
+    plug(s, 1);
+    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), kNone);
+    unplug(s, 1);
+    s.told = 1u << 1;
+    EXPECT_EQ(rtslot_home_announced(&s, 1, 0), kNone);
+    s.told = 0;
+    // Wii Remote forms: took slot 2 free (Classic shape), then a pad plugs in.
+    rtslot_home_took(&s, 2);
+    plug(s, 2);
+    EXPECT_EQ(rtslot_home_announced(&s, 2, 1), 2u);
+    // Took a slot the Wii Remote stand-in already held: same shape, the game has it.
+    rtslot_home_took(&s, 2);
+    EXPECT_EQ(rtslot_home_announced(&s, 2, 1), kNone);
+    // A real Wii Remote there: its library tells the game (fork #22).
+    rtslot r = fresh();
+    rtslot_probed(&r, 2, 0);
+    EXPECT_EQ(rtslot_home_announced(&r, 2, 0), kNone);
+    EXPECT_EQ(rtslot_home_announced(&r, 2, 1), kNone);
+    EXPECT_EQ(rtslot_home_announced(&r, 3, 0), 3u);
+}
+
 // #610 (CodeRabbit): a real Wii Remote took the slot the HOME Menu's
 // stand-in held; the game isn't told "gone" for a controller that's there.
 void TestHomeLeaveNotForReal() {
@@ -271,6 +334,49 @@ void TestTellingCount() {
     EXPECT_TRUE(rtslot_tell_busy(&s));
     rtslot_tell_give(&s);
     EXPECT_TRUE(!rtslot_tell_busy(&s));
+}
+
+// CodeRabbit CLI (restructure rs1): a retell the game's callback can't take
+// yet keeps the first, delivered "connected": the slot stays told and the
+// retell stays due, and a controller unplugged meanwhile is still told gone.
+void TestFailedRetellKeepsTold() {
+    rtslot s = fresh();
+    s.retell_ticks = 100;
+    plug(s, 0);
+    tell_all(s);
+    rtslot_retell(&s, 1000);
+    rtslot_retell(&s, 1200);
+    EXPECT_TRUE((s.retell & 1u) != 0);
+    std::uint32_t slot = 9;
+    std::int32_t reason = 9;
+    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
+    EXPECT_EQ(reason, 0);
+    EXPECT_EQ(rtslot_told(&s, slot, reason, 0), RTSLOT_AFTER_NOTHING);  // no callback just now
+    EXPECT_TRUE((s.told & 1u) != 0);
+    EXPECT_TRUE((s.retell & 1u) != 0);
+    unplug(s, 0);
+    EXPECT_EQ(tell_all(s).leaves, 1);
+    // A first "connected" that couldn't be delivered stays unannounced.
+    rtslot t = fresh();
+    plug(t, 1);
+    EXPECT_TRUE(rtslot_next_tell(&t, kNone, 1, 0, &slot, &reason));
+    rtslot_told(&t, slot, reason, 0);
+    EXPECT_EQ(t.told & 2u, 0u);
+}
+
+// CodeRabbit CLI (restructure rs1): a "connected" whose slot was
+// unannounced while the callback ran (a real Wii Remote found, then gone)
+// isn't followed by its attachment.
+void TestNoExtensionAfterUnannounce() {
+    rtslot s = fresh();
+    plug(s, 2);
+    std::uint32_t slot = 9;
+    std::int32_t reason = 9;
+    EXPECT_TRUE(rtslot_next_tell(&s, kNone, 1, 0, &slot, &reason));
+    rtslot_probed(&s, 2, 0);   // in the callback: a real one
+    rtslot_probed(&s, 2, -1);  // and gone again
+    EXPECT_EQ(rtslot_told(&s, slot, reason, 1), RTSLOT_AFTER_NOTHING);
+    EXPECT_EQ(tell_all(s).joins, 1);  // announced afresh, with its attachment
 }
 
 }  // namespace
@@ -323,18 +429,23 @@ int main() {
     TestEmptyGapExact();
     TestOwnerOrder();
     TestRealBeatsHome();
-    TestRealTakesToldSlot();
-    TestHomeKeepsItsSlot();
-    TestUndeliveredStaysToTell();
-    TestGoneThenRealConnected();
-    TestProbeCountGuard();
-    TestEmptyReads();
-    TestRecheckOlderAnswerLoses();
-    TestHomeAnnounced();
+    TestHomeEndsOnRealSlot();
     TestHomeHoldsDifferentShape();
     TestHomeKeepsShapeAfterUnplug();
+    TestUndeliveredStaysToTell();
+    TestAfterTelling();
+    TestProbeCountGuard();
+    TestEmptyReads();
+    TestHeardAndRetell();
+    TestQuietLatch();
+    TestBlankReportIsNotReal();
+    TestWpadReadNoController();
+    TestRecheckOlderAnswerLoses();
+    TestHomeAnnounced();
     TestHomeLeaveNotForReal();
     TestTellingCount();
+    TestFailedRetellKeepsTold();
+    TestNoExtensionAfterUnannounce();
     TestCorrectedAfterLeave();
     if (g_failures != 0) {
         std::cerr << g_failures << " failure(s)" << std::endl;
