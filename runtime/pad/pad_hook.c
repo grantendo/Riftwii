@@ -1484,7 +1484,10 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
         return on ? PAD_INFO_BUSY : result;
     }
     for (i = 0; i < PAD_INFO_BYTES; ++i) info[i] = 0;
-#ifdef RT_PAD_FORM_NUNCHUK
+    /* An attachment in the forms that have one: the Nunchuk, and the
+     * Classic Controller (its status and extension callback say so too;
+     * CodeRabbit, fork #24). The sideways and pointing Wii Remotes have none. */
+#if defined(RT_PAD_FORM_NUNCHUK) || !defined(RT_PAD_FORM_REMOTE)
     pad_put32(info + PAD_INFO_ATTACH, 1);
 #endif
     info[PAD_INFO_BATTERY] = PAD_INFO_BATTERY_FULL;
