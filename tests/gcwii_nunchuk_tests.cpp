@@ -213,6 +213,21 @@ void TestShakeKeepsTime() {
         }
         EXPECT_EQ(with_speed, reads);
     }
+    // X pressed for a single sample, let go before any read: that read
+    // still gets the speed (CodeRabbit CLI, #610).
+    {
+        rtgcwii w = fresh();
+        Pads p;
+        p.plug(0, kGcX);
+        rtshape_out f;
+        rtgcwii_pads(&w, p.s, 1000);
+        p.plug(0);
+        rtgcwii_pads(&w, p.s, 1016);
+        rtgcwii_nunchuk(&w, 0, 1016, &f);
+        EXPECT_EQ(f.acc_speed, RTGCWII_SHAKE_SPEED);
+        rtgcwii_nunchuk(&w, 0, 1032, &f);
+        EXPECT_EQ(f.acc_speed, 0);
+    }
     // A step, then X let go before any read: the next read still gets the
     // jump in speed, at rest; the read after doesn't (fork #23).
     {
