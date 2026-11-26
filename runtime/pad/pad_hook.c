@@ -1530,6 +1530,12 @@ void pad_on_wpad_read(struct rt_pad_context* c, int32_t chan, uint8_t* status) {
      * WPADProbe finds one); otherwise the stand-in's report goes in only
      * if the channel is still its after the poll (rtgcwii_wpad_status). */
     if (real) return;
+#ifdef RT_PAD_FORM_POINTING
+    /* The pointing form with no camera switch found (or not in RAM): the
+     * camera counts as on, as at a KPAD read (pad_gcwii_camera_now;
+     * CodeRabbit CLI, fork #24). */
+    camera = 1;
+#endif
     if (w->kpad_dpd != 0) {
         /* KPAD's camera switch for this channel, as at a KPAD read. */
         const uint8_t* wants =
