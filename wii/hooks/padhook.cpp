@@ -1698,6 +1698,15 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         logf("GameCube adapter: SIProbe not found: a game that asks it which ports have a controller sees none there\n");
 
     if (!usb) {
+        // A pack that brings its own controller code turned the stand-in off:
+        // with no adapter there's nothing left for the hook to do, and the
+        // builds without the stand-in would ask USB on every PADRead (only
+        // the stand-in's honour RT_PAD_FLAG_NO_USB; CodeRabbit CLI, fork #25).
+        if (!out.standin) {
+            why = "no adapter, and a pack brings its own controller code (the stand-in is off), so there's nothing "
+                  "for the hook to do";
+            return false;
+        }
         // No adapter: the hook is there only for the stand-in, which needs
         // the game's KPAD read and WPADProbe (plan_pad_hook's
         // wants_home_build). Without them it would do nothing, so no hook,
