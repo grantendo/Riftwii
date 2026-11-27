@@ -504,15 +504,35 @@ std::uint32_t find_wpad_get_info_blocking(const std::vector<CodeRange>& text, st
     constexpr std::uint32_t kStatusRequest = 0x15;  // the status request report
     constexpr unsigned kHandlerWords = 8;           // where the handler wakes the queue
     if (block_table == 0) return 0;
-    // Whether `handler` wakes the queue at offset `queue`: `addi r3,r3,queue`
-    // and then a tail branch (`b`) within its first words.
+    // Whether `handler` wakes the queue at offset `queue` in the same table's
+    // block: read on from its first word, it makes `block_table`'s address
+    // (`lis`, then `addi` from it) and then reaches `addi r3,r3,queue` and a
+    // tail branch (`b`), within its first words and before it returns or
+    // branches away (the code after a return is another function's;
+    // CodeRabbit CLI, part 5).
     const auto wakes = [&](std::uint32_t handler, std::int32_t queue) {
+        std::uint32_t high[32] = {};  // each register's `lis` half, 0: none
+        bool table = false;
         for (unsigned k = 0; k + 1 < kHandlerWords; ++k) {
             std::uint32_t insn = 0, next = 0;
             if (!word_at(text, handler + 4 * k, insn) || !word_at(text, handler + 4 * (k + 1), next)) return false;
+            if (insn == kBlr || is_stwu_r1(insn) || opcode(insn) == 16 || opcode(insn) == 18 || opcode(insn) == 19)
+                return false;  // returned, another function, or a branch away before the wake
             if (opcode(insn) == 14 && reg_d(insn) == 3 && reg_a(insn) == 3 && simm(insn) == queue &&
                 opcode(next) == 18 && (next & 3u) == 0)
-                return true;
+                return table;
+            if (opcode(insn) == 15 && reg_a(insn) == 0) {  // lis
+                high[reg_d(insn)] = (insn & 0xFFFFu) << 16;
+                continue;
+            }
+            if (opcode(insn) == 14 && reg_a(insn) != 0) {  // addi
+                const std::uint32_t half = high[reg_a(insn)];
+                high[reg_d(insn)] = 0;
+                if (half != 0 && half + static_cast<std::uint32_t>(simm(insn)) == block_table) table = true;
+                continue;
+            }
+            for (std::uint32_t reg = 0; reg < 32; ++reg)
+                if (high[reg] != 0 && writes_register(insn, reg)) high[reg] = 0;
         }
         return false;
     };

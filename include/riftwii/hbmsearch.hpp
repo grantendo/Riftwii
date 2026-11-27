@@ -104,8 +104,9 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
 // control-block table `block_table`, checks a result for busy (`cmpwi rN,-2`),
 // builds the status request (`li rN,0x15`) with the address of its reply
 // handler, and sleeps on a queue in the channel's block (`addi r3,rX,Q` just
-// before a call), the handler waking that same queue (`addi r3,r3,Q` then a
-// tail branch, within its first eight words). With no Wii Remote on the
+// before a call), the handler waking that same queue (it makes
+// `block_table`'s address, then `addi r3,r3,Q` and a tail branch, within its
+// first eight words and before any return). With no Wii Remote on the
 // channel it sends nothing and still sleeps. 0 when not exactly one.
 std::uint32_t find_wpad_get_info_blocking(const std::vector<CodeRange>& text, std::uint32_t block_table);
 

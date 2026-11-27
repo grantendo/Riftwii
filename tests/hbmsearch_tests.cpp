@@ -546,8 +546,10 @@ void TestWpadGetInfoBlocking() {
     const std::uint32_t table = 0x807370F0u, sleep = 0x804F38E8u, wakeup = 0x804F39D4u;
     const std::int32_t queue = 0x824;
     // The handler: stores the result, then `addi r3,r3,queue; b OSWakeupThread`.
-    const auto handler = [&](Section& h, std::int32_t wakes) {
-        h.put(lis(5, 0x8073));
+    const auto handler = [&](Section& h, std::int32_t wakes, std::uint32_t table_high = 0x8073,
+                             bool returns_first = false) {
+        if (returns_first) h.put(kBlr);
+        h.put(lis(5, table_high));
         h.put(addi(6, 13, -11412));
         h.put(kSlwiR0R3By2);
         h.put(addi(5, 5, 0x70F0));
@@ -593,6 +595,24 @@ void TestWpadGetInfoBlocking() {
         // The handler wakes another queue than the one slept on.
         Section h{0x80520438u, {}};
         handler(h, queue + 0x20);
+        Section t{0x80523914u, {}};
+        blocking(t, 0x15, queue);
+        EXPECT_EQ(riftwii::find_wpad_get_info_blocking({t.range(), h.range(), callees.range()}, table), 0u);
+    }
+    {
+        // The handler returns at once; the wake after its `blr` is another
+        // function's (CodeRabbit CLI, part 5).
+        Section h{0x80520438u, {}};
+        handler(h, queue, 0x8073, true);
+        Section t{0x80523914u, {}};
+        blocking(t, 0x15, queue);
+        EXPECT_EQ(riftwii::find_wpad_get_info_blocking({t.range(), h.range(), callees.range()}, table), 0u);
+    }
+    {
+        // The handler wakes that offset in another table's blocks: another
+        // queue (CodeRabbit CLI, part 5).
+        Section h{0x80520438u, {}};
+        handler(h, queue, 0x8074);
         Section t{0x80523914u, {}};
         blocking(t, 0x15, queue);
         EXPECT_EQ(riftwii::find_wpad_get_info_blocking({t.range(), h.range(), callees.range()}, table), 0u);
