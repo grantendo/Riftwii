@@ -1070,15 +1070,30 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
             // places an earlier write reaches, with the writes over them.
             const std::uint64_t align = patch.align == 0 ? 1 : patch.align;
             const std::size_t n = patch.original.size();
+            // Starts whose pattern reaches into an earlier write are checked
+            // with the writes over them: a pattern an earlier patch replaced
+            // isn't there when this search runs (CodeRabbit, fork #25).
+            std::vector<std::pair<std::uint64_t, std::uint64_t>> near;
+            for (const PackWrite& w : out.writes) {
+                const std::uint64_t lo = w.at >= n ? w.at - n + 1 : 0;
+                near.push_back({lo, std::uint64_t(w.at) + patches[w.patch].value.size()});
+            }
+            std::sort(near.begin(), near.end());
             bool found = false;
             for (const CodeRange& r : image) {
                 if (found || n == 0 || r.size < n) continue;
+                std::size_t next = 0;  // sections aren't in address order
                 std::uint64_t pos = r.address;
                 if (pos % align != 0) pos += align - pos % align;
                 const std::uint64_t last = std::uint64_t(r.address) + r.size - n;
                 for (; pos <= last && !found; pos += align) {
+                    while (next < near.size() && near[next].second <= pos) ++next;
+                    bool overlaid = false;
+                    for (std::size_t k = next; !overlaid && k < near.size() && near[k].first <= pos; ++k)
+                        overlaid = pos < near[k].second;
                     const std::uint8_t* raw = r.bytes + (pos - r.address);
-                    found = raw[0] == patch.original[0] && std::memcmp(raw, patch.original.data(), n) == 0;
+                    found = overlaid ? matches_at(static_cast<std::uint32_t>(pos), patch.original)
+                                     : raw[0] == patch.original[0] && std::memcmp(raw, patch.original.data(), n) == 0;
                 }
             }
             for (std::size_t w = 0; !found && n != 0 && w < out.writes.size(); ++w) {
@@ -1499,12 +1514,9 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         why = "this game has no GameCube controller support (no PADRead)";
         return false;
     }
-    // The Wii's own ports are read only through the game's PADRead: with no
-    // PADRead and no adapter, nothing could read a GameCube controller.
-    if (pad.read == 0 && !usb) {
-        why = "this game has no GameCube controller code, and with no adapter nothing reads the Wii's own GameCube ports";
-        return false;
-    }
+    // (With no PADRead and no adapter nothing reads the Wii's own GameCube
+    // ports, unless a pack's search patch adds one: decided below, once the
+    // pack's writes are planned; CodeRabbit, fork #25.)
     if (pad.read == 0) {
         // GameCube controllers as Classic Controllers: the hook reads the
         // adapter itself from the game's KPAD reads (#587's question 4).
@@ -1516,8 +1528,9 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         std::vector<CodeRange> view;
         pad.idle_reset =
             code_with_patches(text, patched, view) ? find_wii_remote_idle_reset(view, find_wpad_probe(view)) : 0;
-        logf("GameCube adapter: no PADRead in this game; the hook reads the GameCube controllers itself for their "
-             "stand-in\n");
+        if (usb)
+            logf("GameCube adapter: no PADRead in this game; the hook reads the GameCube controllers itself for "
+                 "their stand-in\n");
     }
     out.read = pad.read;
     out.read_in_patch = from_patch;
@@ -1568,6 +1581,13 @@ bool find_pad_functions(const DolHeader& dol, bool demo, const std::vector<Memor
         out.read = pad.read;
         out.read_in_patch = true;
         for (const auto& span : all_spans) written.push_back({span.first, span.second.data(), span.second.size()});
+    }
+    // The Wii's own ports are read only through a PADRead (the game's, or
+    // one a pack's patch adds, plain or search): with none and no adapter,
+    // nothing could read a GameCube controller.
+    if (pad.read == 0 && !usb) {
+        why = "this game has no GameCube controller code, and with no adapter nothing reads the Wii's own GameCube ports";
+        return false;
     }
     const bool program_pad = standin && !pack_reads_pad && program_from_pack && pad.read != 0;
     // (Below: a pack with more memory writes than the checks follow counts
