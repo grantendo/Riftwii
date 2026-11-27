@@ -148,7 +148,11 @@ struct PadHook {
     // WPADGetInfoAsync, for a 2006 KPAD game with the stand-in (it waits on
     // the info's answer before it uses a Wii Remote), 0: not hooked.
     std::uint32_t wpad_info = 0;
-    bool info_answers = false;  // a 2006 KPAD game: WPADGetInfoAsync answered, else busy (rtgcwii.info_answers)
+    // rtgcwii.info_answers: RTGCWII_INFO_ANSWER (a 2006 KPAD game's
+    // WPADGetInfoAsync answered), RTGCWII_INFO_BUSY (a later game's: busy),
+    // RTGCWII_INFO_BLOCKING (wpad_info is a blocking WPADGetInfo with the
+    // request built in: busy before it runs).
+    std::uint32_t info_answers = 0;
     // WPAD's own connect callbacks (find_wpad_connect_2006, or for a later
     // WPAD with no KPAD-level callback found, find_wpad_connect_later), 0: none.
     std::uint32_t wpad_connect_table = 0, wpad_connect_offset = 0;

@@ -499,6 +499,57 @@ std::uint32_t find_wpad_get_info_later(const std::vector<CodeRange>& text, std::
     return two ? 0 : found;
 }
 
+std::uint32_t find_wpad_get_info_blocking(const std::vector<CodeRange>& text, std::uint32_t block_table) {
+    constexpr std::size_t kMaxWords = 160;
+    constexpr std::uint32_t kStatusRequest = 0x15;  // the status request report
+    constexpr unsigned kHandlerWords = 8;           // where the handler wakes the queue
+    if (block_table == 0) return 0;
+    // Whether `handler` wakes the queue at offset `queue`: `addi r3,r3,queue`
+    // and then a tail branch (`b`) within its first words.
+    const auto wakes = [&](std::uint32_t handler, std::int32_t queue) {
+        for (unsigned k = 0; k + 1 < kHandlerWords; ++k) {
+            std::uint32_t insn = 0, next = 0;
+            if (!word_at(text, handler + 4 * k, insn) || !word_at(text, handler + 4 * (k + 1), next)) return false;
+            if (opcode(insn) == 14 && reg_d(insn) == 3 && reg_a(insn) == 3 && simm(insn) == queue &&
+                opcode(next) == 18 && (next & 3u) == 0)
+                return true;
+        }
+        return false;
+    };
+    std::uint32_t found = 0;
+    unsigned matches = 0;
+    each_framed_function(text, kMaxWords, [&](const CodeRange& r, std::size_t start, std::size_t end) {
+        RegTrack regs(text, r, start, end, RegTrack::kAddresses);
+        bool table = false, busy = false, request = false;
+        std::vector<std::uint32_t> built;  // addresses made here (the handler's among them)
+        std::vector<std::int32_t> queues;  // `addi r3,rX,Q` just before a call
+        for (std::size_t k = start; k < end; ++k) {
+            const std::uint32_t insn = be32(r.bytes + 4 * k);
+            regs.step(k);
+            if (opcode(insn) == 14 && reg_a(insn) != 0) {
+                const std::uint32_t made = regs.address(reg_d(insn));
+                if (made == block_table) table = true;
+                else if (made != 0) built.push_back(made);
+                if (reg_d(insn) == 3 && reg_a(insn) != 1 && simm(insn) > 0 && k + 1 < end &&
+                    is_call(be32(r.bytes + 4 * (k + 1))))
+                    queues.push_back(simm(insn));
+            }
+            if (opcode(insn) == 14 && reg_a(insn) == 0 && simm(insn) == kStatusRequest) request = true;
+            if (opcode(insn) == 11 && simm(insn) == -2) busy = true;  // cmpwi rN,-2
+        }
+        if (!table || !busy || !request) return;
+        for (std::int32_t queue : queues)
+            for (std::uint32_t handler : built)
+                if (wakes(handler, queue)) {
+                    const std::uint32_t here = r.address + static_cast<std::uint32_t>(4 * start);
+                    if (here != found) ++matches;
+                    found = here;
+                    return;
+                }
+    });
+    return matches == 1 ? found : 0;
+}
+
 WpadConnect2006 find_wpad_connect_later(const std::vector<CodeRange>& text) {
     constexpr std::uint32_t kBctrl = 0x4E800421u;
     constexpr unsigned kCallWindow = 8;  // words from the slot's load to its call

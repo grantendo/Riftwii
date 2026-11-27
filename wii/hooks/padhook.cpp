@@ -824,12 +824,23 @@ void find_home_menu(const DolHeader& dol, const std::vector<CodeRange>& text, co
     // The 2006 WPAD's by its marks; a later one's through its blocking
     // caller, which loads WPAD's control-block table (the 2006 marks also
     // fit another function there: Mario Strikers Charged).
-    out.wpad_info = !out.standin ? 0
-                    : old_kpad   ? find_wpad_get_info(text)
-                                 : find_wpad_get_info_later(text, find_wpad_connect_later(text).table);
-    out.info_answers = old_kpad;
+    // A later WPAD whose blocking WPADGetInfo has the request built in (no
+    // WPADGetInfoAsync to answer: Scarface: The World Is Yours, whose open
+    // world checks the battery every 20 to 60 s) sleeps even with no Wii
+    // Remote there; that function is hooked instead, busy before it runs.
+    const std::uint32_t later_table = !out.standin || old_kpad ? 0 : find_wpad_connect_later(text).table;
+    out.wpad_info = !out.standin ? 0 : old_kpad ? find_wpad_get_info(text) : find_wpad_get_info_later(text, later_table);
+    out.info_answers = old_kpad ? RTGCWII_INFO_ANSWER : RTGCWII_INFO_BUSY;
+    if (out.standin && !old_kpad && out.wpad_info == 0) {
+        out.wpad_info = find_wpad_get_info_blocking(text, later_table);
+        if (out.wpad_info != 0) out.info_answers = RTGCWII_INFO_BLOCKING;
+    }
     if (out.standin) {
-        if (out.wpad_info != 0)
+        if (out.info_answers == RTGCWII_INFO_BLOCKING)
+            logf("GameCube adapter: WPADGetInfo at 0x%08x, its request built in (busy on the stand-in's channel "
+                 "before it runs, so it doesn't sleep)\n",
+                 out.wpad_info);
+        else if (out.wpad_info != 0)
             logf("GameCube adapter: WPADGetInfoAsync at 0x%08x (%s)\n", out.wpad_info,
                  old_kpad ? "the 2006 KPAD game waits on its answer; the stand-in gives one"
                           : "busy on the stand-in's channel, so a blocking WPADGetInfo doesn't sleep");
@@ -2268,7 +2279,7 @@ bool plan_pad_hook(const DolHeader& dol, std::uint32_t arena1_hi, std::uint32_t 
         state->slot.inputless = out.standin_inputless ? 1u : 0u;
         state->wpad_ext_table = out.wpad_ext_table;
         state->wpad_ext_offset = out.wpad_ext_offset;
-        state->info_answers = out.info_answers ? 1u : 0u;
+        state->info_answers = out.info_answers;
     }
     DCFlushRange(reinterpret_cast<void*>(out.state_base), out.state_bytes);
     ctx->state = out.state_base;

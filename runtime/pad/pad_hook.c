@@ -50,6 +50,7 @@ void pad_on_menu(struct rt_pad_context* c);
 int32_t pad_on_select(struct rt_pad_context* c, int32_t result);
 void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int32_t count);
 #ifdef RT_PAD_STANDIN
+int32_t pad_info_first(struct rt_pad_context* c, int32_t chan);
 int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result);
 uint32_t pad_on_kpad_enter(struct rt_pad_context* c);
 #if defined(RT_PAD_FORM_NUNCHUK) || defined(RT_PAD_FORM_SIDEWAYS) || defined(RT_PAD_FORM_POINTING)
@@ -1473,6 +1474,21 @@ void pad_on_unified(struct rt_pad_context* c, int32_t chan, uint8_t* status, int
 #define PAD_INFO_LED 21u
 #define PAD_INFO_BATTERY_FULL 4u
 #define PAD_INFO_BUSY (-2)        /* WPAD_ERR_BUSY */
+
+/* Before the hooked function runs: nonzero is its answer, given instead of
+ * running it; 0 runs it. Only a blocking WPADGetInfo with the request built
+ * in (RTGCWII_INFO_BLOCKING: Scarface: The World Is Yours) is answered here:
+ * with no Wii Remote on the channel it sends nothing and still sleeps for the
+ * reply, so on the stand-in's channel it is busy (-2) at once, and the game
+ * skips its battery check, as a later game's WPADGetInfo does with
+ * WPADGetInfoAsync busy. */
+int32_t pad_info_first(struct rt_pad_context* c, int32_t chan) {
+    const struct rtgcwii* w = (const struct rtgcwii*)(uintptr_t)c->gcwii;
+    if (!c->gcwii || w->info_answers != RTGCWII_INFO_BLOCKING || chan < 0 || chan >= (int32_t)RTGCWII_CHANNELS)
+        return 0;
+    return rtslot_on(&w->slot, (uint32_t)chan) ? PAD_INFO_BUSY : 0;
+}
+
 int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint32_t callback, int32_t result) {
     uint32_t msr, i;
     int on, pending;
@@ -1490,7 +1506,7 @@ int32_t pad_on_info(struct rt_pad_context* c, int32_t chan, uint8_t* info, uint3
     pending = ((const struct rtgcwii*)(uintptr_t)c->gcwii)->info_callback[chan] != 0;
     /* A later game: busy, never an answer whose callback would have to wake
      * a WPADGetInfo already asleep (rtgcwii.info_answers). */
-    if (!((const struct rtgcwii*)(uintptr_t)c->gcwii)->info_answers) pending = 1;
+    if (((const struct rtgcwii*)(uintptr_t)c->gcwii)->info_answers != RTGCWII_INFO_ANSWER) pending = 1;
     if (!on || pending) {
         interrupts_restore(msr);
         return on ? PAD_INFO_BUSY : result;
