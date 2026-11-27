@@ -1066,8 +1066,9 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
         if (!patch.valuefile.empty() && patch.value.empty() && patch.search) {
             // ...when its pattern is there: one that matches nowhere
             // writes nothing.
-            // The game's own bytes first (a plain compare), then only the
-            // places an earlier write reaches, with the writes over them.
+            // Only the program image, as the search itself reads only the
+            // loaded sections: the game's own bytes (a plain compare), or,
+            // where an earlier write reaches, the writes over them.
             const std::uint64_t align = patch.align == 0 ? 1 : patch.align;
             const std::size_t n = patch.original.size();
             // Starts whose pattern reaches into an earlier write are checked
@@ -1095,13 +1096,6 @@ PackWrites plan_pack_writes(const std::vector<MemoryPatch>& patches, const std::
                     found = overlaid ? matches_at(static_cast<std::uint32_t>(pos), patch.original)
                                      : raw[0] == patch.original[0] && std::memcmp(raw, patch.original.data(), n) == 0;
                 }
-            }
-            for (std::size_t w = 0; !found && n != 0 && w < out.writes.size(); ++w) {
-                const std::uint64_t at = out.writes[w].at;
-                const std::uint64_t end = at + patches[out.writes[w].patch].value.size();
-                std::uint64_t pos = at >= n ? at - n + 1 : 0;
-                if (pos % align != 0) pos += align - pos % align;
-                for (; pos < end && !found; pos += align) found = matches_at(static_cast<std::uint32_t>(pos), patch.original);
             }
             if (found) {
                 out.incomplete = true;
